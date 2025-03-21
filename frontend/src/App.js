@@ -10,13 +10,14 @@ const contractAddress = process.env.REACT_APP_CONTRACT_ADDRESS;
 const backendUrl = process.env.REACT_APP_BACKEND_URL;
 
 function App() {
-  const [status, setStatus] = useState("Loading timer...");
-  const [timerData, setTimerData] = useState({ active: false, timeLeft: 0, phase: "" });
-  const [team, setTeam] = useState("0"); // 0 = not assigned, 1 = Team A, 2 = Team B
+  const [status, setStatus] = useState("Initializing...");
+  const [timerData, setTimerData] = useState({ phase: "", active: false, timeLeft: 0 });
+  const [team, setTeam] = useState("0"); // 0 = none, 1 = Team A, 2 = Team B
+  const [score, setScore] = useState(0);
   const [contract, setContract] = useState(null);
   const [userAddress, setUserAddress] = useState("");
 
-  // Initialize MetaMask connection and contract instance.
+  // Initialize MetaMask connection, signer, and contract instance.
   useEffect(() => {
     async function init() {
       if (!window.ethereum) {
@@ -45,12 +46,12 @@ function App() {
     async function fetchTimer() {
       try {
         const res = await fetch(`${backendUrl}/timer`);
-        const data = await res.json();
+        const data = await res.json(); // { phase, active, timeLeft }
         setTimerData(data);
         setStatus(
           data.active
-            ? `Free to switch teams: ${data.timeLeft} sec left`
-            : `Lock phase: ${data.timeLeft} sec left`
+            ? `Free to switch teams (${data.phase} phase): ${data.timeLeft} sec left`
+            : `Locked (${data.phase} phase): ${data.timeLeft} sec left`
         );
       } catch (err) {
         console.error(err);
@@ -62,24 +63,48 @@ function App() {
     return () => clearInterval(intervalId);
   }, []);
 
-  // Poll for user's team every 5 seconds.
+  // Poll the backend for user's team and score every 5 seconds.
   useEffect(() => {
-    async function fetchTeam() {
+    async function fetchData() {
       if (!userAddress) return;
       try {
-        const res = await fetch(`${backendUrl}/get-team?address=${userAddress}`);
-        const data = await res.json();
-        setTeam(data.team);
+        const resTeam = await fetch(`${backendUrl}/get-team?address=${userAddress}`);
+        const teamData = await resTeam.json();
+        setTeam(teamData.team);
       } catch (err) {
-        console.error(err);
+        console.error("Error fetching team:", err);
+      }
+      try {
+        const resScore = await fetch(`${backendUrl}/get-score?address=${userAddress}`);
+        const scoreData = await resScore.json();
+        setScore(scoreData.score);
+      } catch (err) {
+        console.error("Error fetching score:", err);
       }
     }
-    fetchTeam();
-    const intervalId = setInterval(fetchTeam, 5000);
+    fetchData();
+    const intervalId = setInterval(fetchData, 5000);
     return () => clearInterval(intervalId);
   }, [userAddress]);
 
-  // Handle team change: allow user to choose between team 1 and 2.
+  // Additionally, poll for team counts every 5 seconds.
+  const [teamCounts, setTeamCounts] = useState({ teamA: "0", teamB: "0" });
+  useEffect(() => {
+    async function fetchTeamCounts() {
+      try {
+        const res = await fetch(`${backendUrl}/team-counts`);
+        const data = await res.json();
+        setTeamCounts(data);
+      } catch (err) {
+        console.error("Error fetching team counts:", err);
+      }
+    }
+    fetchTeamCounts();
+    const intervalId = setInterval(fetchTeamCounts, 5000);
+    return () => clearInterval(intervalId);
+  }, []);
+
+  // Handle team switch button press.
   async function handleJoinTeam(teamId) {
     if (!contract) return;
     try {
@@ -98,9 +123,10 @@ function App() {
     <div className="App">
       <h1>Game of Death</h1>
       <p>{status}</p>
-      <p>Current phase: {timerData.phase} ({timerData.active ? "Free to switch teams" : "Locked"})</p>
+      <p>Phase: {timerData.phase}</p>
       <p>Time left in current phase: {timerData.timeLeft} seconds</p>
-      <p>Your current team: {team === "0" ? "None" : (team === "1" ? "Team A" : "Team B")}</p>
+      <p>Your current team: {team === "0" ? "None" : team === "1" ? "Team A" : "Team B"}</p>
+      <p>Team Counts - Team A: {teamCounts.teamA} | Team B: {teamCounts.teamB}</p>
       {timerData.active ? (
         <div>
           <button onClick={() => handleJoinTeam(1)}>Join Team A</button>
