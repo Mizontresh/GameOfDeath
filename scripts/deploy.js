@@ -1,14 +1,25 @@
+// scripts/deploy.js
+const { ethers } = require("hardhat");
+
 async function main() {
-    const TeamGame = await ethers.getContractFactory("TeamGame");
-    const teamGame = await TeamGame.deploy();
-    // If using ethers v6, address may be in .address or .target:
-    console.log("TeamGame deployed to:", teamGame.address || teamGame.target);
-  }
-  
-  main()
-    .then(() => process.exit(0))
-    .catch((error) => {
-      console.error(error);
-      process.exit(1);
-    });
-  
+  // 1) Compile if needed (optional here, but sometimes you do):
+  // await hre.run("compile");
+
+  // 2) Get the contract factory
+  const GameOfDeath = await ethers.getContractFactory("GameOfDeath");
+
+  // 3) Deploy the contract
+  const gameOfDeath = await GameOfDeath.deploy();
+
+  // 4) Wait for deployment to finish
+  await gameOfDeath.waitForDeployment();
+
+  // 5) Get the deployed address
+  const address = await gameOfDeath.getAddress();
+  console.log("GameOfDeath deployed to:", address);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

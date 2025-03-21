@@ -1,38 +1,224 @@
-.App {
-  text-align: center;
-}
-
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
-
-.App-header {
-  background-color: #282c34;
+/* Overall dark background */
+.app-container {
   min-height: 100vh;
+  margin: 0;
+  padding: 20px;
+  background: radial-gradient(circle, #000 30%, #111 100%);
+  color: #ccc;
+  font-family: "Arial", sans-serif;
+  position: relative; /* so we can absolutely position .wallet-corner */
+}
+
+/* Title area at top (centered) */
+.title-bar {
+  text-align: center;
+  margin-bottom: 15px;
+}
+.game-title {
+  font-size: 4rem;
+  color: #ff0080;
+  text-shadow:
+    0 0 8px #ff0080,
+    0 0 15px #ff0080,
+    0 0 30px #ff0080;
+  margin: 0;
+}
+.phase-time-text {
+  font-size: 1.4rem;
+  margin: 5px 0 0 0;
+  color: #eee;
+}
+
+/* The wallet corner: top-right with a small box. */
+.wallet-corner {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(255,255,255,0.05);
+  padding: 8px;
+  border-radius: 6px;
+  box-shadow:
+    0 0 5px #333;
   display: flex;
-  flex-direction: column;
   align-items: center;
+  gap: 10px;
+}
+
+/* The small wallet text. Abbreviated address. */
+.tiny-wallet {
+  font-size: 0.7rem;
+  max-width: 90px;
+  word-wrap: break-word; /* if needed */
+  margin: 0;
+}
+
+.corner-btn {
+  background: #222;
+  color: #fff;
+  border: 2px solid #666;
+  padding: 4px 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: 0.2s;
+}
+.corner-btn:hover {
+  background: #555;
+}
+
+/* Error bar if there's an error message */
+.error-bar {
+  background: #ff2f2f;
+  color: #000;
+  text-align: center;
+  padding: 8px;
+  margin: 0 auto 10px auto;
+  width: 70%;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+/* Main content: 3 columns (left, center, right) */
+.main-content {
+  display: flex;
   justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+  align-items: flex-start;
+  gap: 40px;
+  margin: 0 auto;
+  max-width: 1400px;
 }
 
-.App-link {
-  color: #61dafb;
+/* Left + Right panels, each 250px wide */
+.left-panel,
+.right-panel {
+  background: rgba(255,255,255,0.05);
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow:
+    0 0 5px #333,
+    0 0 10px #333;
+  width: 250px;
+  min-height: 400px;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* Bet panel inside left column */
+.left-panel h2 {
+  margin-top: 0;
+  color: #ff0080;
+  text-shadow: 0 0 4px #ff0080;
+}
+.bet-instructions {
+  margin: 5px 0 10px 0;
+}
+.bet-slider-container {
+  margin: 10px 0;
+}
+.bet-slider-container label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+.bet-slider-container input[type="range"] {
+  width: 100%;
+}
+.bet-buttons {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+.bet-red {
+  background: transparent;
+  border: 2px solid #ff0044;
+  color: #ff0044;
+  padding: 8px 12px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: 0.2s;
+}
+.bet-red:hover {
+  background: #ff0044;
+  color: #000;
+}
+.bet-blue {
+  background: transparent;
+  border: 2px solid #00bbff;
+  color: #00bbff;
+  padding: 8px 12px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: 0.2s;
+}
+.bet-blue:hover {
+  background: #00bbff;
+  color: #000;
+}
+
+/* Center board */
+.center-board {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Board + border */
+.board-border {
+  padding: 10px;
+  border: 2px solid #444;
+  box-shadow:
+    0 0 5px #555,
+    0 0 10px #555;
+}
+.board-grid {
+  display: grid;
+  grid-template-columns: repeat(64, 12px);
+  gap: 1px;
+}
+.cell {
+  width: 12px;
+  height: 12px;
+  background-color: #222;
+  cursor: pointer;
+  transition: 0.1s;
+}
+.cell.red {
+  background-color: #ff0050;
+  box-shadow:
+    0 0 4px #ff0050,
+    0 0 8px #ff0050;
+}
+.cell.blue {
+  background-color: #00bbff;
+  box-shadow:
+    0 0 4px #00bbff,
+    0 0 8px #00bbff;
+}
+
+/* Right panel with phase/team info */
+.right-panel .join-team-buttons {
+  display: flex;
+  gap: 10px;
+  margin: 10px 0;
+}
+.join-red {
+  background: transparent;
+  border: 2px solid #ff0044;
+  color: #ff0044;
+  padding: 8px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.join-red:hover {
+  background: #ff0044;
+  color: #000;
+}
+.join-blue {
+  background: transparent;
+  border: 2px solid #00bbff;
+  color: #00bbff;
+  padding: 8px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.join-blue:hover {
+  background: #00bbff;
+  color: #000;
 }
