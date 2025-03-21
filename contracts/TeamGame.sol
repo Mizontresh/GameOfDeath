@@ -2,13 +2,15 @@
 pragma solidity ^0.8.0;
 
 contract TeamGame {
-    // Mapping to store each player's team: 0 = not assigned, 1 = Team A, 2 = Team B.
+    // Mapping to store each player's chosen team: 
+    // 0 = not assigned, 1 = Team A, 2 = Team B.
     mapping(address => uint8) public team;
-    // Public counts for each team.
+    
+    // Public counters for each team.
     uint256 public teamACount;
     uint256 public teamBCount;
     
-    // State: whether team swapping is allowed.
+    // Boolean to allow/disallow swapping.
     bool public swappingAllowed;
 
     event TeamChanged(address indexed user, uint8 newTeam);
@@ -20,27 +22,25 @@ contract TeamGame {
         swappingAllowed = true;
     }
 
-    // Join a team. teamId must be 1 (Team A) or 2 (Team B).
+    // Players join a team (1 for Team A, 2 for Team B)
     function joinTeam(uint8 teamId) external {
         require(teamId == 1 || teamId == 2, "Invalid team ID");
         require(swappingAllowed, "Team swapping is locked");
 
         uint8 currentTeam = team[msg.sender];
         if (currentTeam == teamId) {
-            // Already in the desired team, do nothing.
+            // Already on desired team.
             return;
         }
 
-        // If switching teams, adjust counts.
+        // If switching teams, decrement previous team count if applicable.
         if (currentTeam == 1) {
-            require(teamACount > 0, "Team A count error");
-            teamACount--;
+            if(teamACount > 0) teamACount--;
         } else if (currentTeam == 2) {
-            require(teamBCount > 0, "Team B count error");
-            teamBCount--;
+            if(teamBCount > 0) teamBCount--;
         }
 
-        // Set new team.
+        // Set the new team.
         team[msg.sender] = teamId;
         if (teamId == 1) {
             teamACount++;
@@ -51,14 +51,19 @@ contract TeamGame {
         emit TeamCountsUpdated(teamACount, teamBCount);
     }
 
-    // Returns the current team counts as a tuple.
+    // Returns the current team counts as (teamACount, teamBCount)
     function getTeamCounts() external view returns (uint256, uint256) {
         return (teamACount, teamBCount);
     }
 
-    // Update swappingAllowed state (for testing, no owner restriction)
-    function setSwappingAllowed(bool _allowed) external {
-        swappingAllowed = _allowed;
-        emit SwappingStateUpdated(_allowed, block.timestamp);
+    // Returns the team for a given user.
+    function getTeam(address user) external view returns (uint8) {
+        return team[user];
+    }
+
+    // Update the swappingAllowed state (for testing, no owner restriction)
+    function setSwappingAllowed(bool allowed) external {
+        swappingAllowed = allowed;
+        emit SwappingStateUpdated(allowed, block.timestamp);
     }
 }

@@ -12,33 +12,42 @@ const backendUrl = process.env.REACT_APP_BACKEND_URL;
 function App() {
   const [status, setStatus] = useState("Initializing...");
   const [timerData, setTimerData] = useState({ phase: "", active: false, timeLeft: 0 });
-  const [team, setTeam] = useState("0"); // 0 = none, 1 = Team A, 2 = Team B
-  const [score, setScore] = useState(0);
+  const [team, setTeam] = useState("0"); // 0 = None, 1 = Team A, 2 = Team B
+  const [teamCounts, setTeamCounts] = useState({ teamA: "0", teamB: "0" });
   const [contract, setContract] = useState(null);
   const [userAddress, setUserAddress] = useState("");
 
-  // Initialize MetaMask connection, signer, and contract instance.
-  useEffect(() => {
-    async function init() {
-      if (!window.ethereum) {
-        setStatus("MetaMask not detected");
-        return;
-      }
-      try {
-        await window.ethereum.request({ method: "eth_requestAccounts" });
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-        const address = await signer.getAddress();
-        setUserAddress(address);
-        const _contract = new ethers.Contract(contractAddress, contractABI, signer);
-        setContract(_contract);
-        setStatus("Connected to MetaMask. Polling timer...");
-      } catch (err) {
-        console.error(err);
-        setStatus("Error connecting to MetaMask");
-      }
+  // Function to connect wallet
+  async function connectWallet() {
+    if (!window.ethereum) {
+      setStatus("MetaMask not detected");
+      return;
     }
-    init();
+    try {
+      await window.ethereum.request({ method: "eth_requestAccounts" });
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const address = await signer.getAddress();
+      setUserAddress(address);
+      const _contract = new ethers.Contract(contractAddress, contractABI, signer);
+      setContract(_contract);
+      setStatus("Wallet connected. Polling timer...");
+    } catch (err) {
+      console.error(err);
+      setStatus("Error connecting wallet");
+    }
+  }
+
+  // Function to disconnect wallet (reset state)
+  function disconnectWallet() {
+    setUserAddress("");
+    setContract(null);
+    setStatus("Wallet disconnected.");
+  }
+
+  // On mount, try to connect wallet automatically (optional)
+  useEffect(() => {
+    // You might opt not to auto-connect
   }, []);
 
   // Poll the backend for timer state every second.
@@ -50,8 +59,8 @@ function App() {
         setTimerData(data);
         setStatus(
           data.active
-            ? `Free to switch teams (${data.phase} phase): ${data.timeLeft} sec left`
-            : `Locked (${data.phase} phase): ${data.timeLeft} sec left`
+            ? `Free phase (${data.phase}): ${data.timeLeft} sec left`
+            : `Locked phase (${data.phase}): ${data.timeLeft} sec left`
         );
       } catch (err) {
         console.error(err);
@@ -63,7 +72,7 @@ function App() {
     return () => clearInterval(intervalId);
   }, []);
 
-  // Poll the backend for user's team and score every 5 seconds.
+  // Poll backend for user's team and team counts every 5 seconds.
   useEffect(() => {
     async function fetchData() {
       if (!userAddress) return;
@@ -75,11 +84,11 @@ function App() {
         console.error("Error fetching team:", err);
       }
       try {
-        const resScore = await fetch(`${backendUrl}/get-score?address=${userAddress}`);
-        const scoreData = await resScore.json();
-        setScore(scoreData.score);
+        const resCounts = await fetch(`${backendUrl}/team-counts`);
+        const countsData = await resCounts.json();
+        setTeamCounts(countsData);
       } catch (err) {
-        console.error("Error fetching score:", err);
+        console.error("Error fetching team counts:", err);
       }
     }
     fetchData();
@@ -87,24 +96,7 @@ function App() {
     return () => clearInterval(intervalId);
   }, [userAddress]);
 
-  // Additionally, poll for team counts every 5 seconds.
-  const [teamCounts, setTeamCounts] = useState({ teamA: "0", teamB: "0" });
-  useEffect(() => {
-    async function fetchTeamCounts() {
-      try {
-        const res = await fetch(`${backendUrl}/team-counts`);
-        const data = await res.json();
-        setTeamCounts(data);
-      } catch (err) {
-        console.error("Error fetching team counts:", err);
-      }
-    }
-    fetchTeamCounts();
-    const intervalId = setInterval(fetchTeamCounts, 5000);
-    return () => clearInterval(intervalId);
-  }, []);
-
-  // Handle team switch button press.
+  // Handle team switch
   async function handleJoinTeam(teamId) {
     if (!contract) return;
     try {
@@ -123,10 +115,18 @@ function App() {
     <div className="App">
       <h1>Game of Death</h1>
       <p>{status}</p>
+      {userAddress ? (
+        <div>
+          <p>Connected Wallet: {userAddress}</p>
+          <button onClick={disconnectWallet}>Disconnect Wallet</button>
+        </div>
+      ) : (
+        <button onClick={connectWallet}>Connect Wallet</button>
+      )}
       <p>Phase: {timerData.phase}</p>
       <p>Time left in current phase: {timerData.timeLeft} seconds</p>
       <p>Your current team: {team === "0" ? "None" : team === "1" ? "Team A" : "Team B"}</p>
-      <p>Team Counts - Team A: {teamCounts.teamA} | Team B: {teamCounts.teamB}</p>
+      <p>Team Counts: Team A: {teamCounts.teamA} | Team B: {teamCounts.teamB}</p>
       {timerData.active ? (
         <div>
           <button onClick={() => handleJoinTeam(1)}>Join Team A</button>
