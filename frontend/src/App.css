@@ -1,35 +1,91 @@
-/* Overall dark background */
-.app-container {
-  min-height: 100vh;
+/* Reset & Global */
+html, body, #root {
   margin: 0;
-  padding: 20px;
-  background: radial-gradient(circle, #000 30%, #111 100%);
-  color: #ccc;
-  font-family: "Arial", sans-serif;
-  position: relative; /* so we can absolutely position .wallet-corner */
+  padding: 0;
+  background: #000;
+  font-family: Arial, sans-serif;
 }
 
-/* Title area at top (centered) */
-.title-bar {
+/* App Container */
+.app-container {
+  position: relative;
   text-align: center;
-  margin-bottom: 15px;
+  color: #ccc;
+  background: radial-gradient(circle, #000 30%, #111 100%);
+  min-height: 100vh;
+  padding: 20px;
+}
+
+/* Winner Overlay */
+.winner-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+.winner-text {
+  font-size: 5rem;
+  letter-spacing: 0.5rem;
+  text-transform: uppercase;
+  text-align: center;
+  animation: neonPulse 1.5s infinite alternate;
+}
+.winner-text.red {
+  color: #ff0050;
+  text-shadow: 0 0 20px #ff0050, 0 0 30px #ff0050, 0 0 40px #ff0050;
+}
+.winner-text.blue {
+  color: #00bbff;
+  text-shadow: 0 0 20px #00bbff, 0 0 30px #00bbff, 0 0 40px #00bbff;
+}
+@keyframes neonPulse {
+  from { filter: brightness(1); }
+  to { filter: brightness(1.5); }
+}
+
+/* Title Bar */
+.title-bar {
+  margin-bottom: 10px;
 }
 .game-title {
-  font-size: 4rem;
-  color: #ff0080;
-  text-shadow:
-    0 0 8px #ff0080,
-    0 0 15px #ff0080,
-    0 0 30px #ff0080;
+  font-size: 3rem;
+  color: #ff0080; /* main title color */
+  text-shadow: 0 0 8px #ff0080, 0 0 15px #ff0080;
   margin: 0;
 }
 .phase-time-text {
-  font-size: 1.4rem;
-  margin: 5px 0 0 0;
-  color: #eee;
+  font-size: 1rem;
+  margin-top: 5px;
 }
 
-/* The wallet corner: top-right with a small box. */
+/* Scoreboard */
+.scoreboard-bar-container {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+.score-bar {
+  width: 300px;
+  height: 16px;
+  background: #333;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+}
+.score-bar-red {
+  background: #ff0044;
+}
+.score-bar-blue {
+  background: #00bbff;
+}
+
+/* Wallet Corner */
 .wallet-corner {
   position: absolute;
   top: 20px;
@@ -37,188 +93,307 @@
   background: rgba(255,255,255,0.05);
   padding: 8px;
   border-radius: 6px;
-  box-shadow:
-    0 0 5px #333;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
-
-/* The small wallet text. Abbreviated address. */
 .tiny-wallet {
   font-size: 0.7rem;
-  max-width: 90px;
-  word-wrap: break-word; /* if needed */
-  margin: 0;
 }
-
 .corner-btn {
   background: #222;
   color: #fff;
   border: 2px solid #666;
   padding: 4px 6px;
   cursor: pointer;
-  font-size: 0.8rem;
-  transition: 0.2s;
-}
-.corner-btn:hover {
-  background: #555;
 }
 
-/* Error bar if there's an error message */
-.error-bar {
-  background: #ff2f2f;
-  color: #000;
-  text-align: center;
-  padding: 8px;
-  margin: 0 auto 10px auto;
-  width: 70%;
-  border-radius: 4px;
-  font-weight: bold;
-}
-
-/* Main content: 3 columns (left, center, right) */
+/* Main Layout */
 .main-content {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: flex-start;
   gap: 40px;
+  max-width: 1600px;
   margin: 0 auto;
-  max-width: 1400px;
 }
 
-/* Left + Right panels, each 250px wide */
-.left-panel,
-.right-panel {
+/* Permanent Left Panel */
+.left-panel.permanent-records-panel {
   background: rgba(255,255,255,0.05);
+  width: 250px;
   padding: 20px;
   border-radius: 8px;
-  box-shadow:
-    0 0 5px #333,
-    0 0 10px #333;
-  width: 250px;
-  min-height: 400px;
+  /* Truncated from 600px to 550px */
+  min-height: 550px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-/* Bet panel inside left column */
-.left-panel h2 {
-  margin-top: 0;
-  color: #ff0080;
-  text-shadow: 0 0 4px #ff0080;
+/* Red Neon Heading */
+.neon-heading {
+  color: #ff0050;
+  text-shadow: 0 0 8px #ff0050, 0 0 15px #ff0050;
+  margin: 0;
 }
-.bet-instructions {
-  margin: 5px 0 10px 0;
-}
-.bet-slider-container {
-  margin: 10px 0;
-}
-.bet-slider-container label {
-  display: block;
-  margin-bottom: 5px;
-  font-weight: bold;
-}
-.bet-slider-container input[type="range"] {
-  width: 100%;
-}
-.bet-buttons {
+
+/* Record Buttons */
+.record-buttons {
   display: flex;
-  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+/* Neon Button Styles */
+.neon-btn {
+  font-size: 0.9rem;
+  padding: 6px 12px;
+  cursor: pointer;
+  border: 2px solid #666;
+  text-transform: uppercase;
+  transition: 0.2s;
+  background: #111;
+  color: #ccc;
+  box-shadow: 0 0 5px #111;
+}
+.neon-btn:hover {
+  box-shadow: 0 0 10px #fff;
+}
+.neon-btn.active {
+  box-shadow: 0 0 10px #fff;
+  color: #fff;
+}
+/* Keep red button red when active */
+.neon-btn.active.red-btn {
+  color: #ff0050;
+  box-shadow: 0 0 10px #ff0050;
+}
+/* Now also keep blue button glowing when active */
+.neon-btn.active.blue-btn {
+  color: #00bbff;
+  box-shadow: 0 0 10px #00bbff;
+}
+
+/* Red Neon Button Variant */
+.red-btn {
+  border-color: #ff0050;
+  color: #ff0050;
+}
+.red-btn:hover {
+  background: #ff0050;
+  color: #ff0050;
+}
+
+/* Blue Neon Button Variant */
+.blue-btn {
+  border-color: #00bbff;
+  color: #00bbff;
+}
+.blue-btn:hover {
+  background: #00bbff;
+  color: #00bbff;
+}
+
+/* Records List Container with Custom Scrollbar */
+.records-list-container {
+  flex: 1;
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 10px;
+}
+.records-list-container::-webkit-scrollbar {
+  width: 8px;
+}
+.records-list-container::-webkit-scrollbar-track {
+  background: #111;
+  border-radius: 4px;
+}
+.records-list-container::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+.records-list-container::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
+.game-records-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.game-record-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: rgba(255,255,255,0.05);
+  padding: 8px;
+  margin-bottom: 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.game-record-item:hover {
+  background: rgba(255,255,255,0.1);
+}
+/* Thumbnails (100x100) */
+.record-thumbnail {
+  width: 100px;
+  height: 100px;
+  object-fit: cover;
+  border: 1px solid #444;
+}
+.record-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Selected Record Details */
+.selected-record-details {
+  background: rgba(255,255,255,0.05);
+  border-radius: 4px;
+  padding: 10px;
   margin-top: 10px;
 }
-.bet-red {
-  background: transparent;
-  border: 2px solid #ff0044;
-  color: #ff0044;
-  padding: 8px 12px;
-  cursor: pointer;
-  text-transform: uppercase;
-  transition: 0.2s;
-}
-.bet-red:hover {
-  background: #ff0044;
-  color: #000;
-}
-.bet-blue {
-  background: transparent;
-  border: 2px solid #00bbff;
-  color: #00bbff;
-  padding: 8px 12px;
-  cursor: pointer;
-  text-transform: uppercase;
-  transition: 0.2s;
-}
-.bet-blue:hover {
-  background: #00bbff;
-  color: #000;
+/* Detail Image (200x200) */
+.searched-record-thumbnail {
+  width: 200px;
+  height: 200px;
+  object-fit: cover;
+  border: 1px solid #444;
+  margin-top: 10px;
 }
 
-/* Center board */
+/* Center Board */
 .center-board {
   display: flex;
   justify-content: center;
   align-items: center;
 }
-
-/* Board + border */
 .board-border {
   padding: 10px;
   border: 2px solid #444;
-  box-shadow:
-    0 0 5px #555,
-    0 0 10px #555;
+  box-shadow: 0 0 5px #555, 0 0 10px #555;
 }
 .board-grid {
   display: grid;
-  grid-template-columns: repeat(64, 12px);
+  grid-template-columns: repeat(64, 15px);
   gap: 1px;
+  background: #111;
 }
 .cell {
-  width: 12px;
-  height: 12px;
+  width: 15px;
+  height: 15px;
   background-color: #222;
   cursor: pointer;
   transition: 0.1s;
 }
 .cell.red {
   background-color: #ff0050;
-  box-shadow:
-    0 0 4px #ff0050,
-    0 0 8px #ff0050;
+  box-shadow: 0 0 4px #ff0050, 0 0 8px #ff0050;
 }
 .cell.blue {
   background-color: #00bbff;
-  box-shadow:
-    0 0 4px #00bbff,
-    0 0 8px #00bbff;
+  box-shadow: 0 0 4px #00bbff, 0 0 8px #00bbff;
+}
+.dim-cell {
+  filter: brightness(50%);
+  cursor: not-allowed;
 }
 
-/* Right panel with phase/team info */
-.right-panel .join-team-buttons {
+/* Replay Controls */
+.replay-container {
   display: flex;
   gap: 10px;
-  margin: 10px 0;
+  margin-top: 10px;
 }
-.join-red {
+.replay-btn {
   background: transparent;
-  border: 2px solid #ff0044;
-  color: #ff0044;
+  border: 2px solid #999;
+  color: #999;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: 0.2s;
+  text-transform: uppercase;
+}
+.replay-btn:hover {
+  border-color: #fff;
+  color: #fff;
+}
+.replay-info {
+  margin-top: 5px;
+  font-size: 0.9rem;
+  color: #ccc;
+}
+
+/* Right Panel */
+.right-panel {
+  background: rgba(255,255,255,0.05);
+  padding: 20px;
+  border-radius: 8px;
+  width: 250px;
+  min-height: 600px;
+}
+.phase-info-card {
+  background: rgba(255,255,255,0.07);
+  padding: 10px 15px;
+  border-radius: 6px;
+  text-align: center;
+  box-shadow: 0 0 5px #222;
+  margin-bottom: 10px;
+}
+.phase-info-card p {
+  margin: 5px 0;
+}
+
+/* Bet Buttons (Neon) */
+.bet-buttons {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+.bet-red {
+  border: 2px solid #ff0050;
+  color: #ff0050;
+  background: #111;
   padding: 8px;
   cursor: pointer;
   transition: 0.2s;
+  text-transform: uppercase;
+  box-shadow: 0 0 5px #111;
 }
-.join-red:hover {
-  background: #ff0044;
-  color: #000;
+.bet-red:hover {
+  background: #ff0050;
+  color: #ff0050;
 }
-.join-blue {
-  background: transparent;
+.bet-blue {
   border: 2px solid #00bbff;
   color: #00bbff;
+  background: #111;
   padding: 8px;
   cursor: pointer;
   transition: 0.2s;
+  text-transform: uppercase;
+  box-shadow: 0 0 5px #111;
 }
-.join-blue:hover {
+.bet-blue:hover {
   background: #00bbff;
-  color: #000;
+  color: #00bbff;
+}
+
+/* Error Bar */
+.error-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: #ff0000;
+  color: #fff;
+  text-align: center;
+  padding: 8px;
+  z-index: 100;
 }
