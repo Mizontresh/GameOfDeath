@@ -6,33 +6,33 @@ const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
 const { ethers } = require("ethers");
-const { createCanvas } = require("canvas"); // node-canvas
-const conway = require("./conway");
+const { createCanvas } = require("canvas"); // node-canvas for thumbnails
+const conway = require("./conway"); // your Conway logic
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Serve static files from the backend's public folder
+// Serve static files from the "public" folder (for images, etc.)
 app.use(express.static(path.join(__dirname, "public")));
 
 const serverHttp = http.createServer(app);
 const io = new Server(serverHttp, { cors: { origin: "*" } });
 
-// WebSocket provider & wallet setup
+// WebSocket provider & wallet
 const wsProvider = new ethers.WebSocketProvider("ws://127.0.0.1:8545");
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, wsProvider);
 
-// Load contract artifact
+// Load contract
 const artifact = require("./artifacts/contracts/GameOfDeath.sol/GameOfDeath.json");
 const gameAddress = process.env.GAMEOFDEATH_ADDRESS;
 const gameContract = new ethers.Contract(gameAddress, artifact.abi, wallet);
 
-// Game cycle settings
+// Settings
 const PICKING_TIME = 30;
 const PLACING_TIME = 30;
-const CONWAY_STEPS = 10;
-const FINAL_CONWAY_STEPS = 10;
+const UPDATE_INTERVAL = 10;       // number of Conway steps off-chain
+const FINAL_CONWAY_STEPS = 10;    // final steps
 const MAX_CYCLES = 1;
 const WINNER_OVERLAY_TIME = 30;
 
@@ -49,7 +49,7 @@ let defaultState = {
 let phase, phaseTimeLeft, cycleCount, boardHistory;
 try {
   const data = fs.readFileSync(STATE_FILE, "utf8");
-  if (!data || data.trim() === "") throw new Error("Empty state file");
+  if (!data.trim()) throw new Error("Empty state file");
   const parsed = JSON.parse(data);
   phase = parsed.phase;
   phaseTimeLeft = parsed.phaseTimeLeft;
@@ -69,16 +69,23 @@ let currentGameId = 1;
 let teamCounts = { red: 0, blue: 0 };
 let activePlayers = new Set();
 
-// Transaction queue for nonce management
+// Sleep helper
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Transaction queue for nonce
 let transactionQueue = Promise.resolve();
 function queueTransaction(callback) {
   transactionQueue = transactionQueue.then(async () => {
+    await sleep(200);
     let nonce = await wsProvider.getTransactionCount(wallet.address, "pending");
     try {
       return await callback(nonce);
     } catch (err) {
       if (err.message && err.message.includes("Nonce too low")) {
         console.log("Nonce error encountered. Retrying transaction.");
+        await sleep(200);
         nonce = await wsProvider.getTransactionCount(wallet.address, "pending");
         return await callback(nonce);
       }
@@ -93,9 +100,25 @@ async function checkTxConfirmation(tx) {
   return receipt !== null ? receipt : tx.wait();
 }
 
+/** 
+ * getOnChainBoard
+ * Reads the packed board from the contract, decodes to an array of 4096 numbers (0,1,2).
+ */
 async function getOnChainBoard() {
-  const b = await gameContract.getBoard();
-  return b.map(n => Number(n));
+  const packed = await gameContract.getBoard(); // array of BigNumber
+  const CELLS_PER_CHUNK = 161;
+  const totalCells = 4096;
+  let cells = [];
+  for (let i = 0; i < packed.length; i++) {
+    let chunk = BigInt(packed[i].toString());
+    for (let j = 0; j < CELLS_PER_CHUNK; j++) {
+      if (cells.length >= totalCells) break;
+      let cell = Number(chunk % 3n);
+      cells.push(cell);
+      chunk /= 3n;
+    }
+  }
+  return cells;
 }
 
 // Listen for contract events
@@ -104,7 +127,7 @@ gameContract.on("SquarePlaced", async (user, x, y, color) => {
   activePlayers.add(user.toLowerCase());
   try {
     const board = await getOnChainBoard();
-    io.emit("boardUpdated", board);
+    io.emit("boardUpdated", convertToAugmentedBoard(board));
   } catch (err) {
     console.error("Error in SquarePlaced handler:", err);
   }
@@ -115,17 +138,27 @@ gameContract.on("TeamChanged", (user, newTeam, theGameId) => {
   activePlayers.add(user.toLowerCase());
 });
 
-// BASE_URL from environment (e.g., http://localhost:3000)
+// BASE_URL for images
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 
-// Generate a thumbnail image (512×512) using node-canvas
+// Convert numeric board to augmented objects: { value, skin }
+function convertToAugmentedBoard(numericalBoard) {
+  return numericalBoard.map((val) => ({
+    value: val,
+    skin: null  // could assign a skin ID if you have that logic
+  }));
+}
+
+/** 
+ * generateThumbnail
+ * Renders a 64x64 board to 512x512 PNG for the final game record.
+ */
 async function generateThumbnail(board, gameId) {
   const width = 64;
   const height = 64;
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
-  // Draw each cell as 1×1 pixel
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = y * width + x;
@@ -135,7 +168,7 @@ async function generateThumbnail(board, gameId) {
     }
   }
 
-  const scale = 8; // 64 * 8 = 512
+  const scale = 8;
   const scaledCanvas = createCanvas(width * scale, height * scale);
   const scaledCtx = scaledCanvas.getContext("2d");
   scaledCtx.imageSmoothingEnabled = false;
@@ -150,50 +183,54 @@ async function generateThumbnail(board, gameId) {
   fs.writeFileSync(imagePath, buffer);
   console.log(`Thumbnail saved as ${imagePath}`);
 
-  // Return an absolute URL so the React app loads it from the backend
   return `${BASE_URL}/images/game_${gameId}.png`;
 }
 
-// Socket.io connection
-io.on("connection", async (socket) => {
-  console.log("Client connected:", socket.id);
-  try {
-    const board = await getOnChainBoard();
-    socket.emit("boardUpdated", board);
-  } catch (err) {
-    console.error("Error sending board:", err);
+/**
+ * packBoard
+ * Takes an array of 4096 numbers (0..2) => array of 26 base-3 bigints => strings
+ */
+function packBoard(cells) {
+  const CELLS_PER_CHUNK = 161;
+  const NUM_CHUNKS = 26;
+  let packed = new Array(NUM_CHUNKS).fill(0n);
+  for (let i = 0; i < cells.length; i++) {
+    const chunkIndex = Math.floor(i / CELLS_PER_CHUNK);
+    const pos = i % CELLS_PER_CHUNK;
+    packed[chunkIndex] += BigInt(cells[i]) * (3n ** BigInt(pos));
   }
-  socket.on("disconnect", () => console.log("Client disconnected:", socket.id));
-});
+  return packed.map(n => n.toString());
+}
 
-// Other game logic functions (runConwaySteps, setContractPhase, computeWinner, recordGame, resetGame)
-// [For brevity, these remain largely the same as in previous examples]
-
-async function runConwaySteps(numSteps) {
-  for (let i = 0; i < numSteps; i++) {
-    try {
-      const oldBoard = await getOnChainBoard();
-      const newBoard = conway.runOneStep(oldBoard);
-      console.log(`Running Conway step #${i + 1} of ${numSteps}`);
-      await queueTransaction(async (nonce) => {
-        if (typeof gameContract.serverOverwriteBoard !== "function") {
-          throw new Error("serverOverwriteBoard not available.");
-        }
-        const tx = await gameContract.serverOverwriteBoard(newBoard, { nonce });
-        console.log(`Tx for Conway step #${i + 1}: ${tx.hash}`);
-        const receipt = await checkTxConfirmation(tx);
-        console.log(`Conway step #${i + 1} confirmed:`, receipt);
-        io.emit("boardUpdated", newBoard);
-      });
-      boardHistory.push(newBoard);
-    } catch (err) {
-      console.error("Error in Conway step:", err);
-    }
+/**
+ * runConwaySteps
+ * Off-chain sim for N steps, 0.5s each, then final on-chain push.
+ */
+async function runConwaySteps(totalTurns) {
+  let currentBoard = await getOnChainBoard();
+  for (let turn = 1; turn <= totalTurns; turn++) {
+    // One step
+    currentBoard = conway.runOneStep(currentBoard);
+    // Save to boardHistory
+    boardHistory.push([...currentBoard]);
+    // Emit
+    io.emit("boardUpdated", convertToAugmentedBoard(currentBoard));
+    // Wait 0.5s
+    await sleep(500);
   }
+  // Push final
+  await queueTransaction(async (nonce) => {
+    const packed = packBoard(currentBoard);
+    const tx = await gameContract.serverOverwriteBoard(packed, { nonce });
+    console.log(`On-chain update pushed after ${totalTurns} turns, tx hash: ${tx.hash}`);
+    const receipt = await checkTxConfirmation(tx);
+    console.log("Final on-chain update confirmed:", receipt);
+    io.emit("boardUpdated", convertToAugmentedBoard(currentBoard));
+  });
 }
 
 async function setContractPhase(newPhase) {
-  let enumVal = newPhase === "picking" ? 0 : newPhase === "placing" ? 1 : 2;
+  let enumVal = (newPhase === "picking") ? 0 : (newPhase === "placing") ? 1 : 2;
   console.log(`Setting phase to ${newPhase} (enum: ${enumVal})`);
   try {
     await queueTransaction(async (nonce) => {
@@ -228,7 +265,7 @@ async function computeWinner() {
   }
   console.log("Red on Blue:", redOnBlue, "Blue on Red:", blueOnRed);
   if (redOnBlue === blueOnRed) return "Tie";
-  return redOnBlue > blueOnRed ? "Red" : "Blue";
+  return (redOnBlue > blueOnRed) ? "Red" : "Blue";
 }
 
 async function recordGame(winner) {
@@ -246,7 +283,7 @@ async function recordGame(winner) {
   let records = [];
   try {
     const data = fs.readFileSync(RECORDS_FILE, "utf8");
-    if (data && data.trim() !== "") {
+    if (data.trim()) {
       records = JSON.parse(data);
     }
   } catch (err) {
@@ -255,6 +292,7 @@ async function recordGame(winner) {
 
   let thumbnail = "";
   if (boardHistory.length > 0) {
+    // The last board in boardHistory is the final
     thumbnail = await generateThumbnail(boardHistory[boardHistory.length - 1], currentGameId);
   }
 
@@ -305,7 +343,7 @@ async function resetGame() {
   console.log("Game reset complete, new gameId:", currentGameId);
 }
 
-// Startup check: if game is over, reset
+// Startup check
 (async () => {
   try {
     const currentPhaseEnum = await gameContract.currentPhase();
@@ -328,7 +366,7 @@ async function resetGame() {
   }
 })();
 
-// Main loop (every second)
+// Main loop (1 second)
 setInterval(async () => {
   try {
     if (phase === "picking" || phase === "placing") {
@@ -347,10 +385,9 @@ setInterval(async () => {
             if (cycleCount < MAX_CYCLES - 1) {
               await setContractPhase("conway");
               phaseTimeLeft = 0;
-              const finalBoard = await getOnChainBoard();
-              boardHistory.push(finalBoard);
-              io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft });
-              await runConwaySteps(CONWAY_STEPS);
+              let initialBoard = await getOnChainBoard();
+              boardHistory.push([...initialBoard]);
+              await runConwaySteps(UPDATE_INTERVAL);
               cycleCount++;
               console.log("Cycle", cycleCount, "complete. Returning to picking.");
               try {
@@ -402,6 +439,7 @@ setInterval(async () => {
   } catch (err) {
     console.error("Error in main loop:", err);
   }
+  // Persist state
   try {
     fs.writeFileSync(
       STATE_FILE,
@@ -413,27 +451,32 @@ setInterval(async () => {
   }
 }, 1000);
 
-// API Endpoints
+// API endpoints
 app.get("/api/board", async (req, res) => {
   try {
     const board = await getOnChainBoard();
-    res.json({ board });
+    res.json({ board: convertToAugmentedBoard(board) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
 app.get("/api/state", (req, res) => {
   res.json({ phase, timeLeft: phaseTimeLeft, cycleCount });
 });
+
 app.get("/api/history", (req, res) => {
+  // boardHistory is an array of raw numeric boards, not augmented
+  // The frontend can use these for replay if needed
   res.json({ boardHistory });
 });
+
 app.get("/api/allRecords", (req, res) => {
   try {
     let records = [];
     try {
       const data = fs.readFileSync(RECORDS_FILE, "utf8");
-      if (data && data.trim() !== "") {
+      if (data.trim()) {
         records = JSON.parse(data);
       }
     } catch (err) {
@@ -445,42 +488,45 @@ app.get("/api/allRecords", (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 app.get("/api/records/:userAddress", (req, res) => {
   try {
     const userAddr = req.params.userAddress.toLowerCase();
     let records = [];
     try {
       const data = fs.readFileSync(RECORDS_FILE, "utf8");
-      if (data && data.trim() !== "") {
+      if (data.trim()) {
         records = JSON.parse(data);
       }
     } catch (err) {
       console.error("No records file found.");
     }
-    const userRecords = records.filter(record => {
-      return record.players && record.players.map(p => p.toLowerCase()).includes(userAddr);
-    });
+    const userRecords = records.filter(record =>
+      record.players && record.players.map(p => p.toLowerCase()).includes(userAddr)
+    );
     userRecords.sort((a, b) => b.gameId - a.gameId);
     res.json({ records: userRecords });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
 app.get("/api/recordById/:gameId", (req, res) => {
   try {
     const requestedId = Number(req.params.gameId);
     let records = [];
     try {
       const data = fs.readFileSync(RECORDS_FILE, "utf8");
-      if (data && data.trim() !== "") {
+      if (data.trim()) {
         records = JSON.parse(data);
       }
     } catch (err) {
       console.error("No records file found.");
     }
     const record = records.find(r => r.gameId === requestedId);
-    if (!record)
+    if (!record) {
       return res.status(404).json({ error: `Record not found for gameId ${requestedId}` });
+    }
     res.json({ record });
   } catch (err) {
     res.status(500).json({ error: err.message });

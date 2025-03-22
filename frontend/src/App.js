@@ -3,6 +3,7 @@ import "./App.css";
 import { io } from "socket.io-client";
 import { ethers } from "ethers";
 
+// The minimal ABI for your contract calls
 const gameABI = [
   "function joinTeam(uint8) external",
   "function placeSquare(uint256, uint256) external",
@@ -10,17 +11,18 @@ const gameABI = [
   "function teamACount() external view returns (uint256)",
   "function teamBCount() external view returns (uint256)"
 ];
+
 const contractAddress = process.env.REACT_APP_GAMEOFDEATH_ADDRESS;
 const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:3000";
 
 function App() {
-  // Live game states
-  const [liveBoard, setLiveBoard] = useState(Array(4096).fill(0));
+  // Live board & replay
+  const [liveBoard, setLiveBoard] = useState(Array(4096).fill({ value: 0, skin: null }));
   const [boardHistory, setBoardHistory] = useState([]);
   const [liveReplayIndex, setLiveReplayIndex] = useState(-1);
   const [liveAutoReplay, setLiveAutoReplay] = useState(false);
 
-  // Basic info and UI states
+  // Basic states
   const [userAddress, setUserAddress] = useState("");
   const [gameContract, setGameContract] = useState(null);
   const [teamCounts, setTeamCounts] = useState({ red: 0, blue: 0 });
@@ -31,28 +33,28 @@ function App() {
   const [betAmount, setBetAmount] = useState(1);
   const [winnerOverlay, setWinnerOverlay] = useState(null);
 
-  // Past game records states
+  // Past games
   const [allRecords, setAllRecords] = useState([]);
   const [myRecords, setMyRecords] = useState([]);
   const [showMyGames, setShowMyGames] = useState(false);
 
-  // Selected record (for replaying past games)
+  // Selected record for replay
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [selectedHistory, setSelectedHistory] = useState(null);
   const [selectedReplayIndex, setSelectedReplayIndex] = useState(-1);
   const [selectedAutoReplay, setSelectedAutoReplay] = useState(false);
 
-  // Socket and Live board updates
+  // Socket.io for live events
   useEffect(() => {
     const socket = io(backendUrl, { transports: ["websocket"] });
     socket.on("connect", () => console.log("Socket connected:", socket.id));
-    socket.on("boardUpdated", (newBoard) => {
-      // Update live board only if not replaying or viewing a record
-      if (liveReplayIndex < 0 && !selectedHistory) setLiveBoard(newBoard);
+    socket.on("boardUpdated", (augmentedBoard) => {
+      if (liveReplayIndex < 0 && !selectedHistory) {
+        setLiveBoard(augmentedBoard);
+      }
     });
     socket.on("phaseUpdated", (data) => setPhaseData(data));
     socket.on("winner", ({ winner }) => {
-      // Only show winner overlay for live view
       if (!selectedHistory && liveReplayIndex < 0) {
         setWinnerOverlay(winner);
         setTimeout(() => setWinnerOverlay(null), 3000);
@@ -62,22 +64,7 @@ function App() {
     return () => socket.disconnect();
   }, [liveReplayIndex, selectedHistory]);
 
-  // Poll live board if not in replay or viewing a record
-  useEffect(() => {
-    if (liveReplayIndex >= 0 || selectedHistory) return;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`${backendUrl}/api/board`);
-        const data = await res.json();
-        if (data && data.board) setLiveBoard(data.board);
-      } catch (err) {
-        console.error("Error polling board:", err);
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [liveReplayIndex, selectedHistory]);
-
-  // Poll board history from server
+  // Poll board history from backend
   useEffect(() => {
     async function loadHistory() {
       try {
@@ -93,10 +80,27 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto replay for live game (0.5s interval)
+  // Poll the live board only if in placing phase, not in replay
+  useEffect(() => {
+    if (liveReplayIndex >= 0 || selectedHistory || phaseData.phase !== "placing") return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${backendUrl}/api/board`);
+        const data = await res.json();
+        if (data && data.board) {
+          setLiveBoard(data.board);
+        }
+      } catch (err) {
+        console.error("Error polling board:", err);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [liveReplayIndex, selectedHistory, phaseData.phase]);
+
+  // Live auto replay (0.5s)
   useEffect(() => {
     if (!liveAutoReplay || boardHistory.length === 0) return;
-    let autoInterval = setInterval(() => {
+    const autoInterval = setInterval(() => {
       setLiveReplayIndex((prev) => {
         const newIndex = prev < 0 ? 0 : prev + 1;
         if (newIndex >= boardHistory.length) {
@@ -109,11 +113,10 @@ function App() {
     return () => clearInterval(autoInterval);
   }, [liveAutoReplay, boardHistory]);
 
-  // Auto replay for selected record (0.5s interval)
+  // Selected record auto replay (0.5s)
   useEffect(() => {
-    if (!selectedAutoReplay || !selectedHistory || selectedHistory.length === 0)
-      return;
-    let autoInterval = setInterval(() => {
+    if (!selectedAutoReplay || !selectedHistory || selectedHistory.length === 0) return;
+    const autoInterval = setInterval(() => {
       setSelectedReplayIndex((prev) => {
         const newIndex = prev < 0 ? 0 : prev + 1;
         if (newIndex >= selectedHistory.length) {
@@ -126,7 +129,7 @@ function App() {
     return () => clearInterval(autoInterval);
   }, [selectedAutoReplay, selectedHistory]);
 
-  // Poll team info if not in replay mode or viewing a record
+  // Poll team info (not in replay)
   useEffect(() => {
     if (!gameContract || liveReplayIndex >= 0 || selectedHistory) return;
     async function fetchTeamInfo() {
@@ -149,7 +152,7 @@ function App() {
     return () => clearInterval(interval);
   }, [gameContract, liveReplayIndex, selectedHistory, userAddress]);
 
-  // Setup contract instance
+  // Setup contract
   useEffect(() => {
     if (!window.ethereum || !contractAddress) return;
     async function setupContract() {
@@ -165,7 +168,7 @@ function App() {
     setupContract();
   }, []);
 
-  // Fetch game records
+  // Fetch records
   async function fetchAllGames() {
     try {
       const res = await fetch(`${backendUrl}/api/allRecords`);
@@ -192,7 +195,7 @@ function App() {
     if (userAddress) fetchMyGames(userAddress);
   }, [userAddress]);
 
-  // Connect / Disconnect wallet
+  // Connect / disconnect
   async function connectWallet() {
     if (!window.ethereum) {
       setErrorMsg("No MetaMask found!");
@@ -221,7 +224,7 @@ function App() {
     setSelectedHistory(null);
   }
 
-  // Join Team
+  // Join team
   async function joinTeam(teamId) {
     if (!gameContract) {
       setErrorMsg("No contract connected.");
@@ -242,7 +245,7 @@ function App() {
     }
   }
 
-  // Place Square (only in placing phase and when not viewing a record)
+  // Place square
   async function placeSquare(x, y) {
     if (!gameContract) {
       setErrorMsg("No contract connected.");
@@ -263,7 +266,7 @@ function App() {
     }
   }
 
-  // Live game replay controls
+  // Live replay
   function livePrevBoard() {
     if (boardHistory.length === 0) return;
     setLiveReplayIndex((i) => (i < 0 ? boardHistory.length - 1 : Math.max(0, i - 1)));
@@ -282,7 +285,7 @@ function App() {
     setLiveAutoReplay((prev) => !prev);
   }
 
-  // Selected record replay controls
+  // Selected record replay
   function recordPrevBoard() {
     if (!selectedHistory || selectedHistory.length === 0) return;
     setSelectedReplayIndex((i) => (i < 0 ? selectedHistory.length - 1 : Math.max(0, i - 1)));
@@ -293,7 +296,6 @@ function App() {
   }
   function recordToggleAutoReplay() {
     if (!selectedHistory || selectedHistory.length === 0) return;
-    // When starting auto replay, reset to the beginning
     if (!selectedAutoReplay) setSelectedReplayIndex(0);
     setSelectedAutoReplay((prev) => !prev);
   }
@@ -304,23 +306,24 @@ function App() {
     setSelectedAutoReplay(false);
   }
 
-  // Determine which board to display:
+  // Which board to display?
   let displayedBoard = liveBoard;
   if (selectedHistory && selectedHistory.length > 0) {
-    displayedBoard = selectedReplayIndex >= 0 && selectedReplayIndex < selectedHistory.length
-      ? selectedHistory[selectedReplayIndex]
-      : selectedHistory[selectedHistory.length - 1];
+    displayedBoard =
+      selectedReplayIndex >= 0 && selectedReplayIndex < selectedHistory.length
+        ? selectedHistory[selectedReplayIndex].map(val => ({ value: val, skin: null }))
+        : selectedHistory[selectedHistory.length - 1].map(val => ({ value: val, skin: null }));
   } else if (liveReplayIndex >= 0 && liveReplayIndex < boardHistory.length) {
-    displayedBoard = boardHistory[liveReplayIndex];
+    displayedBoard = boardHistory[liveReplayIndex].map(val => ({ value: val, skin: null }));
   }
 
-  // Compute scoreboard stats
+  // Compute scoreboard
   function computeOpposingStats(board) {
     let redOnBlue = 0, blueOnRed = 0;
     for (let y = 0; y < 64; y++) {
       for (let x = 0; x < 64; x++) {
         const idx = y * 64 + x;
-        const val = board[idx];
+        const val = board[idx].value;
         if (val === 1 && y >= 32) redOnBlue++;
         if (val === 2 && y < 32) blueOnRed++;
       }
@@ -332,14 +335,12 @@ function App() {
   const redPercent = sum > 0 ? (redOnBlue / sum) * 100 : 0;
   const bluePercent = sum > 0 ? (blueOnRed / sum) * 100 : 0;
 
-  // When a record is selected, load its history for replay
-  function selectRecord(record) {
-    setSelectedRecord(record);
-    if (record.boardHistory && record.boardHistory.length > 0) {
-      setSelectedHistory(record.boardHistory);
-      // Start from the beginning of the history
+  // Select a record
+  function selectRecord(rec) {
+    setSelectedRecord(rec);
+    if (rec.boardHistory && rec.boardHistory.length > 0) {
+      setSelectedHistory(rec.boardHistory);
       setSelectedReplayIndex(0);
-      // Stop live auto replay
       setLiveAutoReplay(false);
       setLiveReplayIndex(-1);
     } else {
@@ -347,7 +348,6 @@ function App() {
     }
   }
 
-  // Show winner overlay only if live view
   const shouldShowWinner = winnerOverlay && !selectedHistory && liveReplayIndex < 0;
 
   return (
@@ -456,13 +456,11 @@ function App() {
                   className="searched-record-thumbnail"
                 />
               )}
-              {/* Auto Replay Button Centered Above Arrows */}
               <div className="record-auto-container">
                 <button className="replay-btn" onClick={recordToggleAutoReplay}>
                   {selectedAutoReplay ? "Stop Auto Replay" : "Start Auto Replay"}
                 </button>
               </div>
-              {/* Record Replay Controls */}
               <div className="replay-container">
                 <button className="replay-btn" onClick={recordPrevBoard}>←</button>
                 <button className="replay-btn" onClick={recordGoBackToLive}>Exit</button>
@@ -485,12 +483,13 @@ function App() {
             <div className="board-container">
               <div className="board-border">
                 <div className="board-grid">
-                  {displayedBoard.map((val, i) => {
+                  {displayedBoard.map((cell, i) => {
                     const x = i % 64;
                     const y = Math.floor(i / 64);
                     let cls = "cell";
-                    if (val === 1) cls += " red";
-                    if (val === 2) cls += " blue";
+                    if (cell.value === 1) cls += " red";
+                    if (cell.value === 2) cls += " blue";
+                    // Dim if in placing phase and user is on the "wrong" half
                     if (!selectedHistory && liveReplayIndex < 0 && phaseData.phase === "placing") {
                       if (userTeam === 1 && y >= 32) cls += " dim-cell";
                       if (userTeam === 2 && y < 32) cls += " dim-cell";
@@ -510,6 +509,7 @@ function App() {
                 </div>
               </div>
             </div>
+            {/* Live replay controls if not viewing a record */}
             {!selectedHistory && (
               <div className="replay-container">
                 <button className="replay-btn" onClick={livePrevBoard}>←</button>

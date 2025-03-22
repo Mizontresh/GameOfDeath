@@ -4,15 +4,15 @@ pragma solidity ^0.8.0;
 /**
  * @title GameOfDeath
  * @notice 
- *  - Maintains a 64×64 board (flattened array of 4096 cells) where:
- *      0 = empty, 1 = red, 2 = blue.
+ *  - Maintains a 64×64 board using a packed representation.
+ *    Each cell is 0 (empty), 1 (red), or 2 (blue), and all cells are packed in base 3.
+ *    We use 26 uint256 values to store the 4096 cells (since 3^161 < 2^256, we can pack 161 cells per uint256).
  *  - Uses four phases:
  *      Picking: Players may join teams.
  *      Placing: Players may place squares (red on top half, blue on bottom half).
  *      Conway: The owner (server) may update the board via Conway moves.
  *      Over: The game is over.
- *  - A public gameId is emitted with events so that every action is tied to a game.
- *  - The owner can force‑reset the game (clearing the board and team counts) and start a new game.
+ *  - The owner can force‑reset the game and start a new game.
  */
 contract GameOfDeath {
     enum Phase { Picking, Placing, Conway, Over }
@@ -24,14 +24,18 @@ contract GameOfDeath {
     uint256 public teamACount;
     uint256 public teamBCount;
     
-    // 64×64 board (flattened array of 4096 cells)
-    // 0 = empty, 1 = red, 2 = blue
-    uint8[4096] public board;
+    // Instead of a uint8[4096] array, we use a packed representation.
+    // Each cell can be 0, 1, or 2 (base 3). We pack 161 cells per uint256.
+    uint256 constant CELLS_PER_CHUNK = 161;
+    uint256 constant NUM_CHUNKS = 26;  // 26 * 161 = 4186, which is enough for 4096 cells.
+    uint256[NUM_CHUNKS] public packedBoard;
+    
     address public owner;
     bool public gameOver;
     
     event TeamChanged(address indexed user, uint8 newTeam, uint256 gameId);
     event SquarePlaced(address indexed user, uint256 x, uint256 y, uint8 color, uint256 gameId);
+    event BoardOverwritten(uint256[NUM_CHUNKS] newPackedBoard);
     event PhaseChanged(Phase newPhase, uint256 gameId);
     event GameOver(uint256 gameId);
     event GameReset(uint256 newGameId);
@@ -41,25 +45,31 @@ contract GameOfDeath {
         currentPhase = Phase.Picking;
         gameOver = false;
         gameId = 1;
+        // Initialize packedBoard to zero
+        for (uint i = 0; i < NUM_CHUNKS; i++) {
+            packedBoard[i] = 0;
+        }
     }
     
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner can call");
         _;
     }
+    
     modifier notOver() {
         require(currentPhase != Phase.Over, "Game is over");
         _;
     }
     
+    // Allows a user to join a team during the Picking phase.
     function joinTeam(uint8 teamId) external notOver {
         require(currentPhase == Phase.Picking, "Not in picking phase");
         require(teamId == 1 || teamId == 2, "Invalid team");
-        uint8 current = team[msg.sender];
-        if (current == teamId) return;
-        if (current == 1 && teamACount > 0) {
+        uint8 currentTeam = team[msg.sender];
+        if (currentTeam == teamId) return;
+        if (currentTeam == 1 && teamACount > 0) {
             teamACount--;
-        } else if (current == 2 && teamBCount > 0) {
+        } else if (currentTeam == 2 && teamBCount > 0) {
             teamBCount--;
         }
         team[msg.sender] = teamId;
@@ -68,6 +78,7 @@ contract GameOfDeath {
         emit TeamChanged(msg.sender, teamId, gameId);
     }
     
+    // Place a square during the Placing phase.
     function placeSquare(uint256 x, uint256 y) external notOver {
         require(currentPhase == Phase.Placing, "Not in placing phase");
         require(x < 64 && y < 64, "Coordinates out of range");
@@ -78,40 +89,74 @@ contract GameOfDeath {
         } else {
             require(y >= 32, "Blue: bottom half only");
         }
-        uint256 idx = y * 64 + x;
-        require(board[idx] == 0, "Cell occupied");
-        board[idx] = t;
+        uint256 index = y * 64 + x;
+        setCell(index, t);
         emit SquarePlaced(msg.sender, x, y, t, gameId);
     }
     
-    // This function is called by the server to update the board via Conway moves.
-    function serverOverwriteBoard(uint8[4096] calldata newBoard) external onlyOwner notOver {
-        require(currentPhase == Phase.Conway, "Not in Conway phase");
-        board = newBoard;
-        emit BoardOverwritten(newBoard);
+    // INTERNAL: Computes 3^exponent.
+    function power3(uint256 exponent) internal pure returns (uint256 result) {
+        result = 1;
+        for (uint256 i = 0; i < exponent; i++) {
+            result *= 3;
+        }
     }
-    event BoardOverwritten(uint8[4096] newBoard);
     
+    // PUBLIC: Returns the value of a cell (0, 1, or 2) at a given index.
+    function getCell(uint256 index) public view returns (uint8) {
+        require(index < 4096, "Index out of range");
+        uint256 chunkIndex = index / CELLS_PER_CHUNK;
+        uint256 pos = index % CELLS_PER_CHUNK;
+        uint256 chunk = packedBoard[chunkIndex];
+        // Extract the digit at position pos by dividing 'pos' times.
+        for (uint256 i = 0; i < pos; i++) {
+            chunk /= 3;
+        }
+        return uint8(chunk % 3);
+    }
+    
+    // INTERNAL: Sets the cell at index to value (only if currently 0).
+    function setCell(uint256 index, uint8 value) internal {
+        require(index < 4096, "Index out of range");
+        uint256 chunkIndex = index / CELLS_PER_CHUNK;
+        uint256 pos = index % CELLS_PER_CHUNK;
+        uint256 factor = power3(pos);
+        uint256 chunk = packedBoard[chunkIndex];
+        uint8 currentDigit = uint8((chunk / factor) % 3);
+        require(currentDigit == 0, "Cell occupied");
+        packedBoard[chunkIndex] = chunk + uint256(value) * factor;
+    }
+    
+    // This function is called by the server to update the board via Conway moves.
+    // It accepts a new packed board.
+    function serverOverwriteBoard(uint256[NUM_CHUNKS] calldata newPackedBoard) external onlyOwner notOver {
+        require(currentPhase == Phase.Conway, "Not in Conway phase");
+        for (uint i = 0; i < NUM_CHUNKS; i++) {
+            packedBoard[i] = newPackedBoard[i];
+        }
+        emit BoardOverwritten(newPackedBoard);
+    }
+    
+    // Change the game phase.
     function setPhase(Phase newPhase) external onlyOwner notOver {
         currentPhase = newPhase;
         emit PhaseChanged(newPhase, gameId);
     }
     
+    // End the game.
     function endGame() external onlyOwner notOver {
         gameOver = true;
         currentPhase = Phase.Over;
         emit GameOver(gameId);
     }
     
-    // Resets the game and sets a new gameId.
+    // Reset the game, clearing the packed board and team counts.
     function newGame(uint256 _newGameId) external onlyOwner {
-        // Clear the board.
-        for (uint i = 0; i < board.length; i++) {
-            board[i] = 0;
+        for (uint i = 0; i < NUM_CHUNKS; i++) {
+            packedBoard[i] = 0;
         }
         teamACount = 0;
         teamBCount = 0;
-        // Reset game state.
         gameOver = false;
         currentPhase = Phase.Picking;
         gameId = _newGameId;
@@ -123,7 +168,8 @@ contract GameOfDeath {
         return team[user];
     }
     
-    function getBoard() external view returns (uint8[4096] memory) {
-        return board;
+    // Return the packed board.
+    function getBoard() external view returns (uint256[NUM_CHUNKS] memory) {
+        return packedBoard;
     }
 }
