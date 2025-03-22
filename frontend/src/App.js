@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import "./App.css";
 import { io } from "socket.io-client";
 import { ethers } from "ethers";
@@ -38,32 +38,153 @@ function App() {
   const [myRecords, setMyRecords] = useState([]);
   const [showMyGames, setShowMyGames] = useState(false);
 
+  const [bettingContract, setBettingContract] = useState(null);
+  const [currentGameId, setCurrentGameId] = useState(null);
+
   // Selected record for replay
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [selectedHistory, setSelectedHistory] = useState(null);
   const [selectedReplayIndex, setSelectedReplayIndex] = useState(-1);
   const [selectedAutoReplay, setSelectedAutoReplay] = useState(false);
 
-  // Socket.io for live events
+  const socketRef = useRef(null);
+  const bettingAddress = process.env.REACT_APP_BETTING_ADDRESS;
+
+  async function placeBet(teamId) {
+    if (phaseData.phase !== "picking") {
+      setErrorMsg("Betting is only allowed during picking phase.");
+      return;
+    }
+    if (!bettingContract || !currentGameId) {
+      setErrorMsg("Betting contract or game ID not available.");
+      return;
+    }
+    try {
+      setStatus(`Betting ${betAmount} on ${teamId === 1 ? "Red" : "Blue"}...`);
+      const tx = await bettingContract.placeBet(currentGameId, teamId, betAmount);
+      await tx.wait();
+      setStatus(`Bet placed on ${teamId === 1 ? "Red" : "Blue"}!`);
+      setErrorMsg("");
+    } catch (err) {
+      setErrorMsg("Bet failed: " + err.message);
+    }
+  }
+  
+const [liveRedBets, setLiveRedBets] = useState(0);
+const [liveBlueBets, setLiveBlueBets] = useState(0);
+
+
   useEffect(() => {
-    const socket = io(backendUrl, { transports: ["websocket"] });
-    socket.on("connect", () => console.log("Socket connected:", socket.id));
-    socket.on("boardUpdated", (augmentedBoard) => {
+    socketRef.current = io(backendUrl, { transports: ["websocket"] });
+  
+    socketRef.current.on("connect", () =>
+      console.log("Socket connected:", socketRef.current.id)
+    );
+  
+    socketRef.current.on("teamUpdate", (counts) => {
+      setTeamCounts(counts);
+    });
+  
+    socketRef.current.on("betsUpdated", (bets) => {
+      const red = bets.filter(b => b.team === 1).reduce((acc, b) => acc + Number(b.tickets), 0);
+      const blue = bets.filter(b => b.team === 2).reduce((acc, b) => acc + Number(b.tickets), 0);
+      setLiveRedBets(red);
+      setLiveBlueBets(blue);
+    });
+  
+    socketRef.current.on("boardUpdated", (augmentedBoard) => {
       if (liveReplayIndex < 0 && !selectedHistory) {
         setLiveBoard(augmentedBoard);
       }
     });
-    socket.on("phaseUpdated", (data) => setPhaseData(data));
-    socket.on("winner", ({ winner }) => {
+  
+    socketRef.current.on("phaseUpdated", (data) => setPhaseData(data));
+  
+    socketRef.current.on("winner", ({ winner }) => {
       if (!selectedHistory && liveReplayIndex < 0) {
         setWinnerOverlay(winner);
         setTimeout(() => setWinnerOverlay(null), 3000);
       }
     });
-    socket.on("disconnect", () => console.log("Socket disconnected"));
-    return () => socket.disconnect();
+  
+    socketRef.current.on("disconnect", () =>
+      console.log("Socket disconnected")
+    );
+  
+    return () => {
+      socketRef.current.disconnect();
+    };
   }, [liveReplayIndex, selectedHistory]);
+  
+  
 
+  
+  useEffect(() => {
+    if (!currentGameId) return;
+  
+    async function fetchBets() {
+      try {
+        const res = await fetch(`${backendUrl}/api/bets/${currentGameId}`);
+        const data = await res.json();
+        if (data && data.bets) {
+          if (data && data.bets) {
+            const red = data.bets.filter(b => b.team === 1).reduce((sum, b) => sum + Number(b.tickets), 0);
+            const blue = data.bets.filter(b => b.team === 2).reduce((sum, b) => sum + Number(b.tickets), 0);
+            setLiveRedBets(red);
+            setLiveBlueBets(blue);
+          }
+          
+        }
+      } catch (err) {
+        console.error("fetchBets error:", err);
+      }
+    }
+
+
+    fetchBets();
+    const interval = setInterval(fetchBets, 3000); // poll every 3 seconds
+    return () => clearInterval(interval);
+  }, [currentGameId]);
+  
+  useEffect(() => {
+    async function fetchGameState() {
+      try {
+        const res = await fetch(`${backendUrl}/api/state`);
+        const data = await res.json();
+        if (data && data.cycleCount !== undefined) {
+          setCurrentGameId(data.cycleCount + 1); // since gameId = cycleCount + 1
+        }
+      } catch (err) {
+        console.error("Error fetching game state:", err);
+      }
+    }
+    fetchGameState();
+  }, []);
+
+  useEffect(() => {
+  if (!window.ethereum || !bettingAddress) return;
+
+  const bettingABI = [
+    "function placeBet(uint256,uint8,uint256) external",
+    "function getBets(uint256) external view returns (tuple(address user, uint8 team, uint256 tickets)[])"
+  ];
+
+  async function setupBettingContract() {
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const contract = new ethers.Contract(bettingAddress, bettingABI, signer);
+      setBettingContract(contract);
+    } catch (err) {
+      console.error("setupBettingContract error:", err);
+    }
+  }
+
+  setupBettingContract();
+}, [bettingAddress]);
+
+  
+  
   // Poll board history from backend
   useEffect(() => {
     async function loadHistory() {
@@ -188,6 +309,7 @@ function App() {
       console.error("Error fetching my records:", err);
     }
   }
+  
   useEffect(() => {
     fetchAllGames();
   }, []);
@@ -234,16 +356,34 @@ function App() {
       setErrorMsg("Cannot join outside picking phase!");
       return;
     }
+    if (userTeam === teamId) {
+      setStatus("Already in that team!");
+      return;
+    }
     try {
       setStatus(`Joining ${teamId === 1 ? "Red" : "Blue"}...`);
       const tx = await gameContract.joinTeam(teamId);
       await tx.wait();
       setStatus("Joined!");
       setErrorMsg("");
+  
+      // ✅ Force-refresh team info here
+      const [rC, bC] = await Promise.all([
+        gameContract.teamACount(),
+        gameContract.teamBCount()
+      ]);
+      setTeamCounts({ red: Number(rC), blue: Number(bC) });
+  
+      if (userAddress) {
+        const tId = await gameContract.getTeam(userAddress);
+        setUserTeam(Number(tId));
+      }
+  
     } catch (err) {
       setErrorMsg("joinTeam error: " + err.message);
     }
   }
+  
 
   // Place square
   async function placeSquare(x, y) {
@@ -284,6 +424,8 @@ function App() {
     if (liveReplayIndex < 0) setLiveReplayIndex(0);
     setLiveAutoReplay((prev) => !prev);
   }
+
+  
 
   // Selected record replay
   function recordPrevBoard() {
@@ -550,6 +692,9 @@ function App() {
           <h2 className="neon-heading" style={{ marginTop: "20px" }}>
             Bet Panel
           </h2>
+          <p>Red Bets: {liveRedBets}</p>
+          <p>Blue Bets: {liveBlueBets}</p>
+
           <p>Tickets: {betAmount}</p>
           <input
             type="range"
@@ -559,9 +704,10 @@ function App() {
             onChange={(e) => setBetAmount(Number(e.target.value))}
           />
           <div className="bet-buttons">
-            <button className="bet-red neon-btn red-btn">Bet Red</button>
-            <button className="bet-blue neon-btn blue-btn">Bet Blue</button>
-          </div>
+           <button className="bet-red neon-btn red-btn" onClick={() => placeBet(1)}>Bet Red</button>
+            <button className="bet-blue neon-btn blue-btn" onClick={() => placeBet(2)}>Bet Blue</button>
+         </div>
+
         </div>
       </div>
 

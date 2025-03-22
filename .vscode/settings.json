@@ -1,3 +1,11 @@
 {
-    "git.ignoreLimitWarning": true
+    "git.ignoreLimitWarning": true,
+    // Disable JS validation
+    "javascript.validate.enable": false,
+
+// or disable TS validation
+      "typescript.validate.enable": false,
+
+// or disable “checkJs”
+
 }
