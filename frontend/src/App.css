@@ -4,6 +4,8 @@ html, body, #root {
   padding: 0;
   background: #000;
   font-family: Arial, sans-serif;
+  /* Let the body be 100% height so flex layouts can fill vertically if needed */
+  height: 100%;
 }
 
 /* App Container */
@@ -14,6 +16,7 @@ html, body, #root {
   background: radial-gradient(circle, #000 30%, #111 100%);
   min-height: 100vh;
   padding: 20px;
+  box-sizing: border-box; /* ensure padding doesn't overflow */
 }
 
 /* Winner Overlay */
@@ -108,24 +111,27 @@ html, body, #root {
   cursor: pointer;
 }
 
-/* Main Layout */
+/* Main Layout: make it wrap so panels can move below on smaller screens */
 .main-content {
   display: flex;
-  justify-content: flex-start;
+  flex-wrap: wrap; /* allows the panels to wrap below if screen is narrow */
+  justify-content: center; /* center items horizontally if there's extra space */
   align-items: flex-start;
-  gap: 40px;
+  gap: 20px; /* reduce gap so everything fits better on small screens */
   max-width: 1600px;
   margin: 0 auto;
+  box-sizing: border-box;
 }
 
-/* Permanent Left Panel */
+/* Left Panel (Game Records) */
 .left-panel.permanent-records-panel {
   background: rgba(255,255,255,0.05);
-  width: 250px;
+  /* Let it be flexible, but set a min-width so it doesn't collapse too far */
+  flex: 0 0 auto;
+  width: 220px;
+  min-height: 500px;
   padding: 20px;
   border-radius: 8px;
-  /* Truncated from 600px to 550px */
-  min-height: 550px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -164,12 +170,10 @@ html, body, #root {
   box-shadow: 0 0 10px #fff;
   color: #fff;
 }
-/* Keep red button red when active */
 .neon-btn.active.red-btn {
   color: #ff0050;
   box-shadow: 0 0 10px #ff0050;
 }
-/* Now also keep blue button glowing when active */
 .neon-btn.active.blue-btn {
   color: #00bbff;
   box-shadow: 0 0 10px #00bbff;
@@ -192,31 +196,24 @@ html, body, #root {
 }
 .blue-btn:hover {
   background: #00bbff;
-  color: #00bbff;
+  color: #000;
 }
 
-/* Records List Container with Custom Scrollbar */
+/* Records List Container: hide scrollbar but allow scrolling */
 .records-list-container {
   flex: 1;
-  max-height: 400px;
-  overflow-y: auto;
+  max-height: 350px;
+  overflow-y: scroll;
   border: 1px solid #333;
   border-radius: 6px;
   padding: 10px;
+
+  /* Hide scrollbar in all browsers */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
 }
 .records-list-container::-webkit-scrollbar {
-  width: 8px;
-}
-.records-list-container::-webkit-scrollbar-track {
-  background: #111;
-  border-radius: 4px;
-}
-.records-list-container::-webkit-scrollbar-thumb {
-  background: #444;
-  border-radius: 4px;
-}
-.records-list-container::-webkit-scrollbar-thumb:hover {
-  background: #666;
+  display: none; /* Chrome/Safari */
 }
 
 .game-records-list {
@@ -259,7 +256,16 @@ html, body, #root {
   padding: 10px;
   margin-top: 10px;
 }
-/* Detail Image (200x200) */
+.record-auto-container {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+.record-replay-container {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
 .searched-record-thumbnail {
   width: 200px;
   height: 200px;
@@ -268,12 +274,17 @@ html, body, #root {
   margin-top: 10px;
 }
 
-/* Center Board */
+/* Center Board Container */
 .center-board {
   display: flex;
-  justify-content: center;
+  flex-direction: column; /* so the board and replay controls stack */
   align-items: center;
+  /* Let it be flexible so it can shrink/grow on small screens */
+  flex: 1 1 600px;
+  min-width: 320px; /* don't go too narrow */
 }
+
+/* Board Border */
 .board-border {
   padding: 10px;
   border: 2px solid #444;
@@ -305,9 +316,10 @@ html, body, #root {
   cursor: not-allowed;
 }
 
-/* Replay Controls */
+/* Replay Controls (Live) */
 .replay-container {
   display: flex;
+  justify-content: center; /* center horizontally */
   gap: 10px;
   margin-top: 10px;
 }
@@ -328,15 +340,18 @@ html, body, #root {
   margin-top: 5px;
   font-size: 0.9rem;
   color: #ccc;
+  text-align: center; /* center text below buttons */
 }
 
 /* Right Panel */
 .right-panel {
   background: rgba(255,255,255,0.05);
+  flex: 0 0 auto;
+  width: 220px;
+  min-height: 500px;
   padding: 20px;
   border-radius: 8px;
-  width: 250px;
-  min-height: 600px;
+  box-sizing: border-box;
 }
 .phase-info-card {
   background: rgba(255,255,255,0.07);
@@ -382,7 +397,7 @@ html, body, #root {
 }
 .bet-blue:hover {
   background: #00bbff;
-  color: #00bbff;
+  color: #000;
 }
 
 /* Error Bar */
@@ -396,4 +411,24 @@ html, body, #root {
   text-align: center;
   padding: 8px;
   z-index: 100;
+}
+
+/* Media Query for Very Narrow Screens */
+@media (max-width: 768px) {
+  .board-grid {
+    grid-template-columns: repeat(64, 10px); /* smaller cells for small screens */
+  }
+  .cell {
+    width: 10px;
+    height: 10px;
+  }
+  .board-border {
+    padding: 5px;
+  }
+  .left-panel.permanent-records-panel,
+  .right-panel {
+    width: 200px; /* narrower on small screens */
+    min-height: 400px;
+    padding: 10px;
+  }
 }
