@@ -1,127 +1,129 @@
-// src/App.js
 import React, { useEffect, useState, useRef } from "react";
 import "./App.css";
 import { io } from "socket.io-client";
 import { ethers } from "ethers";
 
-// Minimal ABI for GameOfDeath – note that joinTeam now requires a gameId.
+// Minimal ABIs (adjust if needed)
 const gameABI = [
   "function joinTeam(uint256 gameId, uint8 teamId) external",
   "function placeSquare(uint256 x, uint256 y) external",
   "function getTeam(uint256 gameId, address user) external view returns (uint8)",
-  "function teamACount() external view returns (uint256)",
-  "function teamBCount() external view returns (uint256)",
+  "function getTeamCounts(uint256 gameId) external view returns (uint256 redCount, uint256 blueCount)",
   "function currentPhase() external view returns (uint8)",
-  "function getTeamCounts(uint256 gameId) external view returns (uint256 redCount, uint256 blueCount)"
+  "function currentGameId() external view returns (uint256)"
 ];
 
-// Minimal ABI for Betting contract
 const bettingABI = [
   "function placeBet(uint256 gameId, uint8 team, uint256 tickets) external",
   "function getBets(uint256 gameId) external view returns (tuple(address user, uint8 team, uint256 tickets)[])"
 ];
 
-// Minimal ABI for Mizons token
 const mizonsABI = [
   "function balanceOf(address owner) external view returns (uint256)"
 ];
 
+// Adjust to your actual .env or constants
 const contractAddress = process.env.REACT_APP_GAMEOFDEATH_ADDRESS;
 const bettingAddress = process.env.REACT_APP_BETTING_ADDRESS;
 const mizonsAddress = process.env.REACT_APP_MIZONS_ADDRESS;
 const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:3000";
 
 function App() {
-  // Board & replay states
+  // Basic states
+  const [userAddress, setUserAddress] = useState("");
+  const [gameContract, setGameContract] = useState(null);
+  const [bettingContract, setBettingContract] = useState(null);
+  const [mizonsBalance, setMizonsBalance] = useState("0");
+  
+  // Phase & game info
+  const [phaseData, setPhaseData] = useState({ phase: "picking", timeLeft: 30, gameId: 1 });
+  const [teamCounts, setTeamCounts] = useState({ red: 0, blue: 0 });
+  const [userTeam, setUserTeam] = useState(0);
+  const [status, setStatus] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  
+  // Board states (live vs. replay)
   const [liveBoard, setLiveBoard] = useState(Array(4096).fill({ value: 0, skin: null }));
   const [boardHistory, setBoardHistory] = useState([]);
   const [liveReplayIndex, setLiveReplayIndex] = useState(-1);
   const [liveAutoReplay, setLiveAutoReplay] = useState(false);
-
-  // Basic states
-  const [userAddress, setUserAddress] = useState("");
-  const [gameContract, setGameContract] = useState(null);
-  const [teamCounts, setTeamCounts] = useState({ red: 0, blue: 0 });
-  const [userTeam, setUserTeam] = useState(0);
-  // phaseData includes phase, timeLeft, gameId
-  const [phaseData, setPhaseData] = useState({ phase: "picking", timeLeft: 30, gameId: 1 });
-  const [status, setStatus] = useState("");
-  const [errorMsg, setErrorMsg] = useState("");
-  const [betAmount, setBetAmount] = useState(1);
-  const [winnerOverlay, setWinnerOverlay] = useState(null);
 
   // Records
   const [allRecords, setAllRecords] = useState([]);
   const [myRecords, setMyRecords] = useState([]);
   const [showMyGames, setShowMyGames] = useState(false);
 
+  // Selected record replay
+  const [selectedRecord, setSelectedRecord] = useState(null);
+  const [selectedHistory, setSelectedHistory] = useState(null);
+  const [selectedReplayIndex, setSelectedReplayIndex] = useState(-1);
+  const [selectedAutoReplay, setSelectedAutoReplay] = useState(false);
+
   // Betting
-  const [bettingContract, setBettingContract] = useState(null);
   const [liveRedBets, setLiveRedBets] = useState(0);
   const [liveBlueBets, setLiveBlueBets] = useState(0);
+  const [betAmount, setBetAmount] = useState(1);
 
-  // Mizons Balance
-  const [mizonsBalance, setMizonsBalance] = useState("0");
+  // Winner overlay
+  const [winnerOverlay, setWinnerOverlay] = useState(null);
 
   const socketRef = useRef(null);
 
-  // Socket.io connection
+  // Socket.io setup
   useEffect(() => {
     socketRef.current = io(backendUrl, { transports: ["websocket"] });
+
     socketRef.current.on("connect", () => {
       console.log("Socket connected:", socketRef.current.id);
     });
+
     socketRef.current.on("phaseUpdated", (data) => {
       console.log("phaseUpdated event:", data);
       setPhaseData(data);
     });
-    socketRef.current.on("TeamJoined", (data) => {
-      if (data.gameId === phaseData.gameId) {
-        setTeamCounts(prev => {
-          if (data.team === 1) return { ...prev, red: prev.red + 1 };
-          if (data.team === 2) return { ...prev, blue: prev.blue + 1 };
-          return prev;
-        });
-      }
-    });
+
     socketRef.current.on("boardUpdated", (augmentedBoard) => {
-      if (liveReplayIndex < 0) {
+      // Only update live board if we're not in a selected replay
+      if (!selectedHistory && liveReplayIndex < 0) {
         setLiveBoard(augmentedBoard);
       }
     });
+
     socketRef.current.on("winner", ({ winner }) => {
       setWinnerOverlay(winner);
       setTimeout(() => setWinnerOverlay(null), 3000);
     });
+
     socketRef.current.on("newGameRecord", (record) => {
       console.log("Received newGameRecord:", record);
       fetchAllGames();
-      if (userAddress &&
-          record.players.map(p => p.toLowerCase()).includes(userAddress.toLowerCase())) {
+      if (
+        userAddress &&
+        record.players.map((p) => p.toLowerCase()).includes(userAddress.toLowerCase())
+      ) {
         fetchMyGames(userAddress);
       }
     });
+
     socketRef.current.on("disconnect", () => {
       console.log("Socket disconnected");
     });
+
     return () => {
       socketRef.current.disconnect();
     };
-  }, [backendUrl, liveReplayIndex, phaseData.gameId, userAddress]);
+  }, [backendUrl, userAddress, liveReplayIndex, selectedHistory]);
 
-  // Poll phase state every 2 seconds
+  // Poll phase state from backend every 2 seconds
   useEffect(() => {
-    async function fetchPhaseState() {
-      try {
-        const res = await fetch(`${backendUrl}/api/state`);
-        const data = await res.json();
-        setPhaseData(data);
-      } catch (err) {
-        console.error("Error fetching state:", err);
-      }
-    }
-    fetchPhaseState();
-    const interval = setInterval(fetchPhaseState, 2000);
+    const interval = setInterval(() => {
+      fetch(`${backendUrl}/api/state`)
+        .then((res) => res.json())
+        .then((data) => {
+          setPhaseData(data);
+        })
+        .catch((err) => console.error("Error fetching state:", err));
+    }, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -133,8 +135,8 @@ function App() {
         const provider = new ethers.BrowserProvider(window.ethereum);
         const signer = await provider.getSigner();
         const gameC = new ethers.Contract(contractAddress, gameABI, signer);
-        setGameContract(gameC);
         const bettingC = new ethers.Contract(bettingAddress, bettingABI, signer);
+        setGameContract(gameC);
         setBettingContract(bettingC);
       } catch (err) {
         console.error("Error setting up contracts:", err);
@@ -151,9 +153,11 @@ function App() {
         const res = await fetch(`${backendUrl}/api/bets/${phaseData.gameId}`);
         const data = await res.json();
         if (data && data.bets) {
-          const red = data.bets.filter(b => b.team === 1)
+          const red = data.bets
+            .filter((b) => b.team === 1)
             .reduce((sum, b) => sum + Number(b.tickets), 0);
-          const blue = data.bets.filter(b => b.team === 2)
+          const blue = data.bets
+            .filter((b) => b.team === 2)
             .reduce((sum, b) => sum + Number(b.tickets), 0);
           setLiveRedBets(red);
           setLiveBlueBets(blue);
@@ -169,42 +173,39 @@ function App() {
 
   // Poll board history every 2 seconds
   useEffect(() => {
-    async function loadHistory() {
-      try {
-        const res = await fetch(`${backendUrl}/api/history`);
-        const data = await res.json();
-        setBoardHistory(data.boardHistory || []);
-      } catch (err) {
-        console.error("loadHistory error:", err);
-      }
-    }
-    loadHistory();
-    const interval = setInterval(loadHistory, 2000);
+    const interval = setInterval(() => {
+      fetch(`${backendUrl}/api/history`)
+        .then((res) => res.json())
+        .then((data) => {
+          setBoardHistory(data.boardHistory || []);
+        })
+        .catch((err) => console.error("loadHistory error:", err));
+    }, 2000);
     return () => clearInterval(interval);
-  }, [backendUrl]);
+  }, []);
 
-  // When in placing phase, poll live board every second
+  // When in placing phase and not replaying, poll live board every 1 second
   useEffect(() => {
-    if (liveReplayIndex >= 0 || phaseData.phase !== "placing") return;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`${backendUrl}/api/board`);
-        const data = await res.json();
-        if (data && data.board) {
-          setLiveBoard(data.board);
-        }
-      } catch (err) {
-        console.error("Error polling board:", err);
-      }
+    if (phaseData.phase !== "placing") return;
+    if (selectedHistory || liveReplayIndex >= 0) return;
+    const interval = setInterval(() => {
+      fetch(`${backendUrl}/api/board`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.board) {
+            setLiveBoard(data.board);
+          }
+        })
+        .catch((err) => console.error("Error polling board:", err));
     }, 1000);
     return () => clearInterval(interval);
-  }, [liveReplayIndex, phaseData.phase, backendUrl]);
+  }, [phaseData.phase, selectedHistory, liveReplayIndex]);
 
   // Live auto replay
   useEffect(() => {
     if (!liveAutoReplay || boardHistory.length === 0) return;
     const autoInterval = setInterval(() => {
-      setLiveReplayIndex(prev => {
+      setLiveReplayIndex((prev) => {
         const newIndex = prev < 0 ? 0 : prev + 1;
         if (newIndex >= boardHistory.length) {
           setLiveAutoReplay(false);
@@ -216,60 +217,62 @@ function App() {
     return () => clearInterval(autoInterval);
   }, [liveAutoReplay, boardHistory]);
 
-  // Poll team info every second
+  // Selected record auto replay
   useEffect(() => {
-    if (!gameContract || liveReplayIndex >= 0) return;
-    async function fetchTeamInfo() {
-      try {
-        const counts = await gameContract.getTeamCounts(phaseData.gameId);
-        setTeamCounts({ red: Number(counts.redCount), blue: Number(counts.blueCount) });
-        if (userAddress) {
-          const tId = await gameContract.getTeam(phaseData.gameId, userAddress);
-          setUserTeam(Number(tId));
+    if (!selectedAutoReplay || !selectedHistory || selectedHistory.length === 0) return;
+    const autoInterval = setInterval(() => {
+      setSelectedReplayIndex((prev) => {
+        const newIndex = prev < 0 ? 0 : prev + 1;
+        if (newIndex >= selectedHistory.length) {
+          setSelectedAutoReplay(false);
+          return selectedHistory.length - 1;
         }
-      } catch (err) {
-        console.error("fetchTeamInfo error:", err);
-      }
-    }
-    fetchTeamInfo();
-    const interval = setInterval(fetchTeamInfo, 1000);
-    return () => clearInterval(interval);
-  }, [gameContract, liveReplayIndex, userAddress, phaseData.gameId]);
+        return newIndex;
+      });
+    }, 500);
+    return () => clearInterval(autoInterval);
+  }, [selectedAutoReplay, selectedHistory]);
 
-  // Poll Mizons balance every 5 seconds
+  // Poll team info every 1 second (if not in a record replay)
+  useEffect(() => {
+    if (!gameContract || selectedHistory || liveReplayIndex >= 0) return;
+    const interval = setInterval(() => {
+      (async () => {
+        try {
+          const counts = await gameContract.getTeamCounts(phaseData.gameId);
+          setTeamCounts({
+            red: Number(counts.redCount),
+            blue: Number(counts.blueCount)
+          });
+          if (userAddress) {
+            const tId = await gameContract.getTeam(phaseData.gameId, userAddress);
+            setUserTeam(Number(tId));
+          }
+        } catch (err) {
+          console.error("fetchTeamInfo error:", err);
+        }
+      })();
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [gameContract, userAddress, selectedHistory, liveReplayIndex, phaseData.gameId]);
+
+  // Poll MIZ balance
   useEffect(() => {
     if (!window.ethereum || !mizonsAddress || !userAddress) return;
     const provider = new ethers.BrowserProvider(window.ethereum);
     const mizonsContract = new ethers.Contract(mizonsAddress, mizonsABI, provider);
-    async function fetchMizonsBalance() {
-      try {
-        const bal = await mizonsContract.balanceOf(userAddress);
-        setMizonsBalance(bal.toString());
-      } catch (err) {
-        console.error("Error fetching MIZ balance:", err);
-      }
-    }
-    fetchMizonsBalance();
-    const interval = setInterval(fetchMizonsBalance, 5000);
+
+    const interval = setInterval(() => {
+      mizonsContract
+        .balanceOf(userAddress)
+        .then((bal) => setMizonsBalance(bal.toString()))
+        .catch((err) => console.error("Error fetching MIZ balance:", err));
+    }, 5000);
+
     return () => clearInterval(interval);
   }, [mizonsAddress, userAddress]);
 
-  // Setup game contract (if not already set)
-  useEffect(() => {
-    if (!window.ethereum || !contractAddress) return;
-    async function setupContract() {
-      try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-        const contract = new ethers.Contract(contractAddress, gameABI, signer);
-        setGameContract(contract);
-      } catch (err) {
-        console.error("setupContract error:", err);
-      }
-    }
-    setupContract();
-  }, [contractAddress]);
-
+  // Fetch all games
   async function fetchAllGames() {
     try {
       const res = await fetch(`${backendUrl}/api/allRecords`);
@@ -283,8 +286,9 @@ function App() {
     fetchAllGames();
     const interval = setInterval(fetchAllGames, 5000);
     return () => clearInterval(interval);
-  }, [backendUrl]);
+  }, []);
 
+  // Fetch my games
   async function fetchMyGames(address) {
     if (!address) return;
     try {
@@ -299,7 +303,7 @@ function App() {
     if (userAddress) fetchMyGames(userAddress);
   }, [userAddress]);
 
-  // Connect wallet
+  // Wallet connect
   async function connectWallet() {
     if (!window.ethereum) {
       setErrorMsg("No MetaMask found!");
@@ -324,9 +328,12 @@ function App() {
     setErrorMsg("");
     setAllRecords([]);
     setMyRecords([]);
+    setSelectedRecord(null);
+    setSelectedHistory(null);
+    setSelectedReplayIndex(-1);
   }
 
-  // joinTeam: allowed only in picking phase.
+  // joinTeam
   async function joinTeam(teamId) {
     console.log("Attempting to join team. Phase:", phaseData.phase, "Game ID:", phaseData.gameId);
     if (!gameContract) {
@@ -355,6 +362,7 @@ function App() {
     }
   }
 
+  // placeSquare
   async function placeSquare(x, y) {
     if (!gameContract) {
       setErrorMsg("No contract connected.");
@@ -371,17 +379,19 @@ function App() {
       setStatus("Square placed!");
       setErrorMsg("");
     } catch (err) {
+      console.error("placeSquare error:", err);
       setErrorMsg("placeSquare error: " + err.message);
     }
   }
 
+  // placeBet
   async function placeBet(teamId) {
-    if (phaseData.phase !== "picking") {
-      setErrorMsg("Betting is only allowed during picking phase.");
+    if (!bettingContract) {
+      setErrorMsg("No betting contract available.");
       return;
     }
-    if (!bettingContract || !phaseData.gameId) {
-      setErrorMsg("Betting contract or game ID not available.");
+    if (phaseData.phase !== "picking") {
+      setErrorMsg("Betting is only allowed during picking phase.");
       return;
     }
     try {
@@ -391,17 +401,19 @@ function App() {
       setStatus(`Bet placed on ${teamId === 1 ? "Red" : "Blue"}!`);
       setErrorMsg("");
     } catch (err) {
+      console.error("Bet failed:", err);
       setErrorMsg("Bet failed: " + err.message);
     }
   }
 
+  // Live replay controls
   function livePrevBoard() {
     if (boardHistory.length === 0) return;
-    setLiveReplayIndex(prev => (prev < 0 ? boardHistory.length - 1 : Math.max(0, prev - 1)));
+    setLiveReplayIndex((i) => (i < 0 ? boardHistory.length - 1 : Math.max(0, i - 1)));
   }
   function liveNextBoard() {
     if (boardHistory.length === 0) return;
-    setLiveReplayIndex(prev => (prev < 0 ? 0 : Math.min(boardHistory.length - 1, prev + 1)));
+    setLiveReplayIndex((i) => (i < 0 ? 0 : Math.min(boardHistory.length - 1, i + 1)));
   }
   function liveGoToLive() {
     setLiveAutoReplay(false);
@@ -410,16 +422,55 @@ function App() {
   function liveToggleAutoReplay() {
     if (boardHistory.length === 0) return;
     if (liveReplayIndex < 0) setLiveReplayIndex(0);
-    setLiveAutoReplay(prev => !prev);
+    setLiveAutoReplay((prev) => !prev);
   }
 
+  // Selected record replay controls
+  function recordPrevBoard() {
+    if (!selectedHistory || selectedHistory.length === 0) return;
+    setSelectedReplayIndex((i) => (i < 0 ? selectedHistory.length - 1 : Math.max(0, i - 1)));
+  }
+  function recordNextBoard() {
+    if (!selectedHistory || selectedHistory.length === 0) return;
+    setSelectedReplayIndex((i) => (i < 0 ? 0 : Math.min(selectedHistory.length - 1, i + 1)));
+  }
+  function recordToggleAutoReplay() {
+    if (!selectedHistory || selectedHistory.length === 0) return;
+    if (!selectedAutoReplay) setSelectedReplayIndex(0);
+    setSelectedAutoReplay((prev) => !prev);
+  }
+  function recordGoBackToLive() {
+    setSelectedRecord(null);
+    setSelectedHistory(null);
+    setSelectedReplayIndex(-1);
+    setSelectedAutoReplay(false);
+  }
+
+  // Decide which board to display
   let displayedBoard = liveBoard;
-  if (liveReplayIndex >= 0 && liveReplayIndex < boardHistory.length) {
-    displayedBoard = boardHistory[liveReplayIndex].map(val => ({ value: val, skin: null }));
+  if (selectedHistory && selectedHistory.length > 0) {
+    if (selectedReplayIndex >= 0 && selectedReplayIndex < selectedHistory.length) {
+      displayedBoard = selectedHistory[selectedReplayIndex].map((val) => ({
+        value: val,
+        skin: null
+      }));
+    } else {
+      displayedBoard = selectedHistory[selectedHistory.length - 1].map((val) => ({
+        value: val,
+        skin: null
+      }));
+    }
+  } else if (liveReplayIndex >= 0 && liveReplayIndex < boardHistory.length) {
+    displayedBoard = boardHistory[liveReplayIndex].map((val) => ({
+      value: val,
+      skin: null
+    }));
   }
 
+  // Scoreboard logic
   function computeOpposingStats(board) {
-    let redOnBlue = 0, blueOnRed = 0;
+    let redOnBlue = 0,
+      blueOnRed = 0;
     for (let y = 0; y < 64; y++) {
       for (let x = 0; x < 64; x++) {
         const idx = y * 64 + x;
@@ -435,16 +486,22 @@ function App() {
   const redPercent = totalOpposing > 0 ? (redOnBlue / totalOpposing) * 100 : 0;
   const bluePercent = totalOpposing > 0 ? (blueOnRed / totalOpposing) * 100 : 0;
 
+  // Selecting a record from the left panel
   function selectRecord(rec) {
+    setSelectedRecord(rec);
     if (rec.boardHistory && rec.boardHistory.length > 0) {
-      // Here we simply update the replay history for the selected record.
-      // (If you need to reset additional state, add it here.)
-      // We use rec.boardHistory from the backend.
-      setPhaseData(prev => ({ ...prev })); // dummy update if needed
+      setSelectedHistory(rec.boardHistory);
+      setSelectedReplayIndex(0);
+      setSelectedAutoReplay(false);
+      setLiveReplayIndex(-1);
+      setLiveAutoReplay(false);
+    } else {
+      setSelectedHistory(null);
+      setSelectedReplayIndex(-1);
     }
   }
 
-  const shouldShowWinner = winnerOverlay && liveReplayIndex < 0;
+  const shouldShowWinner = winnerOverlay && !selectedHistory && liveReplayIndex < 0;
 
   return (
     <div className="app-container">
@@ -455,16 +512,19 @@ function App() {
           </h1>
         </div>
       )}
+
       <div className="title-bar">
         <h1 className="game-title">GAME OF DEATH</h1>
         <p className="phase-time-text">{status}</p>
       </div>
+
       <div className="scoreboard-bar-container">
         <div className="score-bar">
           <div className="score-bar-red" style={{ width: `${redPercent}%` }} />
           <div className="score-bar-blue" style={{ width: `${bluePercent}%` }} />
         </div>
       </div>
+
       <div className="wallet-corner">
         {userAddress ? (
           <>
@@ -481,18 +541,23 @@ function App() {
           </button>
         )}
       </div>
+
       <div className="main-content">
         {/* Left Panel: Game Records */}
         <div className="left-panel permanent-records-panel">
           <h2 className="neon-heading">Game Records</h2>
           <div className="record-buttons">
-            <button className={`neon-btn red-btn ${!showMyGames ? "active" : ""}`}
-              onClick={() => setShowMyGames(false)}>
+            <button
+              className={`neon-btn red-btn ${!showMyGames ? "active" : ""}`}
+              onClick={() => setShowMyGames(false)}
+            >
               All Games
             </button>
-            <button className={`neon-btn blue-btn ${showMyGames ? "active" : ""}`}
+            <button
+              className={`neon-btn blue-btn ${showMyGames ? "active" : ""}`}
               onClick={() => setShowMyGames(true)}
-              disabled={!userAddress}>
+              disabled={!userAddress}
+            >
               My Games
             </button>
           </div>
@@ -502,15 +567,27 @@ function App() {
             ) : (
               <ul className="game-records-list">
                 {(!showMyGames ? allRecords : myRecords).map((rec, index) => {
-                  const dateString = rec.timestamp ? new Date(rec.timestamp).toLocaleString() : "N/A";
+                  const dateString = rec.timestamp
+                    ? new Date(rec.timestamp).toLocaleString()
+                    : "N/A";
                   return (
-                    <li key={`${rec.gameId}-${index}`} onClick={() => selectRecord(rec)} className="game-record-item">
+                    <li
+                      key={`${rec.gameId}-${index}`}
+                      onClick={() => selectRecord(rec)}
+                      className="game-record-item"
+                    >
                       {rec.thumbnail && (
-                        <img src={rec.thumbnail} alt={`Game #${rec.gameId}`} className="record-thumbnail" />
+                        <img
+                          src={rec.thumbnail}
+                          alt={`Game #${rec.gameId}`}
+                          className="record-thumbnail"
+                        />
                       )}
                       <div className="record-info">
                         <strong>Game #{rec.gameId}</strong>
-                        <p>{rec.winner} won at {dateString}</p>
+                        <p>
+                          {rec.winner} won at {dateString}
+                        </p>
                       </div>
                     </li>
                   );
@@ -518,7 +595,57 @@ function App() {
               </ul>
             )}
           </div>
+
+          {/* If a record is selected, show details & replay controls */}
+          {selectedRecord && selectedHistory && (
+            <div className="selected-record-details">
+              <h3>Game #{selectedRecord.gameId} Details</h3>
+              <p>Winner: {selectedRecord.winner}</p>
+              <p>
+                Played at:{" "}
+                {selectedRecord.timestamp
+                  ? new Date(selectedRecord.timestamp).toLocaleString()
+                  : "N/A"}
+              </p>
+              <p>
+                Team Red: {selectedRecord.teamRedCount} | Team Blue:{" "}
+                {selectedRecord.teamBlueCount}
+              </p>
+              {selectedRecord.thumbnail && (
+                <img
+                  src={selectedRecord.thumbnail}
+                  alt={`Game #${selectedRecord.gameId}`}
+                  className="searched-record-thumbnail"
+                />
+              )}
+
+              <div className="record-auto-container">
+                <button className="replay-btn" onClick={recordToggleAutoReplay}>
+                  {selectedAutoReplay ? "Stop Auto Replay" : "Start Auto Replay"}
+                </button>
+              </div>
+              <div className="replay-container">
+                <button className="replay-btn" onClick={recordPrevBoard}>
+                  ←
+                </button>
+                <button className="replay-btn" onClick={recordGoBackToLive}>
+                  Exit
+                </button>
+                <button className="replay-btn" onClick={recordNextBoard}>
+                  →
+                </button>
+              </div>
+              {selectedReplayIndex < 0 ? (
+                <p className="replay-info">Viewing final snapshot</p>
+              ) : (
+                <p className="replay-info">
+                  Viewing Board {selectedReplayIndex + 1}/{selectedHistory.length}
+                </p>
+              )}
+            </div>
+          )}
         </div>
+
         {/* Center Board */}
         <div className="center-board">
           <div className="board-container">
@@ -530,29 +657,48 @@ function App() {
                   let cls = "cell";
                   if (cell.value === 1) cls += " red";
                   if (cell.value === 2) cls += " blue";
-                  if (phaseData.phase === "placing") {
+
+                  // Dim cells if placing phase & user can't place
+                  if (!selectedHistory && liveReplayIndex < 0 && phaseData.phase === "placing") {
                     if (userTeam === 1 && y >= 32) cls += " dim-cell";
                     if (userTeam === 2 && y < 32) cls += " dim-cell";
                   }
+
                   return (
-                    <div key={i} className={cls} onClick={() => {
-                      if (phaseData.phase !== "placing") return;
-                      placeSquare(x, y);
-                    }} />
+                    <div
+                      key={i}
+                      className={cls}
+                      onClick={() => {
+                        if (selectedHistory) return; // can't place in replay
+                        if (phaseData.phase !== "placing") return;
+                        placeSquare(x, y);
+                      }}
+                    />
                   );
                 })}
               </div>
             </div>
           </div>
-          <div className="replay-container">
-            <button className="replay-btn" onClick={livePrevBoard}>←</button>
-            <button className="replay-btn" onClick={liveGoToLive}>Live</button>
-            <button className="replay-btn" onClick={liveNextBoard}>→</button>
-            <button className="replay-btn" onClick={liveToggleAutoReplay}>
-              {liveAutoReplay ? "Stop Replay" : "Auto Replay"}
-            </button>
-          </div>
-          {liveReplayIndex < 0 ? (
+
+          {/* Only show live replay controls if not in a selected record */}
+          {!selectedHistory && (
+            <div className="replay-container">
+              <button className="replay-btn" onClick={livePrevBoard}>
+                ←
+              </button>
+              <button className="replay-btn" onClick={liveGoToLive}>
+                Live
+              </button>
+              <button className="replay-btn" onClick={liveNextBoard}>
+                →
+              </button>
+              <button className="replay-btn" onClick={liveToggleAutoReplay}>
+                {liveAutoReplay ? "Stop Replay" : "Auto Replay"}
+              </button>
+            </div>
+          )}
+          {/* Show which board we're viewing */}
+          {selectedHistory ? null : liveReplayIndex < 0 ? (
             <p className="replay-info">Viewing Live Board</p>
           ) : (
             <p className="replay-info">
@@ -560,6 +706,7 @@ function App() {
             </p>
           )}
         </div>
+
         {/* Right Panel */}
         <div className="right-panel">
           <div className="phase-info-card">
@@ -569,32 +716,59 @@ function App() {
           </div>
           <p>Your Team: {userTeam === 1 ? "Red" : userTeam === 2 ? "Blue" : "None"}</p>
           <div className="join-team-buttons">
-            <button className="join-red neon-btn red-btn" onClick={() => joinTeam(1)} disabled={phaseData.phase !== "picking"}>
+            <button
+              className="join-red neon-btn red-btn"
+              onClick={() => joinTeam(1)}
+              disabled={phaseData.phase !== "picking"}
+            >
               Join Red
             </button>
-            <button className="join-blue neon-btn blue-btn" onClick={() => joinTeam(2)} disabled={phaseData.phase !== "picking"}>
+            <button
+              className="join-blue neon-btn blue-btn"
+              onClick={() => joinTeam(2)}
+              disabled={phaseData.phase !== "picking"}
+            >
               Join Blue
             </button>
           </div>
           <p>Team Red: {teamCounts.red}</p>
           <p>Team Blue: {teamCounts.blue}</p>
-          <h2 className="neon-heading" style={{ marginTop: "20px" }}>Bet Panel</h2>
+          <h2 className="neon-heading" style={{ marginTop: "20px" }}>
+            Bet Panel
+          </h2>
           <p>Red Bets: {liveRedBets}</p>
           <p>Blue Bets: {liveBlueBets}</p>
           <p>Tickets: {betAmount}</p>
-          <input type="range" min="1" max="10" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} />
+          <input
+            type="range"
+            min="1"
+            max="10"
+            value={betAmount}
+            onChange={(e) => setBetAmount(Number(e.target.value))}
+          />
           <div className="bet-buttons">
-            <button className="bet-red neon-btn red-btn" onClick={() => placeBet(1)} disabled={phaseData.phase !== "picking"}>
+            <button
+              className="bet-red neon-btn red-btn"
+              onClick={() => placeBet(1)}
+              disabled={phaseData.phase !== "picking"}
+            >
               Bet Red
             </button>
-            <button className="bet-blue neon-btn blue-btn" onClick={() => placeBet(2)} disabled={phaseData.phase !== "picking"}>
+            <button
+              className="bet-blue neon-btn blue-btn"
+              onClick={() => placeBet(2)}
+              disabled={phaseData.phase !== "picking"}
+            >
               Bet Blue
             </button>
           </div>
-          <h2 className="neon-heading" style={{ marginTop: "20px" }}>Your MIZ</h2>
+          <h2 className="neon-heading" style={{ marginTop: "20px" }}>
+            Your MIZ
+          </h2>
           <p style={{ fontSize: "1.2rem", color: "#ccc" }}>{mizonsBalance}</p>
         </div>
       </div>
+
       {errorMsg && <div className="error-bar">{errorMsg}</div>}
     </div>
   );
