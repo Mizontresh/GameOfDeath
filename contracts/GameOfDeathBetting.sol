@@ -41,9 +41,10 @@ contract GameOfDeathBetting is Ownable {
     /// @param _gameId The game ID.
     /// @param _team The team number (1 or 2).
     /// @param _tickets The number of tickets to bet.
+    /// @dev Only allows a single ticket per transaction.
     function placeBet(uint256 _gameId, uint8 _team, uint256 _tickets) external onlyWhenBettingOpen(_gameId) {
         require(_team == 1 || _team == 2, "Invalid team selected.");
-        require(_tickets > 0, "Tickets must be greater than zero.");
+        require(_tickets == 1, "Only one ticket per transaction is allowed.");
 
         gameBets[_gameId].push(Bet(msg.sender, _team, _tickets));
         emit BetPlaced(msg.sender, _gameId, _team, _tickets);

@@ -387,7 +387,7 @@ function App() {
     }
   }
 
-  // placeBet
+  // Modified placeBet: loop for betAmount transactions, each for 1 ticket.
   async function placeBet(teamId) {
     if (!bettingContract) {
       setErrorMsg("No betting contract available.");
@@ -398,10 +398,12 @@ function App() {
       return;
     }
     try {
-      setStatus(`Betting ${betAmount} on ${teamId === 1 ? "Red" : "Blue"}...`);
-      const tx = await bettingContract.placeBet(phaseData.gameId, teamId, betAmount);
-      await tx.wait();
-      setStatus(`Bet placed on ${teamId === 1 ? "Red" : "Blue"}!`);
+      setStatus(`Placing ${betAmount} bet(s) on ${teamId === 1 ? "Red" : "Blue"}...`);
+      for (let i = 0; i < betAmount; i++) {
+        const tx = await bettingContract.placeBet(phaseData.gameId, teamId, 1);
+        await tx.wait();
+      }
+      setStatus(`${betAmount} bet(s) placed on ${teamId === 1 ? "Red" : "Blue"}!`);
       setErrorMsg("");
     } catch (err) {
       console.error("Bet failed:", err);
