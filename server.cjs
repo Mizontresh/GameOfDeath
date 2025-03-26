@@ -207,9 +207,11 @@ async function distributeWinnings(gameId, winningTeam) {
     console.log("No winning bets => no payouts.");
     return;
   }
+  // Use a multiplier to allow for more precision (adjust multiplier as needed)
+  const MINT_MULTIPLIER = 1e6;
   const mintPromises = winningBets.map(w => {
-    const fraction = w.tickets / totalWinningTickets;
-    const share = Math.floor(fraction * totalLosingTickets);
+    // Calculate share: (w.tickets * totalLosingTickets / totalWinningTickets) scaled by MINT_MULTIPLIER.
+    const share = Math.floor((w.tickets * totalLosingTickets * MINT_MULTIPLIER) / totalWinningTickets);
     if (share > 0) {
       return queueTransaction(async (nonce) => {
         const tx = await mizons.mint(w.user, share, { nonce });
@@ -229,6 +231,12 @@ async function distributeWinnings(gameId, winningTeam) {
 async function recordGame(winner) {
   try {
     const counts = await gameContract.getTeamCounts(currentGameId);
+    // Before saving, include all bettors as active players
+    const bets = await bettingContract.getBets(currentGameId);
+    bets.forEach(b => {
+      activePlayers.add(b.user.toLowerCase());
+    });
+
     let thumbnail = "";
     if (boardHistory.length > 0) {
       thumbnail = await generateThumbnail(boardHistory[boardHistory.length - 1], currentGameId);

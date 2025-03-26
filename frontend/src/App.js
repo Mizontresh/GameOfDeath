@@ -22,7 +22,7 @@ const mizonsABI = [
   "function balanceOf(address owner) external view returns (uint256)"
 ];
 
-// Adjust to your actual .env or constants
+// Environment constants
 const contractAddress = process.env.REACT_APP_GAMEOFDEATH_ADDRESS;
 const bettingAddress = process.env.REACT_APP_BETTING_ADDRESS;
 const mizonsAddress = process.env.REACT_APP_MIZONS_ADDRESS;
@@ -69,31 +69,37 @@ function App() {
 
   const socketRef = useRef(null);
 
+  // Helper function: format MIZ balance in scientific notation when needed
+  function formatMizons(balance) {
+    // Convert balance (a string) to a Number using ethers.formatUnits (assuming 18 decimals)
+    const bal = Number(ethers.formatUnits(balance, 18));
+    if (bal === 0) return "0";
+    if (bal < 0.000001 || bal > 1000000) {
+      return bal.toExponential(6); // e.g., 1.234567e-9 or 1.234567e+12
+    }
+    return bal.toFixed(6);
+  }
+
   // Socket.io setup
   useEffect(() => {
     socketRef.current = io(backendUrl, { transports: ["websocket"] });
-
     socketRef.current.on("connect", () => {
       console.log("Socket connected:", socketRef.current.id);
     });
-
     socketRef.current.on("phaseUpdated", (data) => {
       console.log("phaseUpdated event:", data);
       setPhaseData(data);
     });
-
     socketRef.current.on("boardUpdated", (augmentedBoard) => {
       // Only update live board if we're not in a selected replay
       if (!selectedHistory && liveReplayIndex < 0) {
         setLiveBoard(augmentedBoard);
       }
     });
-
     socketRef.current.on("winner", ({ winner }) => {
       setWinnerOverlay(winner);
       setTimeout(() => setWinnerOverlay(null), 3000);
     });
-
     socketRef.current.on("newGameRecord", (record) => {
       console.log("Received newGameRecord:", record);
       fetchAllGames();
@@ -104,11 +110,9 @@ function App() {
         fetchMyGames(userAddress);
       }
     });
-
     socketRef.current.on("disconnect", () => {
       console.log("Socket disconnected");
     });
-
     return () => {
       socketRef.current.disconnect();
     };
@@ -219,7 +223,8 @@ function App() {
 
   // Selected record auto replay
   useEffect(() => {
-    if (!selectedAutoReplay || !selectedHistory || selectedHistory.length === 0) return;
+    if (!selectedAutoReplay || !selectedHistory || selectedHistory.length === 0)
+      return;
     const autoInterval = setInterval(() => {
       setSelectedReplayIndex((prev) => {
         const newIndex = prev < 0 ? 0 : prev + 1;
@@ -256,23 +261,21 @@ function App() {
     return () => clearInterval(interval);
   }, [gameContract, userAddress, selectedHistory, liveReplayIndex, phaseData.gameId]);
 
-  // Poll MIZ balance
+  // Poll MIZ balance every 5 seconds
   useEffect(() => {
     if (!window.ethereum || !mizonsAddress || !userAddress) return;
     const provider = new ethers.BrowserProvider(window.ethereum);
     const mizonsContract = new ethers.Contract(mizonsAddress, mizonsABI, provider);
-
     const interval = setInterval(() => {
       mizonsContract
         .balanceOf(userAddress)
         .then((bal) => setMizonsBalance(bal.toString()))
         .catch((err) => console.error("Error fetching MIZ balance:", err));
     }, 5000);
-
     return () => clearInterval(interval);
   }, [mizonsAddress, userAddress]);
 
-  // Fetch all games
+  // Fetch all game records
   async function fetchAllGames() {
     try {
       const res = await fetch(`${backendUrl}/api/allRecords`);
@@ -288,7 +291,7 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch my games
+  // Fetch my game records
   async function fetchMyGames(address) {
     if (!address) return;
     try {
@@ -512,19 +515,16 @@ function App() {
           </h1>
         </div>
       )}
-
       <div className="title-bar">
         <h1 className="game-title">GAME OF DEATH</h1>
         <p className="phase-time-text">{status}</p>
       </div>
-
       <div className="scoreboard-bar-container">
         <div className="score-bar">
           <div className="score-bar-red" style={{ width: `${redPercent}%` }} />
           <div className="score-bar-blue" style={{ width: `${bluePercent}%` }} />
         </div>
       </div>
-
       <div className="wallet-corner">
         {userAddress ? (
           <>
@@ -541,7 +541,6 @@ function App() {
           </button>
         )}
       </div>
-
       <div className="main-content">
         {/* Left Panel: Game Records */}
         <div className="left-panel permanent-records-panel">
@@ -595,8 +594,6 @@ function App() {
               </ul>
             )}
           </div>
-
-          {/* If a record is selected, show details & replay controls */}
           {selectedRecord && selectedHistory && (
             <div className="selected-record-details">
               <h3>Game #{selectedRecord.gameId} Details</h3>
@@ -618,7 +615,6 @@ function App() {
                   className="searched-record-thumbnail"
                 />
               )}
-
               <div className="record-auto-container">
                 <button className="replay-btn" onClick={recordToggleAutoReplay}>
                   {selectedAutoReplay ? "Stop Auto Replay" : "Start Auto Replay"}
@@ -657,19 +653,17 @@ function App() {
                   let cls = "cell";
                   if (cell.value === 1) cls += " red";
                   if (cell.value === 2) cls += " blue";
-
-                  // Dim cells if placing phase & user can't place
+                  // Dim cells during placing phase if user cannot place there
                   if (!selectedHistory && liveReplayIndex < 0 && phaseData.phase === "placing") {
                     if (userTeam === 1 && y >= 32) cls += " dim-cell";
                     if (userTeam === 2 && y < 32) cls += " dim-cell";
                   }
-
                   return (
                     <div
                       key={i}
                       className={cls}
                       onClick={() => {
-                        if (selectedHistory) return; // can't place in replay
+                        if (selectedHistory) return;
                         if (phaseData.phase !== "placing") return;
                         placeSquare(x, y);
                       }}
@@ -679,8 +673,6 @@ function App() {
               </div>
             </div>
           </div>
-
-          {/* Only show live replay controls if not in a selected record */}
           {!selectedHistory && (
             <div className="replay-container">
               <button className="replay-btn" onClick={livePrevBoard}>
@@ -697,7 +689,6 @@ function App() {
               </button>
             </div>
           )}
-          {/* Show which board we're viewing */}
           {selectedHistory ? null : liveReplayIndex < 0 ? (
             <p className="replay-info">Viewing Live Board</p>
           ) : (
@@ -765,7 +756,9 @@ function App() {
           <h2 className="neon-heading" style={{ marginTop: "20px" }}>
             Your MIZ
           </h2>
-          <p style={{ fontSize: "1.2rem", color: "#ccc" }}>{mizonsBalance}</p>
+          <p style={{ fontSize: "1.2rem", color: "#ccc" }}>
+            {formatMizons(mizonsBalance)} MIZ
+          </p>
         </div>
       </div>
 

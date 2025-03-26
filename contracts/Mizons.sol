@@ -6,7 +6,9 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract Mizons is ERC20, Ownable {
     constructor(address initialOwner) ERC20("Mizons", "MIZ") Ownable(initialOwner) {
-        // Optionally mint an initial supply here.
+        // Optionally mint an initial supply here if desired.
+        // For example, to mint 1,000 tokens (assuming 18 decimals):
+        // _mint(initialOwner, 1000 * 10 ** decimals());
     }
 
     function mint(address to, uint256 amount) external onlyOwner {
