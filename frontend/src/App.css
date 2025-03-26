@@ -432,3 +432,9 @@ html, body, #root {
     padding: 10px;
   }
 }
+
+.miz-logo {
+  width: 64px;
+  height: 64px;
+  margin-right: 8px;
+}

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import "./App.css";
 import { io } from "socket.io-client";
 import { ethers } from "ethers";
+import logo from "./logo.png"; // We keep this import for the small MIZ logo
 
 // Minimal ABIs (adjust if needed)
 const gameABI = [
@@ -75,7 +76,7 @@ function App() {
     const bal = Number(ethers.formatUnits(balance, 18));
     if (bal === 0) return "0";
     if (bal < 0.000001 || bal > 1000000) {
-      return bal.toExponential(6); // e.g., 1.234567e-9 or 1.234567e+12
+      return bal.toExponential(6);
     }
     return bal.toFixed(6);
   }
@@ -509,6 +510,7 @@ function App() {
   const shouldShowWinner = winnerOverlay && !selectedHistory && liveReplayIndex < 0;
 
   return (
+    
     <div className="app-container">
       {shouldShowWinner && (
         <div className="winner-overlay">
@@ -518,6 +520,7 @@ function App() {
         </div>
       )}
       <div className="title-bar">
+        {/* Removed the large logo here; just the title and status remain */}
         <h1 className="game-title">GAME OF DEATH</h1>
         <p className="phase-time-text">{status}</p>
       </div>
@@ -758,9 +761,13 @@ function App() {
           <h2 className="neon-heading" style={{ marginTop: "20px" }}>
             Your MIZ
           </h2>
-          <p style={{ fontSize: "1.2rem", color: "#ccc" }}>
-            {formatMizons(mizonsBalance)} MIZ
-          </p>
+          {/* Use the small logo here, adjust size in CSS */}
+          <div className="miz-balance-container">
+            <img src={logo} alt="MIZ Logo" className="miz-logo" />
+            <p style={{ fontSize: "1.2rem", color: "#ccc" }}>
+              {formatMizons(mizonsBalance)} MIZ
+            </p>
+          </div>
         </div>
       </div>
 
