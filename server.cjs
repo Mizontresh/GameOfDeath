@@ -236,7 +236,6 @@ async function recordGame(winner) {
     bets.forEach(b => {
       activePlayers.add(b.user.toLowerCase());
     });
-
     let thumbnail = "";
     if (boardHistory.length > 0) {
       thumbnail = await generateThumbnail(boardHistory[boardHistory.length - 1], currentGameId);
@@ -326,6 +325,27 @@ async function runFinalCycle() {
 }
 
 //-------------------------------------
+// BETTING LOCK/UNLOCK FUNCTIONS
+//-------------------------------------
+async function openBettingForCurrentGame() {
+  console.log(`Opening betting for gameId ${currentGameId}`);
+  await queueTransaction(async (nonce) => {
+    const tx = await bettingContract.openBetting(currentGameId, { nonce });
+    console.log(`Betting opened for gameId ${currentGameId}, tx: ${tx.hash}`);
+    return waitForTxConfirmation(tx);
+  });
+}
+
+async function closeBettingForCurrentGame() {
+  console.log(`Closing betting for gameId ${currentGameId}`);
+  await queueTransaction(async (nonce) => {
+    const tx = await bettingContract.closeBetting(currentGameId, { nonce });
+    console.log(`Betting closed for gameId ${currentGameId}, tx: ${tx.hash}`);
+    return waitForTxConfirmation(tx);
+  });
+}
+
+//-------------------------------------
 // setContractPhase
 //-------------------------------------
 async function setContractPhase(newPhase, attempt = 1) {
@@ -362,6 +382,8 @@ async function transitionPhase() {
   console.log("transitionPhase() called in phase:", phase);
   if (phase === "picking") {
     console.log("Transitioning from picking to placing");
+    // First, close betting so no further bets can be placed
+    await closeBettingForCurrentGame();
     await setContractPhase("placing");
     phase = "placing";
     phaseTimeLeft = PLACING_TIME;
@@ -375,6 +397,8 @@ async function transitionPhase() {
       await setContractPhase("picking");
       phase = "picking";
       phaseTimeLeft = PICKING_TIME;
+      // Open betting for the new game phase
+      await openBettingForCurrentGame();
     } else {
       console.log("Maximum cycles reached; running final conway cycle now...");
       await runFinalCycle();
@@ -451,6 +475,8 @@ async function resetGame() {
   activePlayers.clear();
   console.log("Local state reset, new gameId:", currentGameId);
   io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
+  // Open betting for the new game
+  await openBettingForCurrentGame();
 }
 
 //-------------------------------------
@@ -580,6 +606,8 @@ app.post("/admin/reset-to-game1", async (req, res) => {
       phase = "picking";
       phaseTimeLeft = PICKING_TIME;
       io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
+      // Open betting when picking phase starts
+      await openBettingForCurrentGame();
     }
   } catch (err) {
     console.error("Startup error:", err);
