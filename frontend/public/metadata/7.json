@@ -1,0 +1,19 @@
+{
+  "name": "Chest Type 7",
+  "description": "A chest containing Uncommon, Rare, and Epic items.",
+  "image": "https://localhost:3001/metadata/var/frame7.png",
+  "attributes": [
+    {
+      "trait_type": "Item Tier 1",
+      "value": "Uncommon"
+    },
+    {
+      "trait_type": "Item Tier 2",
+      "value": "Rare"
+    },
+    {
+      "trait_type": "Item Tier 3",
+      "value": "Epic"
+    }
+  ]
+}

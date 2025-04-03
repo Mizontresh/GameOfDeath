@@ -1,0 +1,15 @@
+{
+  "name": "Chest #13",
+  "description": "A unique chest from the Game of Death. Frame 13.",
+  "image": "ipfs://bafybeiazzakwoxpy7otax3wtrdbaxsyiysd27ql7zi5q6kacqflcl5doma/frame13.png",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Common"
+    },
+    {
+      "trait_type": "Frame Index",
+      "value": 13
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "Chest #4",
+  "description": "A unique chest from the Game of Death. Frame 4.",
+  "image": "ipfs://bafybeiazzakwoxpy7otax3wtrdbaxsyiysd27ql7zi5q6kacqflcl5doma/frame4.png",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Rare"
+    },
+    {
+      "trait_type": "Frame Index",
+      "value": 4
+    }
+  ]
+}

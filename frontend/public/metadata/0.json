@@ -1,0 +1,19 @@
+{
+  "name": "Chest Type 0",
+  "description": "A chest containing Common, Uncommon, and Rare items.",
+  "image": "https://localhost:3001/chests/var/frame0.png",
+  "attributes": [
+    {
+      "trait_type": "Item Tier 1",
+      "value": "Common"
+    },
+    {
+      "trait_type": "Item Tier 2",
+      "value": "Uncommon"
+    },
+    {
+      "trait_type": "Item Tier 3",
+      "value": "Rare"
+    }
+  ]
+}

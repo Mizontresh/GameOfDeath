@@ -1,0 +1,19 @@
+{
+  "name": "Chest Type 9",
+  "description": "A chest containing Rare, Epic, and Legendary items.",
+  "image": "https://localhost:3001/metadata/var/frame9.png",
+  "attributes": [
+    {
+      "trait_type": "Item Tier 1",
+      "value": "Rare"
+    },
+    {
+      "trait_type": "Item Tier 2",
+      "value": "Epic"
+    },
+    {
+      "trait_type": "Item Tier 3",
+      "value": "Legendary"
+    }
+  ]
+}

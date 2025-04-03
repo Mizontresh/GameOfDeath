@@ -39,6 +39,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
+app.use('/skins', express.static(path.join(__dirname, 'skins')));
+app.use('/chests', express.static(path.join(__dirname, 'chests')));
 const serverHttp = http.createServer(app);
 const io = new Server(serverHttp, { cors: { origin: "*" } });
 
@@ -50,6 +52,7 @@ const wsProvider = new ethers.WebSocketProvider(
 );
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, wsProvider);
 
+// Load contract artifacts
 const gameArtifact = require("./artifacts/contracts/GameOfDeath.sol/GameOfDeath.json");
 const bettingArtifact = require("./artifacts/contracts/GameOfDeathBetting.sol/GameOfDeathBetting.json");
 const mizonsArtifact = require("./artifacts/contracts/Mizons.sol/Mizons.json");
@@ -57,6 +60,11 @@ const mizonsArtifact = require("./artifacts/contracts/Mizons.sol/Mizons.json");
 const gameAddress = process.env.GAMEOFDEATH_ADDRESS;
 const bettingAddress = process.env.GAMEOFDEATH_BETTING_ADDRESS;
 const mizonsAddress = process.env.MIZONS_ADDRESS;
+
+console.log("Connecting to contracts...");
+console.log("Game Address:", gameAddress);
+console.log("Betting Address:", bettingAddress);
+console.log("Mizons Address:", mizonsAddress);
 
 const gameContract = new ethers.Contract(gameAddress, gameArtifact.abi, wallet);
 const bettingContract = new ethers.Contract(bettingAddress, bettingArtifact.abi, wallet);
@@ -69,7 +77,7 @@ let phase = "picking"; // valid phases: "picking", "placing", "conway", "final"
 let phaseTimeLeft = 30;
 let boardHistory = [];
 let transitionInProgress = false;
-let currentGameId = 1; // this will be updated from chain on startup/reset.
+let currentGameId = 1; // updated from chain on startup/reset
 let cycleCount = 0; // intermediate conway cycles completed
 let conwayActive = false;
 let activePlayers = new Set();
@@ -207,10 +215,8 @@ async function distributeWinnings(gameId, winningTeam) {
     console.log("No winning bets => no payouts.");
     return;
   }
-  // Use a multiplier to allow for more precision (adjust multiplier as needed)
   const MINT_MULTIPLIER = 1e6;
   const mintPromises = winningBets.map(w => {
-    // Calculate share: (w.tickets * totalLosingTickets / totalWinningTickets) scaled by MINT_MULTIPLIER.
     const share = Math.floor((w.tickets * totalLosingTickets * MINT_MULTIPLIER) / totalWinningTickets);
     if (share > 0) {
       return queueTransaction(async (nonce) => {
@@ -231,7 +237,6 @@ async function distributeWinnings(gameId, winningTeam) {
 async function recordGame(winner) {
   try {
     const counts = await gameContract.getTeamCounts(currentGameId);
-    // Before saving, include all bettors as active players
     const bets = await bettingContract.getBets(currentGameId);
     bets.forEach(b => {
       activePlayers.add(b.user.toLowerCase());
@@ -298,7 +303,6 @@ async function runFinalCycle() {
   boardHistory.push([...snapshot]);
   await runConwaySteps(CONWAY_STEPS);
 
-  // Count opposing placements
   let redOnBlue = 0, blueOnRed = 0;
   const board = await getOnChainBoard();
   for (let y = 0; y < 64; y++) {
@@ -317,7 +321,6 @@ async function runFinalCycle() {
   io.emit("winner", { winner });
   await recordGame(winner);
 
-  // Force final phase so the frontend knows (no conway timer)
   await setContractPhase("final");
   phase = "final";
   phaseTimeLeft = FINAL_COUNTDOWN;
@@ -382,7 +385,6 @@ async function transitionPhase() {
   console.log("transitionPhase() called in phase:", phase);
   if (phase === "picking") {
     console.log("Transitioning from picking to placing");
-    // First, close betting so no further bets can be placed
     await closeBettingForCurrentGame();
     await setContractPhase("placing");
     phase = "placing";
@@ -397,12 +399,11 @@ async function transitionPhase() {
       await setContractPhase("picking");
       phase = "picking";
       phaseTimeLeft = PICKING_TIME;
-      // Open betting for the new game phase
       await openBettingForCurrentGame();
     } else {
       console.log("Maximum cycles reached; running final conway cycle now...");
       await runFinalCycle();
-      return; // runFinalCycle handles final phase update
+      return;
     }
   } else if (phase === "final") {
     console.log("Final phase expired; resetting game...");
@@ -428,7 +429,6 @@ setInterval(async () => {
         transitionInProgress = false;
       }
     }
-    // For conway phase, the simulation in runConwaySteps handles transitions.
   } catch (err) {
     console.error("Error in main loop:", err);
   }
@@ -459,7 +459,6 @@ async function resetGame() {
   } catch (err) {
     console.error("Error calling newGame on-chain:", err);
   }
-  // Update currentGameId from chain
   try {
     const onChainGameId = await gameContract.currentGameId();
     currentGameId = Number(onChainGameId);
@@ -475,7 +474,6 @@ async function resetGame() {
   activePlayers.clear();
   console.log("Local state reset, new gameId:", currentGameId);
   io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
-  // Open betting for the new game
   await openBettingForCurrentGame();
 }
 
@@ -523,7 +521,12 @@ app.get("/api/history", (req, res) => {
 
 app.get("/api/allRecords", async (req, res) => {
   try {
-    const records = await GameRecord.find().sort({ gameId: -1 });
+    const skip = parseInt(req.query.skip) || 0;
+    const limit = parseInt(req.query.limit) || 10;
+    const records = await GameRecord.find()
+      .sort({ gameId: -1 })
+      .skip(skip)
+      .limit(limit);
     res.json({ records });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -532,8 +535,13 @@ app.get("/api/allRecords", async (req, res) => {
 
 app.get("/api/records/:userAddress", async (req, res) => {
   try {
+    const skip = parseInt(req.query.skip) || 0;
+    const limit = parseInt(req.query.limit) || 10;
     const userAddr = req.params.userAddress.toLowerCase();
-    const records = await GameRecord.find({ players: userAddr }).sort({ gameId: -1 });
+    const records = await GameRecord.find({ players: userAddr })
+      .sort({ gameId: -1 })
+      .skip(skip)
+      .limit(limit);
     res.json({ records });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -592,7 +600,6 @@ app.post("/admin/reset-to-game1", async (req, res) => {
 //-------------------------------------
 (async () => {
   try {
-    // Fetch currentGameId from the chain on startup.
     const onChainGameId = await gameContract.currentGameId();
     currentGameId = Number(onChainGameId);
     console.log("Fetched currentGameId from chain:", currentGameId);
@@ -606,7 +613,6 @@ app.post("/admin/reset-to-game1", async (req, res) => {
       phase = "picking";
       phaseTimeLeft = PICKING_TIME;
       io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
-      // Open betting when picking phase starts
       await openBettingForCurrentGame();
     }
   } catch (err) {

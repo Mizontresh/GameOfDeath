@@ -1,0 +1,19 @@
+{
+  "name": "Chest Type 15",
+  "description": "A chest containing Epic, Legendary, and Mizontreshian items.",
+  "image": "https://localhost:3001/metadata/var/frame15.png",
+  "attributes": [
+    {
+      "trait_type": "Item Tier 1",
+      "value": "Epic"
+    },
+    {
+      "trait_type": "Item Tier 2",
+      "value": "Legendary"
+    },
+    {
+      "trait_type": "Item Tier 3",
+      "value": "Mizontreshian"
+    }
+  ]
+}

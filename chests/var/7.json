@@ -1,0 +1,15 @@
+{
+  "name": "Chest #7",
+  "description": "A unique chest from the Game of Death. Frame 7.",
+  "image": "ipfs://bafybeiazzakwoxpy7otax3wtrdbaxsyiysd27ql7zi5q6kacqflcl5doma/frame7.png",
+  "attributes": [
+    {
+      "trait_type": "Rarity",
+      "value": "Uncommon"
+    },
+    {
+      "trait_type": "Frame Index",
+      "value": 7
+    }
+  ]
+}
