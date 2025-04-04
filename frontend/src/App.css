@@ -547,7 +547,7 @@ body {
   .score-bar {
     position: relative;
     width: 300px;
-    top: 1060px;
+    top: 965px;
     height: 20px;
     background: #222;
     border: 2px solid #ff00e2;
@@ -556,4 +556,55 @@ body {
     box-shadow: 0 0 8px #ff00e2;
     display: flex;
   }
+}
+/* Make the left panel narrower and compress the text */
+.left-panel {
+  width: 220px;         /* Was 300px before; adjust to your preference */
+  min-width: 220px;
+  font-size: 0.85rem;   /* Slightly smaller base font for the panel */
+  padding: 6px 10px;    /* Slightly tighter padding */
+}
+
+.left-panel h2 {
+  font-size: 1rem;      /* Smaller heading */
+  margin: 4px 0;
+}
+
+/* Slightly smaller paragraphs, plus a neon glow */
+.left-panel p {
+  font-size: 0.85rem;
+  line-height: 1.2;
+  margin: 4px 0;
+  color: #ff00e2;
+  text-shadow: 0 0 2px #ff00e2, 0 0 4px #ff00e2;
+}
+
+/* Optionally give all text inside .left-panel a neon glow */
+.left-panel * {
+  color: #ff00e2;
+  text-shadow: 0 0 2px #ff00e2, 0 0 4px #ff00e2;
+}
+
+/* Tighter spacing in join-team & bet buttons */
+.join-team-buttons,
+.bet-buttons {
+  gap: 6px;
+  margin: 6px 0;
+}
+
+/* Slightly smaller chest roll section, if needed */
+.chest-roll-section {
+  padding: 4px;
+  margin-top: 6px;
+  font-size: 0.85rem;
+}
+.left-panel {
+  width: 300px;
+  min-width: 300px;
+  /* Retain any other styles you have */
+}
+.left-panel,
+.right-panel {
+  width: 300px;
+  min-width: 300px;
 }
