@@ -145,14 +145,13 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
 }
 
 // -------------------- WholeSkinsPanel Component --------------------
-function WholeSkinsPanel({ onSelectSkin, onClose }) {
+function WholeSkinsPanel({ onSelectSkin, onClose, ownedSkins }) {
   const GRID_COLUMNS = 32;
-  const GRID_ROWS = 32;
   const CELL_SIZE = 18;
   const TOTAL_SKINS = 1024;
+  const scale = 70 / (GRID_COLUMNS * CELL_SIZE);
 
   function getSkinCoords(skinId) {
-    // Calculate original coordinates
     const x = (skinId % GRID_COLUMNS) * CELL_SIZE;
     const y = Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE;
     return { x, y };
@@ -163,12 +162,10 @@ function WholeSkinsPanel({ onSelectSkin, onClose }) {
       <div
         style={{
           position: "relative",
-          width: "70vw",      // 70% of viewport width
-          maxWidth: "70vw",
-          height: "auto",
-          maxHeight: "70vh",
-          overflow: "hidden",
-          margin: "0 auto"
+          width: "70vmin",
+          height: "70vmin",
+          margin: "0 auto",
+          overflow: "hidden"
         }}
       >
         <img
@@ -176,26 +173,33 @@ function WholeSkinsPanel({ onSelectSkin, onClose }) {
           alt="All Skins"
           style={{
             width: "100%",
-            height: "auto",
+            height: "100%",
+            objectFit: "contain",
             display: "block"
           }}
         />
         {Array.from({ length: TOTAL_SKINS }, (_, i) => {
           const { x, y } = getSkinCoords(i);
-          // Optionally, you could multiply x,y by a scaling factor here if needed
+          const isOwned = ownedSkins && ownedSkins.includes(i);
           return (
             <div
               key={i}
               style={{
                 position: "absolute",
-                left: x,
-                top: y,
-                width: CELL_SIZE,
-                height: CELL_SIZE,
-                backgroundColor: "rgba(0,0,0,0.9)",
-                cursor: "not-allowed"
+                left: x * scale + "vmin",
+                top: y * scale + "vmin",
+                width: CELL_SIZE * scale + "vmin",
+                height: CELL_SIZE * scale + "vmin",
+                backgroundColor: isOwned ? "transparent" : "rgba(128,128,128,0.5)",
+                cursor: "pointer"
               }}
-              onClick={() => onSelectSkin(i)}
+              onClick={() => {
+                if (!isOwned) {
+                  alert("You do not own this memory");
+                } else {
+                  onSelectSkin(i);
+                }
+              }}
             />
           );
         })}
@@ -268,6 +272,14 @@ function App() {
   const socketRef = useRef(null);
   const [inventory, setInventory] = useState(new Array(16).fill(0));
 
+  // New state for chest opening animation overlay.
+  // "step" can be "opening", "placeholder", or "revealed"
+  // We now store both the minted chest type and the inverted (revealed) type.
+  const [chestAnimation, setChestAnimation] = useState({ active: false, mintedType: null, revealedType: null, step: null });
+
+  // For demonstration, maintain a state of owned skins.
+  const [ownedSkins] = useState([1, 3, 5, 7, 9, 11, 13, 15]);
+
   // Determine which board to display:
   let displayBoard;
   if (selectedHistory) {
@@ -295,13 +307,10 @@ function App() {
   }
   const { redOnBlue, blueOnRed } = computeOpposingStats(displayBoard);
   const totalOpposing = redOnBlue + blueOnRed;
-  let redPercent = 50, bluePercent = 50;
-  if (totalOpposing > 0) {
-    redPercent = (redOnBlue / totalOpposing) * 100;
-    bluePercent = (blueOnRed / totalOpposing) * 100;
-  }
+  let redPercent = totalOpposing > 0 ? (redOnBlue / totalOpposing) * 100 : 50;
+  let bluePercent = totalOpposing > 0 ? (blueOnRed / totalOpposing) * 100 : 50;
 
-  // Show veil in placing phase if not replaying
+  // Show veil in placing phase if not replaying (for board interaction)
   const showVeil = phaseData.phase === "placing" && !selectedRecord && liveReplayIndex < 0;
 
   // Format MIZ balance
@@ -378,7 +387,6 @@ function App() {
     });
     socketRef.current.on("newGameRecord", record => {
       console.log("Received new game record:", record);
-      // Trigger refresh of RecordsList by updating refreshKey
       setRefreshKey(prev => prev + 1);
     });
     socketRef.current.on("disconnect", () => console.log("Socket disconnected"));
@@ -612,7 +620,7 @@ function App() {
     }
   }
 
-  // Chest mint & approval.
+  // Chest mint & approval with chest opening animation that replaces the image.
   async function handleMintChest() {
     if (!userAddress) {
       alert("Connect your wallet first!");
@@ -623,15 +631,55 @@ function App() {
       return;
     }
     try {
+      // Step 1: Show "IT OPENS AND SWIRLS" message for 2 seconds.
+      setChestAnimation({ active: true, mintedType: null, revealedType: null, step: "opening" });
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Step 2: Show placeholder image of the big brain chest with "Chest is opening" text.
+      // For placeholder, we use the brain image from the root folder.
+      setChestAnimation({ active: true, mintedType: null, revealedType: null, step: "placeholder" });
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Step 3: Mint the chest NFT.
       const tx = await chestMinterContract.mintRandomChest({ gasLimit: 400000 });
-      await tx.wait();
-      alert("Chest NFT minted successfully!");
+      const receipt = await tx.wait();
+      
+      // Step 4: Wait an extra second for state update.
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Step 5: Retrieve the user's balance and the most recent token minted.
+      const balanceBN = await chestMinterContract.balanceOf(userAddress);
+      const balance = Number(balanceBN);
+      if (balance === 0) {
+        throw new Error("No tokens found for user after minting.");
+      }
+      const tokenIdBN = await chestMinterContract.tokenOfOwnerByIndex(userAddress, balance - 1);
+      const tokenId = Number(tokenIdBN);
+      
+      // Step 6: Query the contract for the minted chest type.
+      const chestTypeBN = await chestMinterContract.tokenChestType(tokenId);
+      const mintedChestType = Number(chestTypeBN);
+      
+      // Step 7: Invert the image index so that minted chest 0 becomes image 15, 1 becomes image 14, etc.
+      const revealedChestType = mintedChestType;
+      // For text, we show the actual minted chest type.
+      const message = `YOU GOT CHEST ${mintedChestType - 15}`;
+      
+      // Step 8: Update overlay to reveal the final image.
+      // The revealed image is pulled from the chests/var folder using the inverted index.
+      setChestAnimation({ active: true, mintedType: mintedChestType, revealedType: revealedChestType, step: "revealed" });
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Step 9: Dismiss the overlay and refresh inventory.
+      setChestAnimation({ active: false, mintedType: null, revealedType: null, step: null });
       refreshInventory();
     } catch (err) {
       console.error("Error minting chest:", err);
+      setChestAnimation({ active: false, mintedType: null, revealedType: null, step: null });
       alert("Chest minting failed: " + err.message);
     }
   }
+
   async function approveTokens() {
     if (!userAddress) {
       alert("Connect your wallet first!");
@@ -716,7 +764,7 @@ function App() {
 
   return (
     <div className="app-container">
-      {/* Inject custom styles for the range slider */}
+      {/* Inject custom styles for the range slider and chest animation */}
       <style>{`
         input[type="range"] {
           -webkit-appearance: none;
@@ -757,7 +805,71 @@ function App() {
           border-radius: 50%;
           box-shadow: 0 0 6px #ff00e2;
         }
+        .chest-animation-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          background: rgba(0,0,0,0.85);
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          z-index: 1100;
+        }
+        .chest-animation-content {
+          text-align: center;
+          animation: chestPop 0.8s ease-out;
+          transition: opacity 0.5s ease;
+        }
+        @keyframes chestPop {
+          0% { transform: scale(0.5); opacity: 0; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes shake {
+          0% { transform: translate(0, 0); }
+          20% { transform: translate(-10px, 0); }
+          40% { transform: translate(10px, 0); }
+          60% { transform: translate(-10px, 0); }
+          80% { transform: translate(10px, 0); }
+          100% { transform: translate(0, 0); }
+        }
+        .shake {
+          animation: shake 1s;
+        }
+        .chest-animation-content img {
+          width: 200px;
+          height: auto;
+          transition: opacity 0.5s ease;
+        }
+        .chest-animation-content p {
+          color: #ff00e2;
+          font-size: 1.5rem;
+          text-shadow: 0 0 4px #ff00e2;
+          margin-top: 1rem;
+        }
       `}</style>
+
+      {/* Chest Opening Animation Overlay */}
+      {chestAnimation.active && (
+        <div className="chest-animation-overlay">
+          <div className="chest-animation-content">
+            {chestAnimation.step === "opening" && <p>IT OPENS AND SWIRLS</p>}
+            {chestAnimation.step === "placeholder" && (
+              <>
+                <img src={`${backendUrl}/chests/brain.png`} alt="Placeholder Big Brain Chest" />
+                <p>Chest is opening</p>
+              </>
+            )}
+            {chestAnimation.step === "revealed" && (
+              <>
+                <img src={`${backendUrl}/chests/var/frame${chestAnimation.revealedType}.png`} alt="Revealed Chest" />
+                <p>YOU GOT CHEST {chestAnimation.mintedType}</p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Top-Left Buttons */}
       <div className="top-left-buttons">
@@ -875,7 +987,6 @@ function App() {
             <p style={{ margin: 0 }}>Red Bets: {liveRedBets}</p>
             <p style={{ margin: 0 }}>Blue Bets: {liveBlueBets}</p>
             <p style={{ margin: 0 }}>Tickets: {betAmount}</p>
-            {/* Styled ticket amount slider */}
             <input type="range" min="1" max="10" value={betAmount} onChange={e => setBetAmount(Number(e.target.value))} />
             <div className="bet-buttons">
               <button className="bet-red" onClick={() => placeBet(1)} disabled={phaseData.phase !== "picking"}>
@@ -1019,6 +1130,7 @@ function App() {
       {/* Whole Skins Overlay */}
       {showWholeSkins && (
         <WholeSkinsPanel
+          ownedSkins={ownedSkins}
           onSelectSkin={skinId => {
             alert(`Selected skin #${skinId}`);
             setShowWholeSkins(false);
