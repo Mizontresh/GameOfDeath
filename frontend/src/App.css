@@ -608,3 +608,21 @@ body {
   width: 300px;
   min-width: 300px;
 }
+/* Give all text in the right panel a neon pink color & glow */
+.right-panel,
+.right-panel * {
+  color: #ff00e2;
+  text-shadow: 0 0 2px #ff00e2, 0 0 4px #ff00e2;
+}
+/* Only color text in the records list and details */
+.records-list-container,
+.records-list-container * {
+  color: #ff00e2;
+  text-shadow: 0 0 2px #ff00e2, 0 0 4px #ff00e2;
+}
+
+.game-details,
+.game-details * {
+  color: #ff00e2;
+  text-shadow: 0 0 2px #ff00e2, 0 0 4px #ff00e2;
+}
