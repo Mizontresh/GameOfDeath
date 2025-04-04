@@ -49,14 +49,7 @@ function convertToAugmentedBoard(numericalBoard) {
 }
 
 // -------------------- RecordsList Component --------------------
-function RecordsList({
-  backendUrl,
-  showMyGames,
-  userAddress,
-  onSelectRecord,
-  refreshKey,
-  setLatestRecord
-}) {
+function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, refreshKey, setLatestRecord }) {
   const [records, setRecords] = useState([]);
   const [skip, setSkip] = useState(0);
   const limit = 10;
@@ -119,9 +112,7 @@ function RecordsList({
       ) : (
         <ul className="game-records-list">
           {records.map((rec, index) => {
-            const dateString = rec.timestamp
-              ? new Date(rec.timestamp).toLocaleString()
-              : "N/A";
+            const dateString = rec.timestamp ? new Date(rec.timestamp).toLocaleString() : "N/A";
             return (
               <li
                 key={`${rec.gameId}-${index}`}
@@ -129,11 +120,7 @@ function RecordsList({
                 onClick={() => onSelectRecord(rec)}
               >
                 {rec.thumbnail && (
-                  <img
-                    src={rec.thumbnail}
-                    alt={`Game #${rec.gameId}`}
-                    className="record-thumbnail"
-                  />
+                  <img src={rec.thumbnail} alt={`Game #${rec.gameId}`} className="record-thumbnail" />
                 )}
                 <div className="record-info">
                   <strong>Game #{rec.gameId}</strong>
@@ -210,21 +197,25 @@ function WholeSkinsPanel({ onSelectSkin, onClose }) {
 
 // -------------------- Main App Component --------------------
 function App() {
-  // Layout constants
+  // Desktop layout: using your original side-panel design
+  // Mobile layout will be activated via CSS media queries.
+  // For desktop, the title is at the top; below that, the scoreboard;
+  // then the main content is in three columns (left panel, center board, right panel).
+  
+  // For the board size on desktop we can use a minimum board size.
   const LEFT_PANEL_WIDTH = 320;
   const RIGHT_PANEL_WIDTH = 320;
   const TOP_BAR_HEIGHT = 120;
   const MIN_BOARD_SIZE = 300;
-
   const [boardSize, setBoardSize] = useState(MIN_BOARD_SIZE);
+  
   useEffect(() => {
     function handleResize() {
+      // For desktop, the board size is the minimum of available width and height.
       const marginBetween = 60;
+      const availableWidth = window.innerWidth - (LEFT_PANEL_WIDTH + RIGHT_PANEL_WIDTH + marginBetween);
       const bottomMargin = 40;
-      const availableWidth =
-        window.innerWidth - (LEFT_PANEL_WIDTH + RIGHT_PANEL_WIDTH + marginBetween);
-      const availableHeight =
-        window.innerHeight - (TOP_BAR_HEIGHT + bottomMargin);
+      const availableHeight = window.innerHeight - (TOP_BAR_HEIGHT + bottomMargin);
       const size = Math.max(MIN_BOARD_SIZE, Math.min(availableWidth, availableHeight));
       setBoardSize(size);
     }
@@ -232,7 +223,7 @@ function App() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
-
+  
   // States
   const [userAddress, setUserAddress] = useState("");
   const [gameContract, setGameContract] = useState(null);
@@ -242,15 +233,15 @@ function App() {
   const [phaseData, setPhaseData] = useState({ phase: "picking", timeLeft: 30, gameId: 1 });
   const [teamCounts, setTeamCounts] = useState({ red: 0, blue: 0 });
   const [userTeam, setUserTeam] = useState(0);
-  const [status, setStatus] = useState(""); // Not displayed
+  const [status, setStatus] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
-
-  // Live board & replay
+  
+  // Live board & replay history
   const [liveBoard, setLiveBoard] = useState(Array(4096).fill({ value: 0, skin: null }));
   const [boardHistory, setBoardHistory] = useState([]);
   const [liveReplayIndex, setLiveReplayIndex] = useState(-1);
   const [liveAutoReplay, setLiveAutoReplay] = useState(false);
-
+  
   // Past record state
   const [showMyGames, setShowMyGames] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -259,36 +250,34 @@ function App() {
   const [selectedReplayIndex, setSelectedReplayIndex] = useState(-1);
   const [selectedAutoReplay, setSelectedAutoReplay] = useState(false);
   const [latestRecord, setLatestRecord] = useState(null);
-
+  
   // Bets & inventory
   const [liveRedBets, setLiveRedBets] = useState(0);
   const [liveBlueBets, setLiveBlueBets] = useState(0);
   const [betAmount, setBetAmount] = useState(1);
-
+  
   // Overlays
   const [showWholeSkins, setShowWholeSkins] = useState(false);
   const [winnerOverlay, setWinnerOverlay] = useState(null);
   const socketRef = useRef(null);
   const [inventory, setInventory] = useState(new Array(16).fill(0));
-
-  // Decide which board to display
+  
+  // Determine which board to display:
+  // 1) If a record is selected, show that record’s snapshot.
+  // 2) Else if liveReplayIndex >= 0, show a boardHistory snapshot.
+  // 3) Otherwise, show the liveBoard.
   let displayBoard;
   if (selectedHistory) {
-    // If a record is selected
-    const replayIndex = selectedReplayIndex < 0
-      ? selectedHistory.length - 1
-      : selectedReplayIndex;
+    const replayIndex = selectedReplayIndex < 0 ? selectedHistory.length - 1 : selectedReplayIndex;
     displayBoard = convertToAugmentedBoard(selectedHistory[replayIndex]);
   } else if (liveReplayIndex >= 0 && boardHistory.length > 0) {
-    // If replaying current game
     const index = Math.min(liveReplayIndex, boardHistory.length - 1);
     displayBoard = convertToAugmentedBoard(boardHistory[index]);
   } else {
-    // Live board
     displayBoard = liveBoard;
   }
-
-  // Scoreboard ratio
+  
+  // Compute scoreboard ratio
   function computeOpposingStats(board) {
     let redOnBlue = 0, blueOnRed = 0;
     for (let y = 0; y < 64; y++) {
@@ -303,23 +292,23 @@ function App() {
   }
   const { redOnBlue, blueOnRed } = computeOpposingStats(displayBoard);
   const totalOpposing = redOnBlue + blueOnRed;
-  let redPercent = 50, bluePercent = 50; // default 50/50 if no squares
+  let redPercent = 50, bluePercent = 50;
   if (totalOpposing > 0) {
     redPercent = (redOnBlue / totalOpposing) * 100;
     bluePercent = (blueOnRed / totalOpposing) * 100;
   }
-
-  // Show veil if in placing phase & not replaying
+  
+  // Show veil in placing phase if not replaying
   const showVeil = phaseData.phase === "placing" && !selectedRecord && liveReplayIndex < 0;
-
-  // Format MIZ
+  
+  // Format MIZ balance
   function formatMizons(balance) {
     const bal = Number(ethers.formatUnits(balance, 18));
     if (bal === 0) return "0";
     if (bal < 0.000001 || bal > 1000000) return bal.toExponential(6);
     return bal.toFixed(6);
   }
-
+  
   // selectRecord
   function selectRecord(rec) {
     setSelectedRecord(rec);
@@ -333,8 +322,8 @@ function App() {
       setSelectedReplayIndex(-1);
     }
   }
-
-  // Connect/disconnect wallet
+  
+  // Wallet connect/disconnect
   async function connectWallet() {
     if (!window.ethereum) {
       setErrorMsg("No MetaMask found!");
@@ -359,15 +348,22 @@ function App() {
     setStatus("");
     setErrorMsg("");
   }
-
-  // Socket.io
+  useEffect(() => {
+    if (window.ethereum) {
+      const handleAccountsChanged = accounts => {
+        if (accounts.length > 0) setUserAddress(accounts[0]);
+        else setUserAddress("");
+      };
+      window.ethereum.on("accountsChanged", handleAccountsChanged);
+      return () => window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
+    }
+  }, []);
+  
+  // Socket.io setup
   useEffect(() => {
     socketRef.current = io(backendUrl, { transports: ["websocket"] });
-    socketRef.current.on("connect", () =>
-      console.log("Socket connected:", socketRef.current.id)
-    );
+    socketRef.current.on("connect", () => console.log("Socket connected:", socketRef.current.id));
     socketRef.current.on("phaseUpdated", data => setPhaseData(data));
-    // Freeze if replaying
     socketRef.current.on("boardUpdated", augmentedBoard => {
       if (liveReplayIndex < 0 && !selectedHistory) {
         setLiveBoard(augmentedBoard);
@@ -377,18 +373,12 @@ function App() {
       setWinnerOverlay(winner);
       setTimeout(() => setWinnerOverlay(null), 3000);
     });
-    socketRef.current.on("newGameRecord", record => {
-      console.log("Received new game record:", record);
-    });
-    socketRef.current.on("disconnect", () =>
-      console.log("Socket disconnected")
-    );
-    return () => {
-      socketRef.current.disconnect();
-    };
+    socketRef.current.on("newGameRecord", record => console.log("Received new game record:", record));
+    socketRef.current.on("disconnect", () => console.log("Socket disconnected"));
+    return () => socketRef.current.disconnect();
   }, [liveReplayIndex, selectedHistory]);
-
-  // Poll phaseData
+  
+  // Poll phaseData every 2 seconds.
   useEffect(() => {
     const interval = setInterval(() => {
       fetch(`${backendUrl}/api/state`)
@@ -398,8 +388,8 @@ function App() {
     }, 2000);
     return () => clearInterval(interval);
   }, []);
-
-  // Contract setup
+  
+  // Contract setup when wallet is connected.
   useEffect(() => {
     if (!window.ethereum || !userAddress) return;
     if (!gameAddress || !bettingAddress || !mizonsAddress || !chestMinterAddress) {
@@ -423,7 +413,7 @@ function App() {
     }
     setupContracts();
   }, [userAddress]);
-
+  
   // Poll bets
   useEffect(() => {
     if (!phaseData.gameId) return;
@@ -445,7 +435,7 @@ function App() {
     const interval = setInterval(fetchBets, 5000);
     return () => clearInterval(interval);
   }, [phaseData.gameId]);
-
+  
   // Poll board history
   useEffect(() => {
     const interval = setInterval(() => {
@@ -456,8 +446,8 @@ function App() {
     }, 2000);
     return () => clearInterval(interval);
   }, []);
-
-  // Additional poll for the live board if in placing, not replaying
+  
+  // Poll live board in "placing" phase if not replaying.
   useEffect(() => {
     if (phaseData.phase !== "placing") return;
     if (selectedHistory || liveReplayIndex >= 0) return;
@@ -471,8 +461,8 @@ function App() {
     }, 1000);
     return () => clearInterval(interval);
   }, [phaseData.phase, selectedHistory, liveReplayIndex]);
-
-  // Live replay auto
+  
+  // Auto-replay for live board.
   useEffect(() => {
     if (!liveAutoReplay || boardHistory.length === 0) return;
     const autoInterval = setInterval(() => {
@@ -487,8 +477,8 @@ function App() {
     }, 500);
     return () => clearInterval(autoInterval);
   }, [liveAutoReplay, boardHistory]);
-
-  // Record replay auto
+  
+  // Auto-replay for records.
   useEffect(() => {
     if (!selectedAutoReplay || !selectedHistory || selectedHistory.length === 0) return;
     const autoInterval = setInterval(() => {
@@ -503,8 +493,8 @@ function App() {
     }, 500);
     return () => clearInterval(autoInterval);
   }, [selectedAutoReplay, selectedHistory]);
-
-  // Poll team info (freeze when replaying)
+  
+  // Poll team info if not replaying.
   useEffect(() => {
     if (!gameContract) return;
     if (selectedHistory || liveReplayIndex >= 0) return;
@@ -527,8 +517,8 @@ function App() {
     }, 1000);
     return () => clearInterval(interval);
   }, [gameContract, userAddress, selectedHistory, liveReplayIndex, phaseData.gameId]);
-
-  // Poll MIZ balance
+  
+  // Poll MIZ balance.
   useEffect(() => {
     if (!window.ethereum || !mizonsAddress || !userAddress) return;
     const provider = new ethers.BrowserProvider(window.ethereum);
@@ -541,8 +531,8 @@ function App() {
     }, 1000);
     return () => clearInterval(interval);
   }, [mizonsAddress, userAddress]);
-
-  // Inventory
+  
+  // Refresh inventory.
   const refreshInventory = useCallback(async () => {
     if (!chestMinterContract || !userAddress) return;
     try {
@@ -564,8 +554,8 @@ function App() {
   useEffect(() => {
     refreshInventory();
   }, [refreshInventory, status]);
-
-  // Join Team
+  
+  // Join Team.
   async function joinTeam(teamId) {
     if (!gameContract) {
       setErrorMsg("No contract connected.");
@@ -592,8 +582,8 @@ function App() {
       setErrorMsg("joinTeam error: " + (err.reason || err.message));
     }
   }
-
-  // Place Square
+  
+  // Place Square.
   async function placeSquare(x, y) {
     if (!gameContract) {
       setErrorMsg("No contract connected.");
@@ -614,8 +604,8 @@ function App() {
       setErrorMsg("placeSquare error: " + err.message);
     }
   }
-
-  // Chest mint & approval
+  
+  // Chest mint & approval.
   async function handleMintChest() {
     if (!userAddress) {
       alert("Connect your wallet first!");
@@ -644,9 +634,7 @@ function App() {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const mizonsContract = new ethers.Contract(mizonsAddress, mizonsABI, signer);
-      const tx = await mizonsContract.approve(chestMinterAddress, "1000000000000", {
-        gasLimit: 100000
-      });
+      const tx = await mizonsContract.approve(chestMinterAddress, "1000000000000", { gasLimit: 100000 });
       await tx.wait();
       alert("Approval successful!");
     } catch (err) {
@@ -654,8 +642,8 @@ function App() {
       alert("Approval failed: " + err.message);
     }
   }
-
-  // Betting
+  
+  // Betting.
   async function placeBet(teamId) {
     if (!bettingContract) {
       setErrorMsg("No betting contract available.");
@@ -678,8 +666,8 @@ function App() {
       setErrorMsg("Bet failed: " + err.message);
     }
   }
-
-  // Live replay controls
+  
+  // Live replay controls.
   function livePrevBoard() {
     if (boardHistory.length === 0) return;
     setLiveReplayIndex(i => (i < 0 ? boardHistory.length - 1 : Math.max(0, i - 1)));
@@ -697,8 +685,8 @@ function App() {
     if (liveReplayIndex < 0) setLiveReplayIndex(0);
     setLiveAutoReplay(prev => !prev);
   }
-
-  // Recorded replay controls
+  
+  // Recorded replay controls.
   function recordPrevBoard() {
     if (!selectedHistory || selectedHistory.length === 0) return;
     setSelectedReplayIndex(i => (i < 0 ? selectedHistory.length - 1 : Math.max(0, i - 1)));
@@ -718,48 +706,36 @@ function App() {
     setSelectedReplayIndex(-1);
     setSelectedAutoReplay(false);
   }
-
+  
   return (
     <div className="app-container">
       {/* Top-Left Buttons */}
       <div className="top-left-buttons">
-        <button onClick={() => alert("Information: This is Game of Death!")}>
-          Info
-        </button>
-        <button onClick={() => alert("Lore: In the pit of despair...")}>
-          Lore
-        </button>
-        <button onClick={() => setShowWholeSkins(true)}>
-          Skins
-        </button>
+        <button onClick={() => alert("Information: This is Game of Death!")}>Info</button>
+        <button onClick={() => alert("Lore: In the pit of despair...")}>Lore</button>
+        <button onClick={() => setShowWholeSkins(true)}>Skins</button>
       </div>
-
-      {/* Winner Overlay (freeze if replaying) */}
+  
+      {/* Winner Overlay */}
       {winnerOverlay && !selectedHistory && liveReplayIndex < 0 && (
         <div className="winner-overlay">
           <h1 className="winner-text">{winnerOverlay} TEAM WON!</h1>
         </div>
       )}
-
-      {/* Title */}
+  
+      {/* Title Bar (Desktop view: at top; Mobile: stays at top) */}
       <div className="title-bar">
         <h1>Game of Death</h1>
       </div>
-
-      {/* Ratio Scoreboard: Red portion + Blue portion always sums to 100% */}
+  
+      {/* Ratio Scoreboard */}
       <div className="scoreboard-bar-container">
         <div className="score-bar">
-          <div
-            className="score-bar-red"
-            style={{ width: `${redPercent}%` }}
-          />
-          <div
-            className="score-bar-blue"
-            style={{ width: `${bluePercent}%` }}
-          />
+          <div className="score-bar-red" style={{ width: `${redPercent}%` }} />
+          <div className="score-bar-blue" style={{ width: `${bluePercent}%` }} />
         </div>
       </div>
-
+  
       {/* Wallet Corner */}
       <div className="wallet-corner">
         {userAddress ? (
@@ -767,20 +743,18 @@ function App() {
             <p className="tiny-wallet">
               {userAddress.slice(0, 6)}...{userAddress.slice(-4)}
             </p>
-            <button className="corner-btn" onClick={disconnectWallet}>
-              Disconnect
-            </button>
+            <button className="corner-btn" onClick={disconnectWallet}>Disconnect</button>
           </>
         ) : (
-          <button className="corner-btn" onClick={connectWallet}>
-            Connect Wallet
-          </button>
+          <button className="corner-btn" onClick={connectWallet}>Connect Wallet</button>
         )}
       </div>
-
-      {/* Main Layout */}
+  
+      {/* Main Content */}
       <div className="main-content">
-        {/* LEFT PANEL */}
+        {/* Desktop view: three columns; Mobile view: stacked (via media query) */}
+  
+        {/* Left Panel */}
         <div className="left-panel">
           <h2>Your MIZ</h2>
           <div className="miz-balance-container">
@@ -791,53 +765,37 @@ function App() {
             <h2 style={{ fontSize: "1rem" }}>Chest Roll</h2>
             <button onClick={approveTokens}>Approve Tokens</button>
             <button onClick={handleMintChest} style={{ display: "block", margin: "10px auto" }}>
-              <img
-                src={`${backendUrl}/chests/brain.png`}
-                alt="Brain Chest"
-                style={{ width: 100, height: "auto" }}
-              />
+              <img src={`${backendUrl}/chests/brain.png`} alt="Brain Chest" style={{ width: 100, height: "auto" }} />
             </button>
-            <div
-              style={{
-                marginTop: 10,
-                borderTop: "1px solid #ccc",
-                paddingTop: 10,
-                height: "auto",
-                overflowY: "auto"
-              }}
-            >
-              <h3 style={{ fontSize: "1rem", textAlign: "center" }}>
-                Your Inventory
-              </h3>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(4, 1fr)",
-                  gap: 4,
-                  justifyItems: "center"
-                }}
-              >
+            <div style={{
+              marginTop: 10,
+              borderTop: "1px solid #ccc",
+              paddingTop: 10,
+              height: "auto",
+              overflowY: "auto"
+            }}>
+              <h3 style={{ fontSize: "1rem", textAlign: "center" }}>Your Inventory</h3>
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 1fr)",
+                gap: 4,
+                justifyItems: "center"
+              }}>
                 {Array.from({ length: 16 }, (_, i) => 15 - i).map(type => {
                   const count = inventory[type] || 0;
                   return (
                     <div key={type} style={{ position: "relative", textAlign: "center" }}>
-                      <img
-                        src={`${backendUrl}/chests/var/frame${type}.png`}
-                        alt={`Chest Type ${type}`}
-                        style={{ width: 35, height: "auto" }}
-                      />
-                      <div
-                        style={{
-                          position: "absolute",
-                          bottom: 0,
-                          right: 0,
-                          background: "rgba(0,0,0,0.6)",
-                          color: "#fff",
-                          borderRadius: "50%",
-                          padding: "2px 5px",
-                          fontSize: "0.7rem"
-                        }}
-                      >
+                      <img src={`${backendUrl}/chests/var/frame${type}.png`} alt={`Chest Type ${type}`} style={{ width: 35, height: "auto" }} />
+                      <div style={{
+                        position: "absolute",
+                        bottom: 0,
+                        right: 0,
+                        background: "rgba(0,0,0,0.6)",
+                        color: "#fff",
+                        borderRadius: "50%",
+                        padding: "2px 5px",
+                        fontSize: "0.7rem"
+                      }}>
                         {count}
                       </div>
                     </div>
@@ -856,18 +814,10 @@ function App() {
               Your Team: {userTeam === 1 ? "Red" : userTeam === 2 ? "Blue" : "None"}
             </p>
             <div className="join-team-buttons">
-              <button
-                className="join-red"
-                onClick={() => joinTeam(1)}
-                disabled={phaseData.phase !== "picking"}
-              >
+              <button className="join-red" onClick={() => joinTeam(1)} disabled={phaseData.phase !== "picking"}>
                 Join Red
               </button>
-              <button
-                className="join-blue"
-                onClick={() => joinTeam(2)}
-                disabled={phaseData.phase !== "picking"}
-              >
+              <button className="join-blue" onClick={() => joinTeam(2)} disabled={phaseData.phase !== "picking"}>
                 Join Blue
               </button>
             </div>
@@ -877,65 +827,45 @@ function App() {
             <p style={{ margin: 0 }}>Red Bets: {liveRedBets}</p>
             <p style={{ margin: 0 }}>Blue Bets: {liveBlueBets}</p>
             <p style={{ margin: 0 }}>Tickets: {betAmount}</p>
-            <input
-              type="range"
-              min="1"
-              max="10"
-              value={betAmount}
-              onChange={e => setBetAmount(Number(e.target.value))}
-              style={{ width: "100%" }}
-            />
+            <input type="range" min="1" max="10" value={betAmount} onChange={e => setBetAmount(Number(e.target.value))} style={{ width: "100%" }} />
             <div className="bet-buttons">
-              <button
-                className="bet-red"
-                onClick={() => placeBet(1)}
-                disabled={phaseData.phase !== "picking"}
-              >
+              <button className="bet-red" onClick={() => placeBet(1)} disabled={phaseData.phase !== "picking"}>
                 Bet Red
               </button>
-              <button
-                className="bet-blue"
-                onClick={() => placeBet(2)}
-                disabled={phaseData.phase !== "picking"}
-              >
+              <button className="bet-blue" onClick={() => placeBet(2)} disabled={phaseData.phase !== "picking"}>
                 Bet Blue
               </button>
             </div>
           </div>
         </div>
-
-        {/* CENTER BOARD */}
+  
+        {/* Center Board */}
         <div className="center-board">
           <div className="board-container" style={{ width: boardSize, height: boardSize }}>
             <div className="board-border">
-              {/* Dim half if in placing phase (and not replaying) */}
               {showVeil && userTeam === 1 && (
-                <div
-                  style={{
-                    position: "absolute",
-                    bottom: 0,
-                    left: 0,
-                    width: "100%",
-                    height: "50%",
-                    background: "rgba(0,0,0,0.3)",
-                    pointerEvents: "none",
-                    zIndex: 999
-                  }}
-                />
+                <div style={{
+                  position: "absolute",
+                  bottom: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "50%",
+                  background: "rgba(0,0,0,0.3)",
+                  pointerEvents: "none",
+                  zIndex: 999
+                }} />
               )}
               {showVeil && userTeam === 2 && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: "50%",
-                    background: "rgba(0,0,0,0.3)",
-                    pointerEvents: "none",
-                    zIndex: 999
-                  }}
-                />
+                <div style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "50%",
+                  background: "rgba(0,0,0,0.3)",
+                  pointerEvents: "none",
+                  zIndex: 999
+                }} />
               )}
               <div className="board-grid">
                 {displayBoard.map((cell, i) => {
@@ -944,8 +874,6 @@ function App() {
                   let cellClass = "cell";
                   if (cell.value === 1) cellClass += " red";
                   if (cell.value === 2) cellClass += " blue";
-
-                  // If we're in live placing (not replaying) => dim half
                   if (!selectedHistory && liveReplayIndex < 0 && phaseData.phase === "placing") {
                     if (userTeam === 1 && y >= 32) cellClass += " dim-cell";
                     if (userTeam === 2 && y < 32) cellClass += " dim-cell";
@@ -967,8 +895,6 @@ function App() {
               </div>
             </div>
           </div>
-
-          {/* LIVE Replay Controls (only if no record is selected) */}
           {!selectedHistory && (
             <div className="replay-container">
               <button onClick={livePrevBoard}>←</button>
@@ -979,39 +905,24 @@ function App() {
               </button>
             </div>
           )}
-          {/* Show a label if we are replaying the current game */}
           {!selectedHistory && liveReplayIndex >= 0 && (
             <p style={{ marginTop: 4 }}>
               Viewing Board {liveReplayIndex + 1}/{boardHistory.length}
             </p>
           )}
-          {/* If not replaying, show that we're on the live board */}
           {!selectedHistory && liveReplayIndex < 0 && (
             <p style={{ marginTop: 4 }}>Viewing Live Board</p>
           )}
         </div>
-
-        {/* RIGHT PANEL */}
+  
+        {/* Right Panel */}
         <div className="right-panel">
           <h2>Game Records</h2>
           <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
-            <button
-              className="toggle-btn"
-              onClick={() => {
-                setShowMyGames(false);
-                setRefreshKey(prev => prev + 1);
-              }}
-            >
+            <button className="toggle-btn" onClick={() => { setShowMyGames(false); setRefreshKey(prev => prev + 1); }}>
               All Games
             </button>
-            <button
-              className="toggle-btn"
-              onClick={() => {
-                setShowMyGames(true);
-                setRefreshKey(prev => prev + 1);
-              }}
-              disabled={!userAddress}
-            >
+            <button className="toggle-btn" onClick={() => { setShowMyGames(true); setRefreshKey(prev => prev + 1); }} disabled={!userAddress}>
               My Games
             </button>
           </div>
@@ -1027,21 +938,14 @@ function App() {
             <div style={{ marginTop: 10 }}>
               <h3>Game #{selectedRecord.gameId} Details</h3>
               <p>
-                Played at:{" "}
-                {selectedRecord.timestamp
-                  ? new Date(selectedRecord.timestamp).toLocaleString()
-                  : "N/A"}
+                Played at: {selectedRecord.timestamp ? new Date(selectedRecord.timestamp).toLocaleString() : "N/A"}
               </p>
               <p>Winner: {selectedRecord.winner}</p>
               <p>
                 Team Red: {selectedRecord.teamRedCount} | Team Blue: {selectedRecord.teamBlueCount}
               </p>
               {selectedRecord.thumbnail && (
-                <img
-                  src={selectedRecord.thumbnail}
-                  alt={`Game #${selectedRecord.gameId}`}
-                  style={{ width: 150, height: 150, objectFit: "cover" }}
-                />
+                <img src={selectedRecord.thumbnail} alt={`Game #${selectedRecord.gameId}`} style={{ width: 150, height: 150, objectFit: "cover" }} />
               )}
               <div style={{ marginTop: 6 }}>
                 <button className="auto-replay-btn" onClick={recordToggleAutoReplay}>
@@ -1056,15 +960,13 @@ function App() {
               {selectedReplayIndex < 0 ? (
                 <p>Viewing final snapshot</p>
               ) : (
-                <p>
-                  Viewing Board {selectedReplayIndex + 1}/{selectedHistory.length}
-                </p>
+                <p>Viewing Board {selectedReplayIndex + 1}/{selectedHistory.length}</p>
               )}
             </div>
           )}
         </div>
       </div>
-
+  
       {/* Whole Skins Overlay */}
       {showWholeSkins && (
         <WholeSkinsPanel
@@ -1075,14 +977,11 @@ function App() {
           onClose={() => setShowWholeSkins(false)}
         />
       )}
-
-      {/* Error Bar with close button */}
+  
+      {/* Error Bar */}
       {errorMsg && (
         <div className="error-bar">
-          {errorMsg}{" "}
-          <button className="error-close" onClick={() => setErrorMsg("")}>
-            x
-          </button>
+          {errorMsg} <button className="error-close" onClick={() => setErrorMsg("")}>x</button>
         </div>
       )}
     </div>

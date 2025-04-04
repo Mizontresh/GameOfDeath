@@ -1,10 +1,4 @@
-/* ------------------------------------------------------
-   INSANE NEON THEME & TIGHT LAYOUT
-   - Info/Lore/Skins pinned at top-left, below the title
-   - All record/replay buttons now neon
------------------------------------------------------- */
-
-/* Reset & Global */
+/* Global & Reset */
 html, body, #root {
   margin: 0;
   padding: 0;
@@ -16,7 +10,7 @@ html, body, #root {
   box-sizing: border-box;
 }
 
-/* Optional Animated Background */
+/* Animated Background */
 @keyframes neonBG {
   0% { background: radial-gradient(circle, #000 0%, #111 70%, #111 100%); }
   50% { background: radial-gradient(circle, #111 0%, #000 70%, #111 100%); }
@@ -24,13 +18,6 @@ html, body, #root {
 }
 body {
   animation: neonBG 5s infinite alternate ease-in-out;
-}
-
-/* Container */
-.app-container {
-  position: relative;
-  min-height: 100vh;
-  text-align: center;
 }
 
 /* Neon Scrollbars */
@@ -64,13 +51,22 @@ body {
   50% { text-shadow: 0 0 8px #00bbff, 0 0 16px #00bbff; }
 }
 
+/* App Container */
+.app-container {
+  position: relative;
+  min-height: 100vh;
+  text-align: center;
+}
+
 /* Winner Overlay */
 .winner-overlay {
   position: fixed;
   top: 0; left: 0;
   width: 100%; height: 100%;
   background: rgba(0,0,0,0.85);
-  display: flex; justify-content: center; align-items: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   z-index: 1000;
   animation: neonPulse 2s infinite alternate;
 }
@@ -83,10 +79,11 @@ body {
   animation: neonTextFlicker 1.5s infinite;
 }
 
-/* Title Bar & Scoreboard */
+/* Title Bar */
 .title-bar {
   padding: 10px 0;
   margin-bottom: 10px;
+  background: #111;
 }
 .title-bar h1 {
   margin: 0;
@@ -95,96 +92,161 @@ body {
   text-shadow: 0 0 4px #ff00e2, 0 0 16px #ff00e2;
   animation: neonTextFlicker 3s infinite alternate;
 }
-.title-bar p {
-  margin: 4px 0;
-  font-size: 1rem;
-  opacity: 0.8;
-}
+
+/* Scoreboard */
 .scoreboard-bar-container {
   display: flex;
   justify-content: center;
   margin-bottom: 10px;
 }
 .score-bar {
-  width: 300px;
-  height: 16px;
-  background: #222;
-  border-radius: 8px;
   position: relative;
-  box-shadow: 0 0 8px #ff00e2;
-}
-.score-bar::before {
-  content: "";
-  position: absolute;
-  top: -2px; left: -2px; right: -2px; bottom: -2px;
+  width: 300px;
+  height: 20px;
+  background: #222;
   border: 2px solid #ff00e2;
   border-radius: 10px;
-  pointer-events: none;
-  animation: neonPulse 2.5s infinite alternate;
+  overflow: hidden;
+  box-shadow: 0 0 8px #ff00e2;
+  display: flex;
 }
 .score-bar-red {
   background: #ff0050;
-  transition: width 0.3s ease;
+  box-shadow: 0 0 8px #ff0050, 0 0 16px #ff0050;
+  transition: width 0.3s;
 }
 .score-bar-blue {
   background: #00bbff;
-  transition: width 0.3s ease;
+  box-shadow: 0 0 8px #00bbff, 0 0 16px #00bbff;
+  transition: width 0.3s;
   mix-blend-mode: screen;
+}
+
+/* Buttons */
+.replay-container button,
+.auto-replay-btn,
+.toggle-btn,
+.corner-btn,
+.top-left-buttons button,
+.join-red,
+.join-blue,
+.bet-red,
+.bet-blue,
+.chest-roll-section button,
+.load-more-btn {
+  background: none;
+  border: 2px solid;
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: 0.2s;
+  text-transform: uppercase;
+  margin: 0 4px;
+}
+.replay-container button,
+.auto-replay-btn,
+.toggle-btn {
+  border-color: #ff00e2;
+  color: #ff00e2;
+}
+.replay-container button:hover,
+.auto-replay-btn:hover,
+.toggle-btn:hover {
+  background: #ff00e2;
+  color: #000;
+  box-shadow: 0 0 8px #ff00e2;
+}
+.corner-btn,
+.top-left-buttons button {
+  border-color: #ff00e2;
+  color: #ff00e2;
+  font-size: 0.8rem;
+}
+.corner-btn:hover,
+.top-left-buttons button:hover {
+  background: #ff00e2;
+  color: #000;
+  box-shadow: 0 0 8px #ff00e2;
+}
+.join-red {
+  border-color: #ff0050;
+  color: #ff0050;
+}
+.join-red:hover {
+  background: #ff0050;
+  color: #000;
+  box-shadow: 0 0 8px #ff0050;
+}
+.join-blue {
+  border-color: #00bbff;
+  color: #00bbff;
+}
+.join-blue:hover {
+  background: #00bbff;
+  color: #000;
+  box-shadow: 0 0 8px #00bbff;
+}
+.bet-red {
+  border-color: #ff0050;
+  color: #ff0050;
+}
+.bet-red:hover {
+  background: #ff0050;
+  color: #000;
+  box-shadow: 0 0 8px #ff0050;
+}
+.bet-blue {
+  border-color: #00bbff;
+  color: #00bbff;
+}
+.bet-blue:hover {
+  background: #00bbff;
+  color: #000;
+  box-shadow: 0 0 8px #00bbff;
+}
+.chest-roll-section button {
+  border-color: #00bbff;
+  color: #00bbff;
+}
+.chest-roll-section button:hover {
+  background: #00bbff;
+  color: #000;
+  box-shadow: 0 0 12px #00bbff;
+}
+.load-more-btn {
+  border-color: #ff00e2;
+  color: #ff00e2;
+}
+.load-more-btn:hover {
+  background: #ff00e2;
+  color: #000;
+  box-shadow: 0 0 8px #ff00e2;
 }
 
 /* Wallet Corner */
 .wallet-corner {
   position: absolute;
-  top: 20px; right: 20px;
+  top: 60px;
+  right: 10px;
   background: rgba(255,255,255,0.03);
   padding: 8px 12px;
   border-radius: 6px;
-  display: flex; align-items: center; gap: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   box-shadow: 0 0 10px #ff00e2;
 }
 .tiny-wallet {
   font-size: 0.75rem;
-  color: #fff;
-}
-.corner-btn {
-  background: none;
-  border: 2px solid #ff00e2;
-  color: #ff00e2;
-  padding: 4px 8px;
-  cursor: pointer;
-  text-transform: uppercase;
-  font-size: 0.8rem;
-  border-radius: 4px;
-  transition: 0.2s;
-}
-.corner-btn:hover {
-  background: #ff00e2;
-  color: #000;
-  box-shadow: 0 0 8px #ff00e2;
 }
 
 /* Top-Left Buttons */
 .top-left-buttons {
   position: absolute;
   top: 60px;
-  left: 20px; 
+  left: 20px;
   display: flex;
   gap: 10px;
-}
-.top-left-buttons button {
-  font-size: 1rem;
-  padding: 6px 12px;
-  background: #111;
-  color: #ff00e2;
-  border: 2px solid #ff00e2;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: 0.2s;
-}
-.top-left-buttons button:hover {
-  background: #ff00e2;
-  color: #000;
-  box-shadow: 0 0 10px #ff00e2;
 }
 
 /* Main Content Layout */
@@ -201,14 +263,14 @@ body {
   overflow: hidden;
 }
 
-/* Left & Right Panels */
+/* Panels */
 .left-panel,
 .right-panel {
   background: rgba(255,255,255,0.03);
   border: 2px solid #ff00e2;
   border-radius: 8px;
   box-shadow: 0 0 10px #ff00e2;
-  padding: 8px 12px 12px 12px;
+  padding: 8px 12px;
   width: 300px;
   min-width: 300px;
   display: flex;
@@ -217,8 +279,6 @@ body {
   align-items: center;
   text-align: center;
 }
-
-/* Headings in Panels */
 .left-panel h2,
 .right-panel h2 {
   margin: 4px 0;
@@ -252,22 +312,6 @@ body {
   padding: 6px;
   text-align: center;
 }
-.chest-roll-section button {
-  background: none;
-  border: 2px solid #00bbff;
-  color: #00bbff;
-  padding: 6px 10px;
-  cursor: pointer;
-  transition: 0.2s;
-  text-transform: uppercase;
-  border-radius: 4px;
-  margin: 4px;
-}
-.chest-roll-section button:hover {
-  background: #00bbff;
-  color: #000;
-  box-shadow: 0 0 12px #00bbff;
-}
 
 /* Phase Info & Bet Panel */
 .phase-info-card {
@@ -287,74 +331,8 @@ body {
   gap: 10px;
   margin: 10px 0;
 }
-.join-red {
-  background: none;
-  border: 2px solid #ff0050;
-  color: #ff0050;
-  padding: 6px 10px;
-  cursor: pointer;
-  transition: 0.2s;
-  text-transform: uppercase;
-  border-radius: 4px;
-}
-.join-red:hover {
-  background: #ff0050;
-  color: #000;
-  box-shadow: 0 0 8px #ff0050;
-}
-.join-blue {
-  background: none;
-  border: 2px solid #00bbff;
-  color: #00bbff;
-  padding: 6px 10px;
-  cursor: pointer;
-  transition: 0.2s;
-  text-transform: uppercase;
-  border-radius: 4px;
-}
-.join-blue:hover {
-  background: #00bbff;
-  color: #000;
-  box-shadow: 0 0 8px #00bbff;
-}
-.bet-buttons {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 10px;
-}
-.bet-red {
-  background: none;
-  border: 2px solid #ff0050;
-  color: #ff0050;
-  padding: 6px 10px;
-  cursor: pointer;
-  transition: 0.2s;
-  text-transform: uppercase;
-  border-radius: 4px;
-}
-.bet-red:hover {
-  background: #ff0050;
-  color: #000;
-  box-shadow: 0 0 8px #ff0050;
-}
-.bet-blue {
-  background: none;
-  border: 2px solid #00bbff;
-  color: #00bbff;
-  padding: 6px 10px;
-  cursor: pointer;
-  transition: 0.2s;
-  text-transform: uppercase;
-  border-radius: 4px;
-}
-.bet-blue:hover {
-  background: #00bbff;
-  color: #000;
-  box-shadow: 0 0 8px #00bbff;
-}
 
-/* Center Board */
+/* Board (Desktop) */
 .center-board {
   flex: 1;
   display: flex;
@@ -403,7 +381,7 @@ body {
   cursor: not-allowed;
 }
 
-/* Replay Buttons (Live & Record) */
+/* Replay Buttons */
 .replay-container,
 .record-buttons,
 .record-auto-container {
@@ -432,12 +410,7 @@ body {
   box-shadow: 0 0 10px #ff00e2;
 }
 
-/* Right Panel & Records */
-.right-panel h2 {
-  margin-top: 0;
-  color: #ff00e2;
-  text-shadow: 0 0 4px #ff00e2, 0 0 8px #ff00e2;
-}
+/* Records Panel */
 .records-list-container {
   flex: 1;
   max-height: 300px;
@@ -474,19 +447,18 @@ body {
   border: 2px solid #ff00e2;
   border-radius: 4px;
 }
-.load-more-btn {
-  background: none;
+
+/* Panels Below the Board (Desktop) */
+.panel-below {
+  width: 100%;
+  max-width: 300px;
+  background: rgba(255,255,255,0.03);
   border: 2px solid #ff00e2;
-  color: #ff00e2;
-  padding: 6px 10px;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: 0.2s;
-}
-.load-more-btn:hover {
-  background: #ff00e2;
-  color: #000;
-  box-shadow: 0 0 8px #ff00e2;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 20px;
+  box-shadow: 0 0 10px #ff00e2;
+  text-align: center;
 }
 
 /* Whole Skins Overlay */
@@ -498,7 +470,9 @@ body {
   height: 100vh;
   background: rgba(0,0,0,0.8);
   z-index: 9999;
-  display: flex; justify-content: center; align-items: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 .close-whole-skins-btn {
   position: absolute;
@@ -522,7 +496,8 @@ body {
 /* Error Bar */
 .error-bar {
   position: fixed;
-  bottom: 0; left: 0;
+  bottom: 0;
+  left: 0;
   width: 100%;
   background: #ff0000;
   color: #fff;
@@ -533,9 +508,19 @@ body {
   font-weight: bold;
   box-shadow: 0 0 8px #ff0000;
 }
+.error-close {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+}
 
-/* Mobile Adjustments */
-@media (max-width: 1000px) {
+/* MOBILE VIEW OVERRIDES */
+@media (max-aspect-ratio: 1/1) {
+  html, body, #root {
+    overflow: auto;
+  }
   .main-content {
     flex-direction: column;
     align-items: center;
@@ -547,348 +532,28 @@ body {
     margin: 10px 0;
   }
   .board-container {
-    width: 80vw;
-    height: 80vw;
+    width: 100vw !important;
+    height: 100vw !important;
+    margin: 0 auto;
   }
-}
-
-/* Neon Toggle Buttons for All/My Games */
-.toggle-btn {
-  background: #111;
-  border: 2px solid #ff00e2;
-  color: #ff00e2;
-  padding: 6px 10px;
-  cursor: pointer;
-  transition: 0.2s;
-  text-transform: uppercase;
-  border-radius: 4px;
-}
-.toggle-btn:hover {
-  background: #ff00e2;
-  color: #000;
-  box-shadow: 0 0 10px #ff00e2;
-}
-/* Make the left panel more compact */
-.left-panel {
-  padding: 6px;               /* was 8px 12px 12px 12px, reduce to 6px */
-  gap: 6px;                   /* was 10px, reduce vertical gap */
-}
-
-/* Smaller headings */
-.left-panel h2 {
-  margin: 2px 0;              /* was 4px 0 */
-  font-size: 1rem;            /* was ~1.2rem or so, reduce to 1rem */
-  line-height: 1.2;
-}
-
-/* Phase info card with less padding/margin */
-.phase-info-card {
-  padding: 4px;               /* was 8px, reduce to 4px */
-  margin-bottom: 6px;         /* was 8px, reduce to 6px */
-}
-.phase-info-card p {
-  margin: 2px 0;              /* was 5px 0, reduce spacing between lines */
-  font-size: 0.9rem;
-}
-
-/* Join team & bet buttons closer together */
-.join-team-buttons,
-.bet-buttons {
-  margin: 6px 0;              /* was 10px, reduce to 6px */
-  gap: 6px;                   /* ensure smaller gap between buttons */
-}
-
-/* Chest Roll panel spacing */
-.chest-roll-section {
-  padding: 4px;               /* was 6px */
-  margin-bottom: 6px;         /* if needed, reduce margin to 6px */
-}
-.chest-roll-section button {
-  margin: 2px;                /* was 4px, reduce to 2px */
-  padding: 4px 6px;           /* narrower buttons */
-  font-size: 0.85rem;         /* smaller text if you want it more compact */
-}
-
-/* Inventory grid smaller */
-.chest-roll-section h3 {
-  margin: 4px 0;
-  font-size: 0.9rem;
-}
-.chest-roll-section div[style*="grid"] {
-  gap: 2px;                   /* reduce gap between chest icons */
-}
-.chest-roll-section img {
-  width: 30px;                /* was 35px or more, reduce chest icon size */
-}
-
-/* MIZ balance area smaller */
-.miz-balance-container {
-  margin: 4px 0;              /* reduce vertical spacing */
-  gap: 4px;                   /* was 6px */
-}
-.miz-balance-container p {
-  font-size: 0.95rem;         /* slightly smaller text */
-  margin: 0;
-}
-
-/* For the small text lines in the panel (Team Red/Blue, tickets, etc.) */
-.left-panel p {
-  margin: 2px 0;
-  font-size: 0.9rem;
-  line-height: 1.2;
-}
-/* Scoreboard Container */
-.scoreboard-bar-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-/* The bar that holds red & blue segments */
-.score-bar {
-  position: relative;
-  width: 320px;
-  height: 20px;
-  background: #222;
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 0 8px #ff00e2;
-  margin-bottom: 6px;
-}
-
-/* Red portion of scoreboard */
-.score-bar-red {
-  position: absolute;
-  left: 0;
-  top: 0;
-  height: 100%;
-  background: linear-gradient(45deg, #ff0050, #ff88aa);
-  box-shadow: 0 0 8px #ff0050, 0 0 16px #ff0050;
-  transition: width 0.3s;
-}
-
-/* Blue portion of scoreboard */
-.score-bar-blue {
-  position: absolute;
-  right: 0;
-  top: 0;
-  height: 100%;
-  background: linear-gradient(45deg, #00bbff, #00ffff);
-  box-shadow: 0 0 8px #00bbff, 0 0 16px #00bbff;
-  transition: width 0.3s;
-  mix-blend-mode: screen;
-}
-
-/* The label below the bar */
-.score-labels {
-  font-size: 1rem;
-  color: #fff;
-  text-align: center;
-}
-
-/* Auto Replay Button */
-.auto-replay-btn {
-  background: none;
-  border: 2px solid #ff00e2;
-  color: #ff00e2;
-  padding: 6px 12px;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: 0.2s;
-  text-transform: uppercase;
-  font-size: 0.9rem;
-  margin-left: 4px;
-}
-.auto-replay-btn:hover {
-  background: #ff00e2;
-  color: #000;
-  box-shadow: 0 0 8px #ff00e2;
-}
-/* Scoreboard Container */
-.scoreboard-bar-container {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 10px;
-}
-
-/* The entire bar container (centered) */
-.battle-bar {
-  position: relative;
-  width: 300px;       /* Adjust as needed */
-  height: 20px;
-  background: #222;
-  border: 2px solid #ff00e2;
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 0 8px #ff00e2;
-}
-
-/* Red portion extends from the left */
-.battle-bar-red {
-  position: absolute;
-  left: 0;
-  top: 0;
-  height: 100%;
-  background: linear-gradient(45deg, #ff0050, #ff88aa);
-  box-shadow: 0 0 8px #ff0050, 0 0 16px #ff0050;
-  transition: width 0.3s;
-}
-
-/* Blue portion extends from the right */
-.battle-bar-blue {
-  position: absolute;
-  right: 0;
-  top: 0;
-  height: 100%;
-  background: linear-gradient(45deg, #00bbff, #00ffff);
-  box-shadow: 0 0 8px #00bbff, 0 0 16px #00bbff;
-  transition: width 0.3s;
-  mix-blend-mode: screen;
-}
-
-/* Neon Buttons for Replays */
-.replay-container button,
-.auto-replay-btn {
-  background: none;
-  border: 2px solid #ff00e2;
-  color: #ff00e2;
-  padding: 6px 12px;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: 0.2s;
-  text-transform: uppercase;
-  margin: 0 4px;
-}
-.replay-container button:hover,
-.auto-replay-btn:hover {
-  background: #ff00e2;
-  color: #000;
-  box-shadow: 0 0 8px #ff00e2;
-}
-/* Battle Scoreboard */
-.scoreboard-bar-container {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 10px;
-}
-
-.battle-bar {
-  position: relative;
-  width: 300px; /* Adjust as needed */
-  height: 20px;
-  background: #222;
-  border: 2px solid #ff00e2;
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 0 8px #ff00e2;
-}
-
-.battle-bar-red {
-  position: absolute;
-  left: 0;
-  top: 0;
-  height: 100%;
-  background: linear-gradient(45deg, #ff0050, #ff88aa);
-  box-shadow: 0 0 8px #ff0050, 0 0 16px #ff0050;
-  transition: width 0.3s;
-}
-
-.battle-bar-blue {
-  position: absolute;
-  right: 0;
-  top: 0;
-  height: 100%;
-  background: linear-gradient(45deg, #00bbff, #00ffff);
-  box-shadow: 0 0 8px #00bbff, 0 0 16px #00bbff;
-  transition: width 0.3s;
-  mix-blend-mode: screen;
-}
-
-/* Neon Buttons */
-.replay-container button,
-.auto-replay-btn,
-.toggle-btn {
-  background: none;
-  border: 2px solid #ff00e2;
-  color: #ff00e2;
-  padding: 6px 12px;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: 0.2s;
-  text-transform: uppercase;
-  margin: 0 4px;
-}
-.replay-container button:hover,
-.auto-replay-btn:hover,
-.toggle-btn:hover {
-  background: #ff00e2;
-  color: #000;
-  box-shadow: 0 0 8px #ff00e2;
-}
-
-/* Error Bar Close Button */
-.error-close {
-  background: none;
-  border: none;
-  color: #fff;
-  font-size: 1rem;
-  cursor: pointer;
-}
-.scoreboard-bar-container {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 10px;
-}
-
-/* The entire scoreboard bar */
-.score-bar {
-  position: relative;
-  width: 300px; /* or any desired width */
-  height: 20px;
-  background: #222;
-  border: 2px solid #ff00e2;
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 0 8px #ff00e2;
-  display: flex;
-}
-
-/* Red portion, from left to right */
-.score-bar-red {
-  background: #ff0050;
-  box-shadow: 0 0 8px #ff0050, 0 0 16px #ff0050;
-  transition: width 0.3s;
-  /* The dynamic width is set in-line: style={{ width: `${redPercent}%` }} */
-}
-
-/* Blue portion, continuing from left to right */
-.score-bar-blue {
-  background: #00bbff;
-  box-shadow: 0 0 8px #00bbff, 0 0 16px #00bbff;
-  transition: width 0.3s;
-  /* The dynamic width is set in-line: style={{ width: `${bluePercent}%` }} */
-  mix-blend-mode: screen; /* optional neon effect */
-}
-
-/* Replay / Toggle Buttons */
-.replay-container button,
-.auto-replay-btn,
-.toggle-btn {
-  background: none;
-  border: 2px solid #ff00e2;
-  color: #ff00e2;
-  padding: 6px 12px;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: 0.2s;
-  text-transform: uppercase;
-  margin: 0 4px;
-}
-.replay-container button:hover,
-.auto-replay-btn:hover,
-.toggle-btn:hover {
-  background: #ff00e2;
-  color: #000;
-  box-shadow: 0 0 8px #ff00e2;
+  .score-bar {
+    width: 90vw;
+  }
+  .panel-below {
+    width: 90vw;
+    max-width: none;
+    margin: 10px auto;
+  }
+  .score-bar {
+    position: relative;
+    width: 300px;
+    top: 1060px;
+    height: 20px;
+    background: #222;
+    border: 2px solid #ff00e2;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 0 8px #ff00e2;
+    display: flex;
+  }
 }
