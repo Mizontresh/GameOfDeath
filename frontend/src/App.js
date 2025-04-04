@@ -152,6 +152,7 @@ function WholeSkinsPanel({ onSelectSkin, onClose }) {
   const TOTAL_SKINS = 1024;
 
   function getSkinCoords(skinId) {
+    // Calculate original coordinates
     const x = (skinId % GRID_COLUMNS) * CELL_SIZE;
     const y = Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE;
     return { x, y };
@@ -159,18 +160,29 @@ function WholeSkinsPanel({ onSelectSkin, onClose }) {
 
   return (
     <div className="whole-skins-overlay">
-      <div style={{ position: "relative" }}>
+      <div
+        style={{
+          position: "relative",
+          width: "70vw",      // 70% of viewport width
+          maxWidth: "70vw",
+          height: "auto",
+          maxHeight: "70vh",
+          overflow: "hidden",
+          margin: "0 auto"
+        }}
+      >
         <img
           src={`${backendUrl}/skins/whole.png`}
           alt="All Skins"
           style={{
-            width: GRID_COLUMNS * CELL_SIZE,
-            height: GRID_ROWS * CELL_SIZE,
+            width: "100%",
+            height: "auto",
             display: "block"
           }}
         />
         {Array.from({ length: TOTAL_SKINS }, (_, i) => {
           const { x, y } = getSkinCoords(i);
+          // Optionally, you could multiply x,y by a scaling factor here if needed
           return (
             <div
               key={i}
@@ -197,21 +209,15 @@ function WholeSkinsPanel({ onSelectSkin, onClose }) {
 
 // -------------------- Main App Component --------------------
 function App() {
-  // Desktop layout: using your original side-panel design
-  // Mobile layout will be activated via CSS media queries.
-  // For desktop, the title is at the top; below that, the scoreboard;
-  // then the main content is in three columns (left panel, center board, right panel).
-  
-  // For the board size on desktop we can use a minimum board size.
+  // Desktop layout variables
   const LEFT_PANEL_WIDTH = 320;
   const RIGHT_PANEL_WIDTH = 320;
   const TOP_BAR_HEIGHT = 120;
   const MIN_BOARD_SIZE = 300;
   const [boardSize, setBoardSize] = useState(MIN_BOARD_SIZE);
-  
+
   useEffect(() => {
     function handleResize() {
-      // For desktop, the board size is the minimum of available width and height.
       const marginBetween = 60;
       const availableWidth = window.innerWidth - (LEFT_PANEL_WIDTH + RIGHT_PANEL_WIDTH + marginBetween);
       const bottomMargin = 40;
@@ -223,7 +229,7 @@ function App() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
-  
+
   // States
   const [userAddress, setUserAddress] = useState("");
   const [gameContract, setGameContract] = useState(null);
@@ -235,13 +241,13 @@ function App() {
   const [userTeam, setUserTeam] = useState(0);
   const [status, setStatus] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
-  
+
   // Live board & replay history
   const [liveBoard, setLiveBoard] = useState(Array(4096).fill({ value: 0, skin: null }));
   const [boardHistory, setBoardHistory] = useState([]);
   const [liveReplayIndex, setLiveReplayIndex] = useState(-1);
   const [liveAutoReplay, setLiveAutoReplay] = useState(false);
-  
+
   // Past record state
   const [showMyGames, setShowMyGames] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -250,22 +256,19 @@ function App() {
   const [selectedReplayIndex, setSelectedReplayIndex] = useState(-1);
   const [selectedAutoReplay, setSelectedAutoReplay] = useState(false);
   const [latestRecord, setLatestRecord] = useState(null);
-  
+
   // Bets & inventory
   const [liveRedBets, setLiveRedBets] = useState(0);
   const [liveBlueBets, setLiveBlueBets] = useState(0);
   const [betAmount, setBetAmount] = useState(1);
-  
+
   // Overlays
   const [showWholeSkins, setShowWholeSkins] = useState(false);
   const [winnerOverlay, setWinnerOverlay] = useState(null);
   const socketRef = useRef(null);
   const [inventory, setInventory] = useState(new Array(16).fill(0));
-  
+
   // Determine which board to display:
-  // 1) If a record is selected, show that record’s snapshot.
-  // 2) Else if liveReplayIndex >= 0, show a boardHistory snapshot.
-  // 3) Otherwise, show the liveBoard.
   let displayBoard;
   if (selectedHistory) {
     const replayIndex = selectedReplayIndex < 0 ? selectedHistory.length - 1 : selectedReplayIndex;
@@ -276,7 +279,7 @@ function App() {
   } else {
     displayBoard = liveBoard;
   }
-  
+
   // Compute scoreboard ratio
   function computeOpposingStats(board) {
     let redOnBlue = 0, blueOnRed = 0;
@@ -297,10 +300,10 @@ function App() {
     redPercent = (redOnBlue / totalOpposing) * 100;
     bluePercent = (blueOnRed / totalOpposing) * 100;
   }
-  
+
   // Show veil in placing phase if not replaying
   const showVeil = phaseData.phase === "placing" && !selectedRecord && liveReplayIndex < 0;
-  
+
   // Format MIZ balance
   function formatMizons(balance) {
     const bal = Number(ethers.formatUnits(balance, 18));
@@ -308,7 +311,7 @@ function App() {
     if (bal < 0.000001 || bal > 1000000) return bal.toExponential(6);
     return bal.toFixed(6);
   }
-  
+
   // selectRecord
   function selectRecord(rec) {
     setSelectedRecord(rec);
@@ -322,7 +325,7 @@ function App() {
       setSelectedReplayIndex(-1);
     }
   }
-  
+
   // Wallet connect/disconnect
   async function connectWallet() {
     if (!window.ethereum) {
@@ -358,8 +361,8 @@ function App() {
       return () => window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
     }
   }, []);
-  
-  // Socket.io setup
+
+  // Socket.io setup with auto-refresh for new records
   useEffect(() => {
     socketRef.current = io(backendUrl, { transports: ["websocket"] });
     socketRef.current.on("connect", () => console.log("Socket connected:", socketRef.current.id));
@@ -373,11 +376,15 @@ function App() {
       setWinnerOverlay(winner);
       setTimeout(() => setWinnerOverlay(null), 3000);
     });
-    socketRef.current.on("newGameRecord", record => console.log("Received new game record:", record));
+    socketRef.current.on("newGameRecord", record => {
+      console.log("Received new game record:", record);
+      // Trigger refresh of RecordsList by updating refreshKey
+      setRefreshKey(prev => prev + 1);
+    });
     socketRef.current.on("disconnect", () => console.log("Socket disconnected"));
     return () => socketRef.current.disconnect();
   }, [liveReplayIndex, selectedHistory]);
-  
+
   // Poll phaseData every 2 seconds.
   useEffect(() => {
     const interval = setInterval(() => {
@@ -388,7 +395,7 @@ function App() {
     }, 2000);
     return () => clearInterval(interval);
   }, []);
-  
+
   // Contract setup when wallet is connected.
   useEffect(() => {
     if (!window.ethereum || !userAddress) return;
@@ -413,7 +420,7 @@ function App() {
     }
     setupContracts();
   }, [userAddress]);
-  
+
   // Poll bets
   useEffect(() => {
     if (!phaseData.gameId) return;
@@ -435,7 +442,7 @@ function App() {
     const interval = setInterval(fetchBets, 5000);
     return () => clearInterval(interval);
   }, [phaseData.gameId]);
-  
+
   // Poll board history
   useEffect(() => {
     const interval = setInterval(() => {
@@ -446,7 +453,7 @@ function App() {
     }, 2000);
     return () => clearInterval(interval);
   }, []);
-  
+
   // Poll live board in "placing" phase if not replaying.
   useEffect(() => {
     if (phaseData.phase !== "placing") return;
@@ -461,7 +468,7 @@ function App() {
     }, 1000);
     return () => clearInterval(interval);
   }, [phaseData.phase, selectedHistory, liveReplayIndex]);
-  
+
   // Auto-replay for live board.
   useEffect(() => {
     if (!liveAutoReplay || boardHistory.length === 0) return;
@@ -477,7 +484,7 @@ function App() {
     }, 500);
     return () => clearInterval(autoInterval);
   }, [liveAutoReplay, boardHistory]);
-  
+
   // Auto-replay for records.
   useEffect(() => {
     if (!selectedAutoReplay || !selectedHistory || selectedHistory.length === 0) return;
@@ -493,7 +500,7 @@ function App() {
     }, 500);
     return () => clearInterval(autoInterval);
   }, [selectedAutoReplay, selectedHistory]);
-  
+
   // Poll team info if not replaying.
   useEffect(() => {
     if (!gameContract) return;
@@ -517,7 +524,7 @@ function App() {
     }, 1000);
     return () => clearInterval(interval);
   }, [gameContract, userAddress, selectedHistory, liveReplayIndex, phaseData.gameId]);
-  
+
   // Poll MIZ balance.
   useEffect(() => {
     if (!window.ethereum || !mizonsAddress || !userAddress) return;
@@ -531,7 +538,7 @@ function App() {
     }, 1000);
     return () => clearInterval(interval);
   }, [mizonsAddress, userAddress]);
-  
+
   // Refresh inventory.
   const refreshInventory = useCallback(async () => {
     if (!chestMinterContract || !userAddress) return;
@@ -554,7 +561,7 @@ function App() {
   useEffect(() => {
     refreshInventory();
   }, [refreshInventory, status]);
-  
+
   // Join Team.
   async function joinTeam(teamId) {
     if (!gameContract) {
@@ -582,7 +589,7 @@ function App() {
       setErrorMsg("joinTeam error: " + (err.reason || err.message));
     }
   }
-  
+
   // Place Square.
   async function placeSquare(x, y) {
     if (!gameContract) {
@@ -604,7 +611,7 @@ function App() {
       setErrorMsg("placeSquare error: " + err.message);
     }
   }
-  
+
   // Chest mint & approval.
   async function handleMintChest() {
     if (!userAddress) {
@@ -642,7 +649,7 @@ function App() {
       alert("Approval failed: " + err.message);
     }
   }
-  
+
   // Betting.
   async function placeBet(teamId) {
     if (!bettingContract) {
@@ -666,7 +673,7 @@ function App() {
       setErrorMsg("Bet failed: " + err.message);
     }
   }
-  
+
   // Live replay controls.
   function livePrevBoard() {
     if (boardHistory.length === 0) return;
@@ -685,7 +692,7 @@ function App() {
     if (liveReplayIndex < 0) setLiveReplayIndex(0);
     setLiveAutoReplay(prev => !prev);
   }
-  
+
   // Recorded replay controls.
   function recordPrevBoard() {
     if (!selectedHistory || selectedHistory.length === 0) return;
@@ -706,28 +713,71 @@ function App() {
     setSelectedReplayIndex(-1);
     setSelectedAutoReplay(false);
   }
-  
+
   return (
     <div className="app-container">
+      {/* Inject custom styles for the range slider */}
+      <style>{`
+        input[type="range"] {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 100%;
+          height: 6px;
+          background: #222;
+          border-radius: 4px;
+          outline: none;
+          margin: 6px 0;
+          cursor: pointer;
+          border: 1px solid #ff00e2;
+        }
+        input[type="range"]::-webkit-slider-runnable-track {
+          background: #111;
+          border-radius: 4px;
+          box-shadow: 0 0 4px #ff00e2;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          width: 16px;
+          height: 16px;
+          background: #ff00e2;
+          border-radius: 50%;
+          box-shadow: 0 0 6px #ff00e2;
+          margin-top: -5px;
+        }
+        input[type="range"]::-moz-range-track {
+          background: #111;
+          border-radius: 4px;
+          box-shadow: 0 0 4px #ff00e2;
+        }
+        input[type="range"]::-moz-range-thumb {
+          width: 16px;
+          height: 16px;
+          background: #ff00e2;
+          border: none;
+          border-radius: 50%;
+          box-shadow: 0 0 6px #ff00e2;
+        }
+      `}</style>
+
       {/* Top-Left Buttons */}
       <div className="top-left-buttons">
         <button onClick={() => alert("Information: This is Game of Death!")}>Info</button>
         <button onClick={() => alert("Lore: In the pit of despair...")}>Lore</button>
         <button onClick={() => setShowWholeSkins(true)}>Skins</button>
       </div>
-  
+
       {/* Winner Overlay */}
       {winnerOverlay && !selectedHistory && liveReplayIndex < 0 && (
         <div className="winner-overlay">
           <h1 className="winner-text">{winnerOverlay} TEAM WON!</h1>
         </div>
       )}
-  
-      {/* Title Bar (Desktop view: at top; Mobile: stays at top) */}
+
+      {/* Title Bar */}
       <div className="title-bar">
         <h1>Game of Death</h1>
       </div>
-  
+
       {/* Ratio Scoreboard */}
       <div className="scoreboard-bar-container">
         <div className="score-bar">
@@ -735,7 +785,7 @@ function App() {
           <div className="score-bar-blue" style={{ width: `${bluePercent}%` }} />
         </div>
       </div>
-  
+
       {/* Wallet Corner */}
       <div className="wallet-corner">
         {userAddress ? (
@@ -749,11 +799,9 @@ function App() {
           <button className="corner-btn" onClick={connectWallet}>Connect Wallet</button>
         )}
       </div>
-  
+
       {/* Main Content */}
       <div className="main-content">
-        {/* Desktop view: three columns; Mobile view: stacked (via media query) */}
-  
         {/* Left Panel */}
         <div className="left-panel">
           <h2>Your MIZ</h2>
@@ -827,7 +875,8 @@ function App() {
             <p style={{ margin: 0 }}>Red Bets: {liveRedBets}</p>
             <p style={{ margin: 0 }}>Blue Bets: {liveBlueBets}</p>
             <p style={{ margin: 0 }}>Tickets: {betAmount}</p>
-            <input type="range" min="1" max="10" value={betAmount} onChange={e => setBetAmount(Number(e.target.value))} style={{ width: "100%" }} />
+            {/* Styled ticket amount slider */}
+            <input type="range" min="1" max="10" value={betAmount} onChange={e => setBetAmount(Number(e.target.value))} />
             <div className="bet-buttons">
               <button className="bet-red" onClick={() => placeBet(1)} disabled={phaseData.phase !== "picking"}>
                 Bet Red
@@ -838,7 +887,7 @@ function App() {
             </div>
           </div>
         </div>
-  
+
         {/* Center Board */}
         <div className="center-board">
           <div className="board-container" style={{ width: boardSize, height: boardSize }}>
@@ -914,7 +963,7 @@ function App() {
             <p style={{ marginTop: 4 }}>Viewing Live Board</p>
           )}
         </div>
-  
+
         {/* Right Panel */}
         <div className="right-panel">
           <h2>Game Records</h2>
@@ -966,7 +1015,7 @@ function App() {
           )}
         </div>
       </div>
-  
+
       {/* Whole Skins Overlay */}
       {showWholeSkins && (
         <WholeSkinsPanel
@@ -977,7 +1026,7 @@ function App() {
           onClose={() => setShowWholeSkins(false)}
         />
       )}
-  
+
       {/* Error Bar */}
       {errorMsg && (
         <div className="error-bar">
