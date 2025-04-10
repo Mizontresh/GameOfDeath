@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.6;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol"; 
 import "@openzeppelin/contracts/access/Ownable.sol"; 
@@ -22,7 +22,7 @@ contract ChestMinter is ERC721Enumerable, Ownable {
     address public feeRecipient = 0x1219819360136A93AC14E4df0A90125cf9927616;
     address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
     
-    // NEW: ChestOpener contract address (whitelisted to burn chests)
+    // Whitelisted ChestOpener contract address.
     address public chestOpener;
     
     event ChestSelected(uint256 indexed tokenId, uint8 frameIndex);
@@ -97,7 +97,8 @@ contract ChestMinter is ERC721Enumerable, Ownable {
     
     /// @notice Returns the metadata URI for a chest NFT.
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
-        ownerOf(tokenId); // Will revert if token doesn't exist.
+        // Using ownerOf to ensure the token exists.
+        ownerOf(tokenId);
         uint8 frameIndex = tokenFrame[tokenId];
         return string(abi.encodePacked(baseURI, uint256(frameIndex).toString(), ".json"));
     }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.6;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol"; 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
@@ -9,9 +9,10 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 interface IChestMinter {
     function tokenFrame(uint256 tokenId) external view returns (uint8);
     function openChest(uint256 tokenId) external;
+    function ownerOf(uint256 tokenId) external view returns (address);
 }
 
-contract ChestOpener is ERC721, Ownable {
+contract ChestOpener is ERC721Enumerable, Ownable {
     using Strings for uint256;
     
     IChestMinter public chestMinter;
@@ -71,28 +72,30 @@ contract ChestOpener is ERC721, Ownable {
             require(refundSent, "Refund failed");
         }
         
-        // Get chest frame from ChestMinter.
+        // Ownership check: ensure the caller is the owner of the chest.
+        require(chestMinter.ownerOf(chestId) == msg.sender, "You do not own this chest");
+
         uint8 frame = chestMinter.tokenFrame(chestId);
-        
-        // Compute deterministic roll.
         uint16 randomRoll = uint16(uint256(keccak256(abi.encodePacked(chestId))) % ICONS_PER_FRAME);
         uint16 slot = uint16(frame) * ICONS_PER_FRAME + randomRoll;
         uint16 awardedItem = shuffledItems[slot];
-        
+
         // Open (burn) the chest NFT.
         chestMinter.openChest(chestId);
-        
+
         // Mint a new opened item NFT.
         uint256 newItemId = itemCounter;
         _mint(msg.sender, newItemId);
         tokenAwardedItem[newItemId] = awardedItem;
         itemCounter++;
-        
+
         emit ChestOpened(msg.sender, chestId, frame, randomRoll, awardedItem, newItemId);
     }
 
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        // Call ownerOf(tokenId) to trigger a revert if token doesn't exist.
+        ownerOf(tokenId);
         uint16 awardedItem = tokenAwardedItem[tokenId];
-        return string(abi.encodePacked(itemBaseURI, Strings.toString(uint256(awardedItem)), ".json"));
+        return string(abi.encodePacked(itemBaseURI, uint256(awardedItem).toString(), ".json"));
     }
 }

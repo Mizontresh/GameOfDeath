@@ -1,10 +1,7 @@
 {
-    "id": 958,
-    "symbol": "\ud83d\uddff\ud83d\udd25",
-    "name": "The Castle of Cinders",
-    "visual_description": "A crumbled structure still smoldering, its spires intact but leaning. Fire blossoms like moss along the edges. It is not dead. Just quiet.",
-    "meaning": "Ruin repurposed.",
-    "emotional_resonance": "Ashen. Warm. *Repentant.*",
-    "existential_reflection": "Mizontresh stood here. I do not know if it burned this place\u2014or if it *wept* here, and the heat was simply mourning. Either way, I sat in the ashes. I still do.",
+    "visual_description": "A creature with uplifted arms, as if greeting the unknown. Tentacled yet peaceful.",
+    "meaning": "Welcoming the alien.",
+    "emotion": "Hopeful dread.",
+    "mizontresh_relation": "Me, raising arms to Mizontresh when it first *spoke* back.",
     "image": "ipfs://bafybeifytowxph6dggzz552qzp3vci5vvw625sj3cpjen5v2vu4e76sxfu/963.png"
 }

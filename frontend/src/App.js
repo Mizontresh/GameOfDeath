@@ -53,6 +53,15 @@ const chestMinterAddress = process.env.REACT_APP_CHEST_MINTER_ADDRESS;
 const chestOpenerAddress = process.env.REACT_APP_CHEST_OPENER_ADDRESS;
 const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:3000";
 
+// -------------------- Utility: Convert IPFS URL to Gateway URL --------------------
+function toGatewayUrl(url) {
+  if (url.startsWith("ipfs://")) {
+    const cidAndPath = url.replace("ipfs://", "");
+    return `https://ipfs.io/ipfs/${cidAndPath}`;
+  }
+  return url;
+}
+
 // -------------------- Helper Functions --------------------
 function convertToAugmentedBoard(numericalBoard) {
   return numericalBoard.map(val => ({ value: val, skin: null }));
@@ -61,12 +70,14 @@ function convertToAugmentedBoard(numericalBoard) {
 // -------------------- Inventory Component --------------------
 function Inventory({ inventory, backendUrl, onOpenChest }) {
   return (
-    <div style={{
-      display: "grid",
-      gridTemplateColumns: "repeat(4, 1fr)",
-      gap: 4,
-      justifyItems: "center"
-    }}>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(4, 1fr)",
+        gap: 4,
+        justifyItems: "center"
+      }}
+    >
       {inventory.length === 0 ? (
         <p>No chests found.</p>
       ) : (
@@ -160,7 +171,11 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
                 onClick={() => onSelectRecord(rec)}
               >
                 {rec.thumbnail && (
-                  <img src={rec.thumbnail} alt={`Game #${rec.gameId}`} className="record-thumbnail" />
+                  <img
+                    src={rec.thumbnail}
+                    alt={`Game #${rec.gameId}`}
+                    className="record-thumbnail"
+                  />
                 )}
                 <div className="record-info">
                   <strong>Game #{rec.gameId}</strong>
@@ -183,8 +198,6 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
 }
 
 // -------------------- WholeSkinsPanel Component --------------------
-// This panel displays all possible skins (IDs 0..1023). The ones the user owns are shown normally;
-// the others are overlaid with a semi-transparent gray.
 function WholeSkinsPanel({ onSelectSkin, onClose, ownedSkins }) {
   const GRID_COLUMNS = 32;
   const CELL_SIZE = 18;
@@ -216,7 +229,7 @@ function WholeSkinsPanel({ onSelectSkin, onClose, ownedSkins }) {
                 width: CELL_SIZE * scale + "vmin",
                 height: CELL_SIZE * scale + "vmin",
                 backgroundColor: isOwned ? "transparent" : "rgba(128,128,128,0.5)",
-                cursor: "pointer"
+                cursor: isOwned ? "pointer" : "not-allowed",
               }}
               onClick={() => {
                 if (!isOwned) {
@@ -229,7 +242,185 @@ function WholeSkinsPanel({ onSelectSkin, onClose, ownedSkins }) {
           );
         })}
       </div>
-      <button className="close-whole-skins-btn" onClick={onClose}>Close</button>
+      <button
+        className="close-whole-skins-btn"
+        onClick={onClose}
+        style={{ position: "absolute", top: "20px", right: "20px" }}
+      >
+        Close
+      </button>
+    </div>
+  );
+}
+
+// -------------------- LorePanel Component --------------------
+/**
+ * The LorePanel displays a grid of all 1024 skins.
+ * When an owned skin is clicked, it fetches lore metadata from 
+ * `${backendUrl}/skins/text1/<skinId>.json` and shows a modal displaying:
+ * - A large image,
+ * - The title, optional subtitle,
+ * - Every metadata category (key–value pair) dynamically,
+ * with the close button placed in the top–right of the modal overlay.
+ */
+function LorePanel({ onClose, ownedSkins }) {
+  const GRID_COLUMNS = 32;
+  const CELL_SIZE = 18;
+  const TOTAL_SKINS = 1024;
+  const scale = 70 / (GRID_COLUMNS * CELL_SIZE);
+  const [selectedLore, setSelectedLore] = useState(null);
+
+  function getSkinCoords(skinId) {
+    return { x: (skinId % GRID_COLUMNS) * CELL_SIZE, y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE };
+  }
+
+  async function handleClick(skinId) {
+    if (!ownedSkins.includes(skinId)) {
+      alert("You do not own this skin");
+      return;
+    }
+    try {
+      const response = await fetch(`${backendUrl}/skins/text1/${skinId}.json`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch lore");
+      }
+      const metadata = await response.json();
+      // Merge with the skinId so we can fallback to an icon if no image is provided.
+      setSelectedLore({ ...metadata, skinId });
+    } catch (error) {
+      console.error("Error fetching lore:", error);
+      alert("Error fetching lore: " + error.message);
+    }
+  }
+
+  // Closes only the lore modal
+  function handleCloseLoreModal() {
+    setSelectedLore(null);
+  }
+
+  return (
+    <div className="whole-skins-overlay" onClick={onClose}>
+      <div
+        style={{
+          position: "relative",
+          width: "70vmin",
+          height: "70vmin",
+          margin: "0 auto",
+          overflow: "hidden"
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <img
+          src={`${backendUrl}/skins/whole.png`}
+          alt="All Skins"
+          style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+        />
+        {Array.from({ length: TOTAL_SKINS }, (_, i) => {
+          const { x, y } = getSkinCoords(i);
+          const isOwned = ownedSkins.includes(i);
+          return (
+            <div
+              key={i}
+              style={{
+                position: "absolute",
+                left: x * scale + "vmin",
+                top: y * scale + "vmin",
+                width: CELL_SIZE * scale + "vmin",
+                height: CELL_SIZE * scale + "vmin",
+                backgroundColor: isOwned ? "transparent" : "rgba(128,128,128,0.5)",
+                cursor: isOwned ? "pointer" : "not-allowed",
+              }}
+              onClick={() => handleClick(i)}
+            />
+          );
+        })}
+      </div>
+      {/* Fixed Close Button for the entire Lore overlay */}
+      <button
+        onClick={onClose}
+        style={{
+          position: "fixed",
+          top: "20px",
+          right: "20px",
+          background: "none",
+          border: "1px solid #ff00e2",
+          color: "#ff00e2",
+          padding: "8px",
+          cursor: "pointer",
+          borderRadius: "4px",
+          zIndex: 1300
+        }}
+      >
+        Close Lore
+      </button>
+      {/* Lore Modal for selected skin */}
+      {selectedLore && (
+        <div className="lore-modal-overlay" onClick={handleCloseLoreModal}>
+          <div
+            className="lore-modal-content"
+            onClick={e => e.stopPropagation()}
+            style={{
+              display: "flex",
+              flexDirection: "row",
+              gap: "20px",
+              alignItems: "flex-start"
+            }}
+          >
+            <img
+              src={
+                selectedLore.image
+                  ? toGatewayUrl(selectedLore.image)
+                  : `${backendUrl}/skins/icons/${selectedLore.skinId}.png`
+              }
+              alt={selectedLore.title || `Skin #${selectedLore.skinId}`}
+              style={{
+                width: "250px",
+                height: "auto",
+                border: "1px solid #fff",
+                borderRadius: "8px"
+              }}
+            />
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <h2 style={{ color: "#ff00e2", margin: 0 }}>
+                  {selectedLore.title || `Skin #${selectedLore.skinId}`}
+                </h2>
+              </div>
+              {selectedLore.subtitle && (
+                <h4 style={{ color: "#fff", marginTop: "0.5rem" }}>
+                  {selectedLore.subtitle}
+                </h4>
+              )}
+              <div
+                style={{
+                  color: "#fff",
+                  background: "#222",
+                  border: "1px solid #333",
+                  borderRadius: "6px",
+                  padding: "10px",
+                  marginTop: "1rem",
+                  maxHeight: "40vh",
+                  overflowY: "auto"
+                }}
+              >
+                {Object.entries(selectedLore).map(([key, value]) => {
+                  if (key === "image" || key === "skinId") return null;
+                  return (
+                    <div key={key} style={{ marginBottom: "8px" }}>
+                      <strong style={{ textTransform: "capitalize" }}>{key}:</strong>
+                      <span style={{ marginLeft: "5px" }}>
+                        {typeof value === "object"
+                          ? JSON.stringify(value, null, 2)
+                          : value.toString()}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -287,9 +478,8 @@ function App() {
   const [liveBlueBets, setLiveBlueBets] = useState(0);
   const [betAmount, setBetAmount] = useState(1);
   const [inventory, setInventory] = useState([]);
+
   // Chest animation state.
-  // For small chests, we cycle frames 1 to 5.
-  // For brain chest, we show "brain" then "stir" then reveal the minted chest.
   const [chestAnimation, setChestAnimation] = useState({
     active: false,
     step: null,
@@ -299,10 +489,11 @@ function App() {
   });
   const [winnerOverlay, setWinnerOverlay] = useState(null);
 
-  // Owned skins from ChestOpener (final item tokens). Duplicates count only once.
+  // Owned skins from ChestOpener.
   const [ownedSkins, setOwnedSkins] = useState([]);
-  // Whether to show the skins tab.
+  // Controls for overlay panels.
   const [showWholeSkins, setShowWholeSkins] = useState(false);
+  const [showLorePanel, setShowLorePanel] = useState(false);
 
   const socketRef = useRef(null);
 
@@ -602,12 +793,14 @@ function App() {
     try {
       const itemBalanceBN = await chestOpenerContract.balanceOf(userAddress);
       const itemBalance = Number(itemBalanceBN);
+      console.log("ChestOpener balance:", itemBalance);
       const finalSkins = [];
       for (let i = 0; i < itemBalance; i++) {
         const tokenIdBN = await chestOpenerContract.tokenOfOwnerByIndex(userAddress, i);
         const tokenId = Number(tokenIdBN);
         const awardedItemBN = await chestOpenerContract.tokenAwardedItem(tokenId);
         const awardedItem = Number(awardedItemBN);
+        console.log(`TokenID ${tokenId} awardedItem:`, awardedItem);
         finalSkins.push(awardedItem);
       }
       const uniqueSkins = Array.from(new Set(finalSkins));
@@ -617,7 +810,6 @@ function App() {
     }
   }
 
-  // Refresh owned skins whenever chest operations occur.
   useEffect(() => {
     fetchOwnedSkinsFromOpener();
   }, [chestOpenerContract, userAddress, status]);
@@ -692,7 +884,6 @@ function App() {
         data: { image: `${backendUrl}/chests/brain.png` }
       });
       await new Promise(resolve => setTimeout(resolve, 2000));
-
       // Step 2: Show stirring animation.
       setChestAnimation({
         active: true,
@@ -702,14 +893,12 @@ function App() {
         data: { image: `${backendUrl}/chests/brain.png` }
       });
       await new Promise(resolve => setTimeout(resolve, 2000));
-
       // Step 3: Mint the chest NFT.
       const tx = await chestMinterContract.mintRandomChest({ gasLimit: 400000 });
       await tx.wait();
       await new Promise(resolve => setTimeout(resolve, 1000));
       refreshInventory();
       fetchOwnedSkinsFromOpener();
-
       // Step 4: Retrieve new chest token info.
       const balanceBN = await chestMinterContract.balanceOf(userAddress);
       const balance = Number(balanceBN);
@@ -717,13 +906,11 @@ function App() {
       const tokenId = Number(tokenIdBN);
       const chestTypeBN = await chestMinterContract.tokenChestType(tokenId);
       const chestType = Number(chestTypeBN);
-
       // Build backend URLs.
       const metadataUrl = `${backendUrl}/chests/var/${chestType}.json`;
       const imageUrl = `${backendUrl}/chests/icons/chest${chestType}/frame1.png`;
       console.log("Big Chest Metadata URL:", metadataUrl);
       console.log("Big Chest Image URL:", imageUrl);
-
       // Step 5: Fetch metadata.
       const response = await fetch(metadataUrl);
       if (!response.ok) {
@@ -731,7 +918,6 @@ function App() {
       }
       const metadata = await response.json();
       metadata.image = imageUrl;
-
       // Step 6: Reveal the minted chest.
       setChestAnimation({
         active: true,
@@ -775,20 +961,17 @@ function App() {
       const newItemId = Number(newItemIdBN) - 1;
       const awardedItemBN = await chestOpenerContract.tokenAwardedItem(newItemId);
       const awardedItem = Number(awardedItemBN);
-      
       // Build backend URLs for the final item.
       const imageUrl = `${backendUrl}/skins/icons/${awardedItem}.png`;
       const metadataUrl = `${backendUrl}/skins/text1/${awardedItem}.json`;
       console.log("Awarded Image URL:", imageUrl);
       console.log("Awarded Metadata URL:", metadataUrl);
-      
       const response = await fetch(metadataUrl);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       const metadata = await response.json();
       metadata.image = imageUrl;
-      
       setChestAnimation({ active: true, step: "revealed", data: metadata, chestType: chest.type, frame: 0 });
       await new Promise(resolve => setTimeout(resolve, 2000));
     } catch (err) {
@@ -977,6 +1160,34 @@ function App() {
           50% { transform: rotate(5deg); }
           100% { transform: rotate(0deg); }
         }
+        .lore-modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          background: rgba(0,0,0,0.9);
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          z-index: 1200;
+          padding: 20px;
+        }
+        .lore-modal-content {
+          background: #111;
+          padding: 20px;
+          border: 2px solid #ff00e2;
+          border-radius: 10px;
+          max-width: 90vw;
+          max-height: 90vh;
+          overflow-y: auto;
+          color: #fff;
+          text-align: left;
+          position: relative;
+          display: flex;
+          flex-direction: row;
+          gap: 20px;
+        }
       `}</style>
 
       {/* Chest Animation Overlay */}
@@ -1009,12 +1220,15 @@ function App() {
       {/* Top-Left Buttons */}
       <div className="top-left-buttons">
         <button onClick={() => alert("Information: This is Game of Death!")}>Info</button>
-        <button onClick={() => alert("Lore: In the pit of despair...")}>Lore</button>
         <button onClick={() => {
-          // When clicking the skins tab, refresh owned skins from ChestOpener then show panel.
+          fetchOwnedSkinsFromOpener().then(() => setShowLorePanel(true));
+        }}>
+          My Lore
+        </button>
+        <button onClick={() => {
           fetchOwnedSkinsFromOpener().then(() => setShowWholeSkins(true));
         }}>
-          Skins
+          My Skins
         </button>
       </div>
 
@@ -1207,7 +1421,11 @@ function App() {
               <p>Winner: {selectedRecord.winner}</p>
               <p>Team Red: {selectedRecord.teamRedCount} | Team Blue: {selectedRecord.teamBlueCount}</p>
               {selectedRecord.thumbnail && (
-                <img src={selectedRecord.thumbnail} alt={`Game #${selectedRecord.gameId}`} style={{ width: 150, height: 150, objectFit: "cover" }} />
+                <img
+                  src={selectedRecord.thumbnail}
+                  alt={`Game #${selectedRecord.gameId}`}
+                  style={{ width: 150, height: 150, objectFit: "cover" }}
+                />
               )}
               <div style={{ marginTop: 6 }}>
                 <button className="auto-replay-btn" onClick={() => {
@@ -1241,6 +1459,14 @@ function App() {
           }}
           onClose={() => setShowWholeSkins(false)}
           ownedSkins={ownedSkins}
+        />
+      )}
+
+      {/* LorePanel Overlay */}
+      {showLorePanel && (
+        <LorePanel
+          ownedSkins={ownedSkins}
+          onClose={() => setShowLorePanel(false)}
         />
       )}
 

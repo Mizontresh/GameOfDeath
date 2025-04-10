@@ -41,7 +41,7 @@ async function main() {
   // 5. Deploy ChestOpener
   // Use the deployed ChestMinter address and set the base URI for opened item metadata.
   const chestMinterAddress = chestMinter.target;
-  const itemBaseURI = "ipfs://bafybeih4hewzsynt25ornpwgjlhr2dp4y4l2tyq4qirb4fptxggw47jfv4/";
+  const itemBaseURI = "ipfs://bafybeihjt25gucou7unw35rkkcr66slzp7xqgr3bqhg4u3qxjndmclkfqi/";
   const ChestOpener = await ethers.getContractFactory("ChestOpener");
   const chestOpener = await ChestOpener.deploy(chestMinterAddress, itemBaseURI);
   await chestOpener.waitForDeployment();

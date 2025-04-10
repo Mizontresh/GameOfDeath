@@ -6,8 +6,8 @@ async function main() {
   console.log("Setting ChestOpener using deployer:", deployer.address);
 
   // Replace these with your deployed contract addresses
-  const chestMinterAddress = "0x8D75F9F7f4F4C4eFAB9402261bC864f21DF0c649"; 
-  const chestOpenerAddress = "0x0dEe24C99e8dF7f0E058F4F48f228CC07DB704Fc"; 
+  const chestMinterAddress = "0x754722E020f992495fD45b9107c13d1E06b6646A"; 
+  const chestOpenerAddress = "0x2012b62F2811add98A9C1cB496C5a2cda2fdd53D"; 
 
   // Connect to your deployed ChestMinter contract
   const chestMinter = await ethers.getContractAt("ChestMinter", chestMinterAddress, deployer);

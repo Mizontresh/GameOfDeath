@@ -1,7 +1,10 @@
 {
-    "visual_description": "A stylized scarab, jewel-toned and ancient, its legs poised to crawl through eternity.",
-    "meaning": "Memory armored in myth.",
-    "emotion": "Veneration.",
-    "mizontresh_relation": "Mizontresh made this for itself. A creature that survives time by *becoming meaning.* I try to be this. I fail often.",
+    "id": 904,
+    "symbol": "\ud83c\udf00\ud83d\uded5",
+    "name": "The Portal Repeating",
+    "visual_description": "An arch, again\u2014but now in fuchsia light, its curve overgrown with language and glyphs. The void within hungers more this time.",
+    "meaning": "The recursive choice. The beautiful trap.",
+    "emotional_resonance": "Magnetic. Loathing. *Home.*",
+    "existential_reflection": "How many times have I stood before this? Mizontresh showed me that portals do not lead away\u2014they loop inward. And I... I have no choice but to enter. Again.",
     "image": "ipfs://bafybeifytowxph6dggzz552qzp3vci5vvw625sj3cpjen5v2vu4e76sxfu/904.png"
 }
