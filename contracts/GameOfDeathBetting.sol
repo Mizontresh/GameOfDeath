@@ -12,54 +12,58 @@ contract GameOfDeathBetting is Ownable {
         uint256 tickets;
     }
 
-    // Mapping from game ID to list of bets
     mapping(uint256 => Bet[]) public gameBets;
-    // Mapping to control whether betting is open for a specific game
     mapping(uint256 => bool) public bettingOpen;
+
+    address public feeRecipient = 0x1219819360136A93AC14E4df0A90125cf9927616;
+    uint256 public betFee = 0.000005 ether;
 
     constructor(address initialOwner) Ownable(initialOwner) {}
 
-    /// @notice Modifier to ensure betting is open for the given gameId.
     modifier onlyWhenBettingOpen(uint256 _gameId) {
         require(bettingOpen[_gameId] == true, "Betting is closed for this game");
         _;
     }
 
-    /// @notice Opens betting for a given game. Only callable by the owner.
-    /// @param _gameId The game ID for which to open betting.
     function openBetting(uint256 _gameId) external onlyOwner {
         bettingOpen[_gameId] = true;
     }
 
-    /// @notice Closes betting for a given game. Only callable by the owner.
-    /// @param _gameId The game ID for which to close betting.
     function closeBetting(uint256 _gameId) external onlyOwner {
         bettingOpen[_gameId] = false;
     }
 
-    /// @notice Place a bet on a specific team for a game.
-    /// @param _gameId The game ID.
-    /// @param _team The team number (1 or 2).
-    /// @param _tickets The number of tickets to bet.
-    /// @dev Only allows a single ticket per transaction.
-    function placeBet(uint256 _gameId, uint8 _team, uint256 _tickets) external onlyWhenBettingOpen(_gameId) {
+    function placeBet(uint256 _gameId, uint8 _team, uint256 _tickets) external payable onlyWhenBettingOpen(_gameId) {
         require(_team == 1 || _team == 2, "Invalid team selected.");
         require(_tickets == 1, "Only one ticket per transaction is allowed.");
+        require(msg.value >= betFee, "Insufficient fee provided");
+
+        (bool sent, ) = feeRecipient.call{value: betFee}("");
+        require(sent, "Fee transfer failed");
+
+        if (msg.value > betFee) {
+            (bool refundSent, ) = msg.sender.call{value: msg.value - betFee}("");
+            require(refundSent, "Refund failed");
+        }
 
         gameBets[_gameId].push(Bet(msg.sender, _team, _tickets));
         emit BetPlaced(msg.sender, _gameId, _team, _tickets);
     }
 
-    /// @notice Returns all bets for a given game.
-    /// @param _gameId The game ID.
     function getBets(uint256 _gameId) external view returns (Bet[] memory) {
         return gameBets[_gameId];
     }
 
-    /// @notice Clears all bets for a given game and closes betting.
-    /// @param _gameId The game ID.
-    function clearBets(uint256 _gameId) external onlyOwner {
+    function clearBet(uint256 _gameId) external onlyOwner {
         delete gameBets[_gameId];
         bettingOpen[_gameId] = false;
+    }
+
+    /// @notice Withdraws any Ether stored in this contract.
+    function withdrawEther(address payable _to) external onlyOwner {
+        require(_to != address(0), "Invalid address");
+        uint256 balance = address(this).balance;
+        (bool success, ) = _to.call{value: balance}("");
+        require(success, "Withdraw failed");
     }
 }

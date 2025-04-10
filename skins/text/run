@@ -1,0 +1,31 @@
+import json
+import os
+
+# Path to your input JSON file
+input_filename = 'icons.json'
+
+# Load the JSON file
+with open(input_filename, 'r', encoding='utf-8') as file:
+    members = json.load(file)
+
+
+# Your CID and base URL for the image link
+cid = "ipfs://bafybeifytowxph6dggzz552qzp3vci5vvw625sj3cpjen5v2vu4e76sxfu"
+base_image_url = f"{cid}/"  # Change to desired gateway if needed
+
+# Ensure the output directory exists (optional)
+output_dir = 'output_files'
+os.makedirs(output_dir, exist_ok=True)
+
+# Process each member
+for index, member in enumerate(members):
+    # Construct the image link; change ".png" if needed.
+    image_link = f"{base_image_url}{index}.png"
+    member["image"] = image_link
+    
+    # Write each member to a separate file named {index}.json
+    output_filename = os.path.join(output_dir, f"{index}.json")
+    with open(output_filename, 'w') as out_file:
+        json.dump(member, out_file, indent=4)
+
+print("Successfully created 1024 JSON files with updated image links.")

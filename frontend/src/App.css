@@ -346,12 +346,12 @@ body {
   box-shadow: 0 0 10px #111;
   margin: 0 auto;
   overflow: hidden;
+  border: 3px solid #c600b5;
   position: relative;
 }
 .board-border {
   width: 100%;
   height: 100%;
-  border: 2px solid #444;
   box-shadow: 0 0 5px #222, 0 0 10px #222;
   position: relative;
 }

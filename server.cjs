@@ -440,7 +440,7 @@ setInterval(async () => {
 async function resetGame() {
   try {
     await queueTransaction(async (nonce) => {
-      const tx = await bettingContract.clearBets(currentGameId, { nonce });
+      const tx = await bettingContract.clearBet(currentGameId, { nonce });
       console.log(`Cleared bets for gameId=${currentGameId}, tx: ${tx.hash}`);
       await waitForTxConfirmation(tx);
       console.log("Bets cleared for gameId", currentGameId);

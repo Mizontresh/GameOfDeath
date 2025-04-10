@@ -15,7 +15,7 @@ const gameABI = [
 ];
 
 const bettingABI = [
-  "function placeBet(uint256 gameId, uint8 team, uint256 tickets) external",
+  "function placeBet(uint256 gameId, uint8 team, uint256 tickets) external payable",
   "function getBets(uint256 gameId) external view returns (tuple(address user, uint8 team, uint256 tickets)[])",
   "function openBetting(uint256 gameId) external",
   "function closeBetting(uint256 gameId) external",
@@ -36,16 +36,56 @@ const chestMinterABI = [
   "function tokenURI(uint256 tokenId) external view returns (string)"
 ];
 
+const chestOpenerABI = [
+  "function openChest(uint256 chestId) external payable",
+  "function itemCounter() external view returns (uint256)",
+  "function tokenURI(uint256 tokenId) external view returns (string)",
+  "function tokenAwardedItem(uint256 tokenId) external view returns (uint16)",
+  "function balanceOf(address owner) external view returns (uint256)",
+  "function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)"
+];
+
 // -------------------- Environment Constants --------------------
 const gameAddress = process.env.REACT_APP_GAMEOFDEATH_ADDRESS;
 const bettingAddress = process.env.REACT_APP_BETTING_ADDRESS;
 const mizonsAddress = process.env.REACT_APP_MIZONS_ADDRESS;
 const chestMinterAddress = process.env.REACT_APP_CHEST_MINTER_ADDRESS;
+const chestOpenerAddress = process.env.REACT_APP_CHEST_OPENER_ADDRESS;
 const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:3000";
 
-// -------------------- Helper: Convert Numeric Board to Augmented Board --------------------
+// -------------------- Helper Functions --------------------
 function convertToAugmentedBoard(numericalBoard) {
   return numericalBoard.map(val => ({ value: val, skin: null }));
+}
+
+// -------------------- Inventory Component --------------------
+function Inventory({ inventory, backendUrl, onOpenChest }) {
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(4, 1fr)",
+      gap: 4,
+      justifyItems: "center"
+    }}>
+      {inventory.length === 0 ? (
+        <p>No chests found.</p>
+      ) : (
+        inventory.map(chest => (
+          <div
+            key={chest.tokenId}
+            style={{ position: "relative", textAlign: "center", cursor: "pointer" }}
+            onClick={() => onOpenChest(chest.tokenId)}
+          >
+            <img
+              src={`${backendUrl}/chests/icons/chest${chest.type}/frame1.png`}
+              alt={`Chest Type ${chest.type}`}
+              style={{ width: 35, height: "auto" }}
+            />
+          </div>
+        ))
+      )}
+    </div>
+  );
 }
 
 // -------------------- RecordsList Component --------------------
@@ -124,9 +164,7 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
                 )}
                 <div className="record-info">
                   <strong>Game #{rec.gameId}</strong>
-                  <p>
-                    {rec.winner} won at {dateString}
-                  </p>
+                  <p>{rec.winner} won at {dateString}</p>
                 </div>
               </li>
             );
@@ -145,6 +183,8 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
 }
 
 // -------------------- WholeSkinsPanel Component --------------------
+// This panel displays all possible skins (IDs 0..1023). The ones the user owns are shown normally;
+// the others are overlaid with a semi-transparent gray.
 function WholeSkinsPanel({ onSelectSkin, onClose, ownedSkins }) {
   const GRID_COLUMNS = 32;
   const CELL_SIZE = 18;
@@ -152,35 +192,20 @@ function WholeSkinsPanel({ onSelectSkin, onClose, ownedSkins }) {
   const scale = 70 / (GRID_COLUMNS * CELL_SIZE);
 
   function getSkinCoords(skinId) {
-    const x = (skinId % GRID_COLUMNS) * CELL_SIZE;
-    const y = Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE;
-    return { x, y };
+    return { x: (skinId % GRID_COLUMNS) * CELL_SIZE, y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE };
   }
 
   return (
     <div className="whole-skins-overlay">
-      <div
-        style={{
-          position: "relative",
-          width: "70vmin",
-          height: "70vmin",
-          margin: "0 auto",
-          overflow: "hidden"
-        }}
-      >
+      <div style={{ position: "relative", width: "70vmin", height: "70vmin", margin: "0 auto", overflow: "hidden" }}>
         <img
           src={`${backendUrl}/skins/whole.png`}
           alt="All Skins"
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "contain",
-            display: "block"
-          }}
+          style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
         />
         {Array.from({ length: TOTAL_SKINS }, (_, i) => {
           const { x, y } = getSkinCoords(i);
-          const isOwned = ownedSkins && ownedSkins.includes(i);
+          const isOwned = ownedSkins.includes(i);
           return (
             <div
               key={i}
@@ -195,7 +220,7 @@ function WholeSkinsPanel({ onSelectSkin, onClose, ownedSkins }) {
               }}
               onClick={() => {
                 if (!isOwned) {
-                  alert("You do not own this memory");
+                  alert("You do not own this skin");
                 } else {
                   onSelectSkin(i);
                 }
@@ -204,16 +229,14 @@ function WholeSkinsPanel({ onSelectSkin, onClose, ownedSkins }) {
           );
         })}
       </div>
-      <button className="close-whole-skins-btn" onClick={onClose}>
-        Close
-      </button>
+      <button className="close-whole-skins-btn" onClick={onClose}>Close</button>
     </div>
   );
 }
 
 // -------------------- Main App Component --------------------
 function App() {
-  // Desktop layout variables
+  // Layout variables.
   const LEFT_PANEL_WIDTH = 320;
   const RIGHT_PANEL_WIDTH = 320;
   const TOP_BAR_HEIGHT = 120;
@@ -222,23 +245,21 @@ function App() {
 
   useEffect(() => {
     function handleResize() {
-      const marginBetween = 60;
-      const availableWidth = window.innerWidth - (LEFT_PANEL_WIDTH + RIGHT_PANEL_WIDTH + marginBetween);
-      const bottomMargin = 40;
-      const availableHeight = window.innerHeight - (TOP_BAR_HEIGHT + bottomMargin);
-      const size = Math.max(MIN_BOARD_SIZE, Math.min(availableWidth, availableHeight));
-      setBoardSize(size);
+      const availableWidth = window.innerWidth - (LEFT_PANEL_WIDTH + RIGHT_PANEL_WIDTH + 60);
+      const availableHeight = window.innerHeight - (TOP_BAR_HEIGHT + 40);
+      setBoardSize(Math.max(MIN_BOARD_SIZE, Math.min(availableWidth, availableHeight)));
     }
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // States
+  // States.
   const [userAddress, setUserAddress] = useState("");
   const [gameContract, setGameContract] = useState(null);
   const [bettingContract, setBettingContract] = useState(null);
   const [chestMinterContract, setChestMinterContract] = useState(null);
+  const [chestOpenerContract, setChestOpenerContract] = useState(null);
   const [mizonsBalance, setMizonsBalance] = useState("0");
   const [phaseData, setPhaseData] = useState({ phase: "picking", timeLeft: 30, gameId: 1 });
   const [teamCounts, setTeamCounts] = useState({ red: 0, blue: 0 });
@@ -246,13 +267,13 @@ function App() {
   const [status, setStatus] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Live board & replay history
+  // Live board & replay history.
   const [liveBoard, setLiveBoard] = useState(Array(4096).fill({ value: 0, skin: null }));
   const [boardHistory, setBoardHistory] = useState([]);
   const [liveReplayIndex, setLiveReplayIndex] = useState(-1);
   const [liveAutoReplay, setLiveAutoReplay] = useState(false);
 
-  // Past record state
+  // Past record state.
   const [showMyGames, setShowMyGames] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -261,26 +282,31 @@ function App() {
   const [selectedAutoReplay, setSelectedAutoReplay] = useState(false);
   const [latestRecord, setLatestRecord] = useState(null);
 
-  // Bets & inventory
+  // Bets & inventory.
   const [liveRedBets, setLiveRedBets] = useState(0);
   const [liveBlueBets, setLiveBlueBets] = useState(0);
   const [betAmount, setBetAmount] = useState(1);
-
-  // Overlays
-  const [showWholeSkins, setShowWholeSkins] = useState(false);
+  const [inventory, setInventory] = useState([]);
+  // Chest animation state.
+  // For small chests, we cycle frames 1 to 5.
+  // For brain chest, we show "brain" then "stir" then reveal the minted chest.
+  const [chestAnimation, setChestAnimation] = useState({
+    active: false,
+    step: null,
+    data: null,
+    chestType: null,
+    frame: 1
+  });
   const [winnerOverlay, setWinnerOverlay] = useState(null);
+
+  // Owned skins from ChestOpener (final item tokens). Duplicates count only once.
+  const [ownedSkins, setOwnedSkins] = useState([]);
+  // Whether to show the skins tab.
+  const [showWholeSkins, setShowWholeSkins] = useState(false);
+
   const socketRef = useRef(null);
-  const [inventory, setInventory] = useState(new Array(16).fill(0));
 
-  // New state for chest opening animation overlay.
-  // "step" can be "opening", "placeholder", or "revealed"
-  // We now store both the minted chest type and the inverted (revealed) type.
-  const [chestAnimation, setChestAnimation] = useState({ active: false, mintedType: null, revealedType: null, step: null });
-
-  // For demonstration, maintain a state of owned skins.
-  const [ownedSkins] = useState([1, 3, 5, 7, 9, 11, 13, 15]);
-
-  // Determine which board to display:
+  // --------------- Board display ---------------
   let displayBoard;
   if (selectedHistory) {
     const replayIndex = selectedReplayIndex < 0 ? selectedHistory.length - 1 : selectedReplayIndex;
@@ -292,7 +318,7 @@ function App() {
     displayBoard = liveBoard;
   }
 
-  // Compute scoreboard ratio
+  // --------------- Scoreboard ratio ---------------
   function computeOpposingStats(board) {
     let redOnBlue = 0, blueOnRed = 0;
     for (let y = 0; y < 64; y++) {
@@ -307,13 +333,12 @@ function App() {
   }
   const { redOnBlue, blueOnRed } = computeOpposingStats(displayBoard);
   const totalOpposing = redOnBlue + blueOnRed;
-  let redPercent = totalOpposing > 0 ? (redOnBlue / totalOpposing) * 100 : 50;
-  let bluePercent = totalOpposing > 0 ? (blueOnRed / totalOpposing) * 100 : 50;
+  const redPercent = totalOpposing > 0 ? (redOnBlue / totalOpposing) * 100 : 50;
+  const bluePercent = totalOpposing > 0 ? (blueOnRed / totalOpposing) * 100 : 50;
 
-  // Show veil in placing phase if not replaying (for board interaction)
   const showVeil = phaseData.phase === "placing" && !selectedRecord && liveReplayIndex < 0;
 
-  // Format MIZ balance
+  // --------------- Format MIZ balance ---------------
   function formatMizons(balance) {
     const bal = Number(ethers.formatUnits(balance, 18));
     if (bal === 0) return "0";
@@ -321,7 +346,7 @@ function App() {
     return bal.toFixed(6);
   }
 
-  // selectRecord
+  // --------------- selectRecord ---------------
   function selectRecord(rec) {
     setSelectedRecord(rec);
     if (rec.boardHistory && rec.boardHistory.length > 0) {
@@ -335,7 +360,7 @@ function App() {
     }
   }
 
-  // Wallet connect/disconnect
+  // --------------- Wallet connect/disconnect ---------------
   async function connectWallet() {
     if (!window.ethereum) {
       setErrorMsg("No MetaMask found!");
@@ -352,14 +377,17 @@ function App() {
       setErrorMsg("Connect error: " + err.message);
     }
   }
+
   function disconnectWallet() {
     setUserAddress("");
     setGameContract(null);
     setBettingContract(null);
     setChestMinterContract(null);
+    setChestOpenerContract(null);
     setStatus("");
     setErrorMsg("");
   }
+
   useEffect(() => {
     if (window.ethereum) {
       const handleAccountsChanged = accounts => {
@@ -371,19 +399,19 @@ function App() {
     }
   }, []);
 
-  // Socket.io setup with auto-refresh for new records
+  // --------------- Socket.io setup ---------------
   useEffect(() => {
     socketRef.current = io(backendUrl, { transports: ["websocket"] });
     socketRef.current.on("connect", () => console.log("Socket connected:", socketRef.current.id));
     socketRef.current.on("phaseUpdated", data => setPhaseData(data));
     socketRef.current.on("boardUpdated", augmentedBoard => {
-      if (liveReplayIndex < 0 && !selectedHistory) {
-        setLiveBoard(augmentedBoard);
-      }
+      if (liveReplayIndex < 0 && !selectedHistory) setLiveBoard(augmentedBoard);
     });
     socketRef.current.on("winner", ({ winner }) => {
-      setWinnerOverlay(winner);
-      setTimeout(() => setWinnerOverlay(null), 3000);
+      if (!chestAnimation.active) {
+        setWinnerOverlay(winner);
+        setTimeout(() => setWinnerOverlay(null), 3000);
+      }
     });
     socketRef.current.on("newGameRecord", record => {
       console.log("Received new game record:", record);
@@ -391,9 +419,9 @@ function App() {
     });
     socketRef.current.on("disconnect", () => console.log("Socket disconnected"));
     return () => socketRef.current.disconnect();
-  }, [liveReplayIndex, selectedHistory]);
+  }, [liveReplayIndex, selectedHistory, chestAnimation.active]);
 
-  // Poll phaseData every 2 seconds.
+  // --------------- Phase polling ---------------
   useEffect(() => {
     const interval = setInterval(() => {
       fetch(`${backendUrl}/api/state`)
@@ -404,10 +432,10 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Contract setup when wallet is connected.
+  // --------------- Contract setup ---------------
   useEffect(() => {
     if (!window.ethereum || !userAddress) return;
-    if (!gameAddress || !bettingAddress || !mizonsAddress || !chestMinterAddress) {
+    if (!gameAddress || !bettingAddress || !mizonsAddress || !chestMinterAddress || !chestOpenerAddress) {
       setErrorMsg("Missing contract addresses in env variables.");
       return;
     }
@@ -417,10 +445,12 @@ function App() {
         const signer = await provider.getSigner();
         const gameC = new ethers.Contract(gameAddress, gameABI, signer);
         const bettingC = new ethers.Contract(bettingAddress, bettingABI, signer);
-        const chestC = new ethers.Contract(chestMinterAddress, chestMinterABI, signer);
+        const chestMinterC = new ethers.Contract(chestMinterAddress, chestMinterABI, signer);
+        const chestOpenerC = new ethers.Contract(chestOpenerAddress, chestOpenerABI, signer);
         setGameContract(gameC);
         setBettingContract(bettingC);
-        setChestMinterContract(chestC);
+        setChestMinterContract(chestMinterC);
+        setChestOpenerContract(chestOpenerC);
       } catch (err) {
         console.error("Error setting up contracts:", err);
         setErrorMsg("Error setting up contracts: " + err.message);
@@ -429,7 +459,7 @@ function App() {
     setupContracts();
   }, [userAddress]);
 
-  // Poll bets
+  // --------------- Bets polling ---------------
   useEffect(() => {
     if (!phaseData.gameId) return;
     async function fetchBets() {
@@ -451,7 +481,7 @@ function App() {
     return () => clearInterval(interval);
   }, [phaseData.gameId]);
 
-  // Poll board history
+  // --------------- Board history polling ---------------
   useEffect(() => {
     const interval = setInterval(() => {
       fetch(`${backendUrl}/api/history`)
@@ -462,22 +492,20 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Poll live board in "placing" phase if not replaying.
+  // --------------- Live board polling ---------------
   useEffect(() => {
     if (phaseData.phase !== "placing") return;
     if (selectedHistory || liveReplayIndex >= 0) return;
     const interval = setInterval(() => {
       fetch(`${backendUrl}/api/board`)
         .then(res => res.json())
-        .then(data => {
-          if (data && data.board) setLiveBoard(data.board);
-        })
+        .then(data => { if (data && data.board) setLiveBoard(data.board); })
         .catch(err => console.error("Error polling board:", err));
     }, 1000);
     return () => clearInterval(interval);
   }, [phaseData.phase, selectedHistory, liveReplayIndex]);
 
-  // Auto-replay for live board.
+  // --------------- Live auto-replay ---------------
   useEffect(() => {
     if (!liveAutoReplay || boardHistory.length === 0) return;
     const autoInterval = setInterval(() => {
@@ -493,7 +521,7 @@ function App() {
     return () => clearInterval(autoInterval);
   }, [liveAutoReplay, boardHistory]);
 
-  // Auto-replay for records.
+  // --------------- Recorded auto-replay ---------------
   useEffect(() => {
     if (!selectedAutoReplay || !selectedHistory || selectedHistory.length === 0) return;
     const autoInterval = setInterval(() => {
@@ -509,7 +537,7 @@ function App() {
     return () => clearInterval(autoInterval);
   }, [selectedAutoReplay, selectedHistory]);
 
-  // Poll team info if not replaying.
+  // --------------- Team info polling ---------------
   useEffect(() => {
     if (!gameContract) return;
     if (selectedHistory || liveReplayIndex >= 0) return;
@@ -517,10 +545,7 @@ function App() {
       (async () => {
         try {
           const counts = await gameContract.getTeamCounts(phaseData.gameId);
-          setTeamCounts({
-            red: Number(counts.redCount),
-            blue: Number(counts.blueCount)
-          });
+          setTeamCounts({ red: Number(counts.redCount), blue: Number(counts.blueCount) });
           if (userAddress) {
             const tId = await gameContract.getTeam(phaseData.gameId, userAddress);
             setUserTeam(Number(tId));
@@ -533,7 +558,7 @@ function App() {
     return () => clearInterval(interval);
   }, [gameContract, userAddress, selectedHistory, liveReplayIndex, phaseData.gameId]);
 
-  // Poll MIZ balance.
+  // --------------- MIZ balance polling ---------------
   useEffect(() => {
     if (!window.ethereum || !mizonsAddress || !userAddress) return;
     const provider = new ethers.BrowserProvider(window.ethereum);
@@ -547,30 +572,57 @@ function App() {
     return () => clearInterval(interval);
   }, [mizonsAddress, userAddress]);
 
-  // Refresh inventory.
+  // --------------- Refresh inventory ---------------
   const refreshInventory = useCallback(async () => {
     if (!chestMinterContract || !userAddress) return;
     try {
       const balanceBN = await chestMinterContract.balanceOf(userAddress);
       const balance = Number(balanceBN);
-      const chestCounts = new Array(16).fill(0);
+      const chestList = [];
       for (let i = 0; i < balance; i++) {
         const tokenIdBN = await chestMinterContract.tokenOfOwnerByIndex(userAddress, i);
         const tokenId = Number(tokenIdBN);
         const chestTypeBN = await chestMinterContract.tokenChestType(tokenId);
         const chestType = Number(chestTypeBN);
-        chestCounts[chestType]++;
+        chestList.push({ tokenId, type: chestType });
       }
-      setInventory(chestCounts);
+      setInventory(chestList);
     } catch (error) {
       console.error("Error fetching inventory:", error);
     }
   }, [chestMinterContract, userAddress]);
+
   useEffect(() => {
     refreshInventory();
   }, [refreshInventory, status]);
 
-  // Join Team.
+  // --------------- Fetch owned skins from ChestOpener ---------------
+  async function fetchOwnedSkinsFromOpener() {
+    if (!chestOpenerContract || !userAddress) return;
+    try {
+      const itemBalanceBN = await chestOpenerContract.balanceOf(userAddress);
+      const itemBalance = Number(itemBalanceBN);
+      const finalSkins = [];
+      for (let i = 0; i < itemBalance; i++) {
+        const tokenIdBN = await chestOpenerContract.tokenOfOwnerByIndex(userAddress, i);
+        const tokenId = Number(tokenIdBN);
+        const awardedItemBN = await chestOpenerContract.tokenAwardedItem(tokenId);
+        const awardedItem = Number(awardedItemBN);
+        finalSkins.push(awardedItem);
+      }
+      const uniqueSkins = Array.from(new Set(finalSkins));
+      setOwnedSkins(uniqueSkins);
+    } catch (err) {
+      console.error("Error fetching final skins from ChestOpener:", err);
+    }
+  }
+
+  // Refresh owned skins whenever chest operations occur.
+  useEffect(() => {
+    fetchOwnedSkinsFromOpener();
+  }, [chestOpenerContract, userAddress, status]);
+
+  // --------------- joinTeam ---------------
   async function joinTeam(teamId) {
     if (!gameContract) {
       setErrorMsg("No contract connected.");
@@ -598,7 +650,7 @@ function App() {
     }
   }
 
-  // Place Square.
+  // --------------- placeSquare ---------------
   async function placeSquare(x, y) {
     if (!gameContract) {
       setErrorMsg("No contract connected.");
@@ -620,7 +672,7 @@ function App() {
     }
   }
 
-  // Chest mint & approval with chest opening animation that replaces the image.
+  // --------------- Handle brain chest minting with stirring animation ---------------
   async function handleMintChest() {
     if (!userAddress) {
       alert("Connect your wallet first!");
@@ -631,55 +683,125 @@ function App() {
       return;
     }
     try {
-      // Step 1: Show "IT OPENS AND SWIRLS" message for 2 seconds.
-      setChestAnimation({ active: true, mintedType: null, revealedType: null, step: "opening" });
+      // Step 1: Show brain chest.
+      setChestAnimation({
+        active: true,
+        step: "brain",
+        chestType: null,
+        frame: 0,
+        data: { image: `${backendUrl}/chests/brain.png` }
+      });
       await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Step 2: Show placeholder image of the big brain chest with "Chest is opening" text.
-      // For placeholder, we use the brain image from the root folder.
-      setChestAnimation({ active: true, mintedType: null, revealedType: null, step: "placeholder" });
+
+      // Step 2: Show stirring animation.
+      setChestAnimation({
+        active: true,
+        step: "stir",
+        chestType: null,
+        frame: 0,
+        data: { image: `${backendUrl}/chests/brain.png` }
+      });
       await new Promise(resolve => setTimeout(resolve, 2000));
-      
+
       // Step 3: Mint the chest NFT.
       const tx = await chestMinterContract.mintRandomChest({ gasLimit: 400000 });
-      const receipt = await tx.wait();
-      
-      // Step 4: Wait an extra second for state update.
+      await tx.wait();
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Step 5: Retrieve the user's balance and the most recent token minted.
+      refreshInventory();
+      fetchOwnedSkinsFromOpener();
+
+      // Step 4: Retrieve new chest token info.
       const balanceBN = await chestMinterContract.balanceOf(userAddress);
       const balance = Number(balanceBN);
-      if (balance === 0) {
-        throw new Error("No tokens found for user after minting.");
-      }
       const tokenIdBN = await chestMinterContract.tokenOfOwnerByIndex(userAddress, balance - 1);
       const tokenId = Number(tokenIdBN);
-      
-      // Step 6: Query the contract for the minted chest type.
       const chestTypeBN = await chestMinterContract.tokenChestType(tokenId);
-      const mintedChestType = Number(chestTypeBN);
-      
-      // Step 7: Invert the image index so that minted chest 0 becomes image 15, 1 becomes image 14, etc.
-      const revealedChestType = mintedChestType;
-      // For text, we show the actual minted chest type.
-      const message = `YOU GOT CHEST ${mintedChestType - 15}`;
-      
-      // Step 8: Update overlay to reveal the final image.
-      // The revealed image is pulled from the chests/var folder using the inverted index.
-      setChestAnimation({ active: true, mintedType: mintedChestType, revealedType: revealedChestType, step: "revealed" });
+      const chestType = Number(chestTypeBN);
+
+      // Build backend URLs.
+      const metadataUrl = `${backendUrl}/chests/var/${chestType}.json`;
+      const imageUrl = `${backendUrl}/chests/icons/chest${chestType}/frame1.png`;
+      console.log("Big Chest Metadata URL:", metadataUrl);
+      console.log("Big Chest Image URL:", imageUrl);
+
+      // Step 5: Fetch metadata.
+      const response = await fetch(metadataUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const metadata = await response.json();
+      metadata.image = imageUrl;
+
+      // Step 6: Reveal the minted chest.
+      setChestAnimation({
+        active: true,
+        step: "revealed",
+        data: metadata,
+        chestType: chestType,
+        frame: 0
+      });
       await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Step 9: Dismiss the overlay and refresh inventory.
-      setChestAnimation({ active: false, mintedType: null, revealedType: null, step: null });
-      refreshInventory();
     } catch (err) {
       console.error("Error minting chest:", err);
-      setChestAnimation({ active: false, mintedType: null, revealedType: null, step: null });
       alert("Chest minting failed: " + err.message);
+    } finally {
+      setChestAnimation({
+        active: false,
+        step: null,
+        data: null,
+        chestType: null,
+        frame: 0
+      });
     }
   }
 
+  // --------------- Handle opening a small chest from inventory ---------------
+  async function handleOpenChest(tokenId) {
+    const chest = inventory.find(c => c.tokenId === tokenId);
+    if (!chest) {
+      alert("Chest not found in inventory.");
+      return;
+    }
+    // Start small chest animation (cycle frames 1 to 5).
+    setChestAnimation({ active: true, step: "opening", chestType: chest.type, frame: 1, data: null });
+    for (let i = 1; i <= 5; i++) {
+      setChestAnimation(prev => ({ ...prev, frame: i }));
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    try {
+      const tx = await chestOpenerContract.openChest(tokenId, { value: ethers.parseEther("0.001") });
+      await tx.wait();
+      const newItemIdBN = await chestOpenerContract.itemCounter();
+      const newItemId = Number(newItemIdBN) - 1;
+      const awardedItemBN = await chestOpenerContract.tokenAwardedItem(newItemId);
+      const awardedItem = Number(awardedItemBN);
+      
+      // Build backend URLs for the final item.
+      const imageUrl = `${backendUrl}/skins/icons/${awardedItem}.png`;
+      const metadataUrl = `${backendUrl}/skins/text1/${awardedItem}.json`;
+      console.log("Awarded Image URL:", imageUrl);
+      console.log("Awarded Metadata URL:", metadataUrl);
+      
+      const response = await fetch(metadataUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const metadata = await response.json();
+      metadata.image = imageUrl;
+      
+      setChestAnimation({ active: true, step: "revealed", data: metadata, chestType: chest.type, frame: 0 });
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    } catch (err) {
+      console.error("Error opening chest:", err);
+      alert("Failed to open chest: " + err.message);
+    } finally {
+      setChestAnimation({ active: false, step: null, data: null, chestType: null, frame: 0 });
+      refreshInventory();
+      fetchOwnedSkinsFromOpener();
+    }
+  }
+
+  // --------------- Approve tokens ---------------
   async function approveTokens() {
     if (!userAddress) {
       alert("Connect your wallet first!");
@@ -698,7 +820,7 @@ function App() {
     }
   }
 
-  // Betting.
+  // --------------- Place bet ---------------
   async function placeBet(teamId) {
     if (!bettingContract) {
       setErrorMsg("No betting contract available.");
@@ -711,7 +833,7 @@ function App() {
     try {
       setStatus(`Placing ${betAmount} bet(s) on ${teamId === 1 ? "Red" : "Blue"}...`);
       for (let i = 0; i < betAmount; i++) {
-        const tx = await bettingContract.placeBet(phaseData.gameId, teamId, 1);
+        const tx = await bettingContract.placeBet(phaseData.gameId, teamId, 1, { value: ethers.parseEther("0.00005") });
         await tx.wait();
       }
       setStatus(`${betAmount} bet(s) placed on ${teamId === 1 ? "Red" : "Blue"}!`);
@@ -722,49 +844,48 @@ function App() {
     }
   }
 
-  // Live replay controls.
-  function livePrevBoard() {
+  // --------------- Live replay controls ---------------
+  const livePrevBoard = () => {
     if (boardHistory.length === 0) return;
-    setLiveReplayIndex(i => (i < 0 ? boardHistory.length - 1 : Math.max(0, i - 1)));
-  }
-  function liveNextBoard() {
+    setLiveReplayIndex(prev => (prev < 0 ? boardHistory.length - 1 : Math.max(0, prev - 1)));
+  };
+  const liveNextBoard = () => {
     if (boardHistory.length === 0) return;
-    setLiveReplayIndex(i => (i < 0 ? 0 : Math.min(boardHistory.length - 1, i + 1)));
-  }
-  function liveGoToLive() {
+    setLiveReplayIndex(prev => (prev < 0 ? 0 : Math.min(boardHistory.length - 1, prev + 1)));
+  };
+  const liveGoToLive = () => {
     setLiveAutoReplay(false);
     setLiveReplayIndex(-1);
-  }
-  function liveToggleAutoReplay() {
+  };
+  const liveToggleAutoReplay = () => {
     if (boardHistory.length === 0) return;
     if (liveReplayIndex < 0) setLiveReplayIndex(0);
     setLiveAutoReplay(prev => !prev);
-  }
+  };
 
-  // Recorded replay controls.
-  function recordPrevBoard() {
+  // --------------- Recorded replay controls ---------------
+  const recordPrevBoard = () => {
     if (!selectedHistory || selectedHistory.length === 0) return;
-    setSelectedReplayIndex(i => (i < 0 ? selectedHistory.length - 1 : Math.max(0, i - 1)));
-  }
-  function recordNextBoard() {
+    setSelectedReplayIndex(prev => (prev < 0 ? selectedHistory.length - 1 : Math.max(0, prev - 1)));
+  };
+  const recordNextBoard = () => {
     if (!selectedHistory || selectedHistory.length === 0) return;
-    setSelectedReplayIndex(i => (i < 0 ? 0 : Math.min(selectedHistory.length - 1, i + 1)));
-  }
-  function recordToggleAutoReplay() {
+    setSelectedReplayIndex(prev => (prev < 0 ? 0 : Math.min(selectedHistory.length - 1, prev + 1)));
+  };
+  const recordToggleAutoReplay = () => {
     if (!selectedHistory || selectedHistory.length === 0) return;
     if (!selectedAutoReplay) setSelectedReplayIndex(0);
     setSelectedAutoReplay(prev => !prev);
-  }
-  function recordGoBackToLive() {
+  };
+  const recordGoBackToLive = () => {
     setSelectedRecord(null);
     setSelectedHistory(null);
     setSelectedReplayIndex(-1);
     setSelectedAutoReplay(false);
-  }
+  };
 
   return (
     <div className="app-container">
-      {/* Inject custom styles for the range slider and chest animation */}
       <style>{`
         input[type="range"] {
           -webkit-appearance: none;
@@ -848,23 +969,37 @@ function App() {
           text-shadow: 0 0 4px #ff00e2;
           margin-top: 1rem;
         }
+        .stir {
+          animation: stirAnimation 1s infinite;
+        }
+        @keyframes stirAnimation {
+          0% { transform: rotate(0deg); }
+          50% { transform: rotate(5deg); }
+          100% { transform: rotate(0deg); }
+        }
       `}</style>
 
-      {/* Chest Opening Animation Overlay */}
+      {/* Chest Animation Overlay */}
       {chestAnimation.active && (
         <div className="chest-animation-overlay">
           <div className="chest-animation-content">
-            {chestAnimation.step === "opening" && <p>IT OPENS AND SWIRLS</p>}
-            {chestAnimation.step === "placeholder" && (
-              <>
-                <img src={`${backendUrl}/chests/brain.png`} alt="Placeholder Big Brain Chest" />
-                <p>Chest is opening</p>
-              </>
+            {chestAnimation.step === "brain" && chestAnimation.data && (
+              <img src={chestAnimation.data.image} alt="Brain Chest" />
             )}
-            {chestAnimation.step === "revealed" && (
+            {chestAnimation.step === "stir" && chestAnimation.data && (
+              <img className="stir" src={chestAnimation.data.image} alt="Brain Chest Stirring" />
+            )}
+            {chestAnimation.step === "opening" && chestAnimation.chestType !== null && (
+              <img
+                src={`${backendUrl}/chests/icons/chest${chestAnimation.chestType}/frame${chestAnimation.frame}.png`}
+                alt={`Chest Animation Frame ${chestAnimation.frame}`}
+              />
+            )}
+            {chestAnimation.step === "revealed" && chestAnimation.data && (
               <>
-                <img src={`${backendUrl}/chests/var/frame${chestAnimation.revealedType}.png`} alt="Revealed Chest" />
-                <p>YOU GOT CHEST {chestAnimation.mintedType}</p>
+                <img src={chestAnimation.data.image} alt={chestAnimation.data.name} />
+                <h3>{chestAnimation.data.name}</h3>
+                <p>{chestAnimation.data.description}</p>
               </>
             )}
           </div>
@@ -875,22 +1010,25 @@ function App() {
       <div className="top-left-buttons">
         <button onClick={() => alert("Information: This is Game of Death!")}>Info</button>
         <button onClick={() => alert("Lore: In the pit of despair...")}>Lore</button>
-        <button onClick={() => setShowWholeSkins(true)}>Skins</button>
+        <button onClick={() => {
+          // When clicking the skins tab, refresh owned skins from ChestOpener then show panel.
+          fetchOwnedSkinsFromOpener().then(() => setShowWholeSkins(true));
+        }}>
+          Skins
+        </button>
       </div>
 
       {/* Winner Overlay */}
-      {winnerOverlay && !selectedHistory && liveReplayIndex < 0 && (
+      {winnerOverlay && !selectedHistory && liveReplayIndex < 0 && !chestAnimation.active && (
         <div className="winner-overlay">
           <h1 className="winner-text">{winnerOverlay} TEAM WON!</h1>
         </div>
       )}
 
       {/* Title Bar */}
-      <div className="title-bar">
-        <h1>Game of Death</h1>
-      </div>
+      <div className="title-bar"><h1>Game of Death</h1></div>
 
-      {/* Ratio Scoreboard */}
+      {/* Scoreboard */}
       <div className="scoreboard-bar-container">
         <div className="score-bar">
           <div className="score-bar-red" style={{ width: `${redPercent}%` }} />
@@ -902,9 +1040,7 @@ function App() {
       <div className="wallet-corner">
         {userAddress ? (
           <>
-            <p className="tiny-wallet">
-              {userAddress.slice(0, 6)}...{userAddress.slice(-4)}
-            </p>
+            <p className="tiny-wallet">{userAddress.slice(0, 6)}...{userAddress.slice(-4)}</p>
             <button className="corner-btn" onClick={disconnectWallet}>Disconnect</button>
           </>
         ) : (
@@ -921,58 +1057,28 @@ function App() {
             <img src={logo} alt="MIZ Logo" className="miz-logo" />
             <p>{formatMizons(mizonsBalance)} MIZ</p>
           </div>
+
+          {/* Chest Roll Section */}
           <div className="chest-roll-section">
             <h2 style={{ fontSize: "1rem" }}>Chest Roll</h2>
             <button onClick={approveTokens}>Approve Tokens</button>
             <button onClick={handleMintChest} style={{ display: "block", margin: "10px auto" }}>
               <img src={`${backendUrl}/chests/brain.png`} alt="Brain Chest" style={{ width: 100, height: "auto" }} />
             </button>
-            <div style={{
-              marginTop: 10,
-              borderTop: "1px solid #ccc",
-              paddingTop: 10,
-              height: "auto",
-              overflowY: "auto"
-            }}>
+            <div style={{ marginTop: 10, borderTop: "1px solid #ccc", paddingTop: 10, height: "auto", overflowY: "auto" }}>
               <h3 style={{ fontSize: "1rem", textAlign: "center" }}>Your Inventory</h3>
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(4, 1fr)",
-                gap: 4,
-                justifyItems: "center"
-              }}>
-                {Array.from({ length: 16 }, (_, i) => 15 - i).map(type => {
-                  const count = inventory[type] || 0;
-                  return (
-                    <div key={type} style={{ position: "relative", textAlign: "center" }}>
-                      <img src={`${backendUrl}/chests/var/frame${type}.png`} alt={`Chest Type ${type}`} style={{ width: 35, height: "auto" }} />
-                      <div style={{
-                        position: "absolute",
-                        bottom: 0,
-                        right: 0,
-                        background: "rgba(0,0,0,0.6)",
-                        color: "#fff",
-                        borderRadius: "50%",
-                        padding: "2px 5px",
-                        fontSize: "0.7rem"
-                      }}>
-                        {count}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <Inventory inventory={inventory} backendUrl={backendUrl} onOpenChest={handleOpenChest} />
             </div>
           </div>
+
+          {/* Phase and Team Info */}
           <div style={{ marginTop: 20, width: "100%" }}>
             <div className="phase-info-card">
               <p>Phase: {phaseData.phase}</p>
               <p>Time Left: {phaseData.timeLeft > 0 ? phaseData.timeLeft : 0}s</p>
               <p>Game ID: {phaseData.gameId}</p>
             </div>
-            <p style={{ marginTop: 6 }}>
-              Your Team: {userTeam === 1 ? "Red" : userTeam === 2 ? "Blue" : "None"}
-            </p>
+            <p style={{ marginTop: 6 }}>Your Team: {userTeam === 1 ? "Red" : userTeam === 2 ? "Blue" : "None"}</p>
             <div className="join-team-buttons">
               <button className="join-red" onClick={() => joinTeam(1)} disabled={phaseData.phase !== "picking"}>
                 Join Red
@@ -983,6 +1089,8 @@ function App() {
             </div>
             <p>Team Red: {teamCounts.red}</p>
             <p>Team Blue: {teamCounts.blue}</p>
+
+            {/* Bet Panel */}
             <h3 style={{ marginTop: 10 }}>Bet Panel</h3>
             <p style={{ margin: 0 }}>Red Bets: {liveRedBets}</p>
             <p style={{ margin: 0 }}>Blue Bets: {liveBlueBets}</p>
@@ -1066,9 +1174,7 @@ function App() {
             </div>
           )}
           {!selectedHistory && liveReplayIndex >= 0 && (
-            <p style={{ marginTop: 4 }}>
-              Viewing Board {liveReplayIndex + 1}/{boardHistory.length}
-            </p>
+            <p style={{ marginTop: 4 }}>Viewing Board {liveReplayIndex + 1}/{boardHistory.length}</p>
           )}
           {!selectedHistory && liveReplayIndex < 0 && (
             <p style={{ marginTop: 4 }}>Viewing Live Board</p>
@@ -1097,18 +1203,17 @@ function App() {
           {selectedRecord && selectedHistory && (
             <div style={{ marginTop: 10 }}>
               <h3>Game #{selectedRecord.gameId} Details</h3>
-              <p>
-                Played at: {selectedRecord.timestamp ? new Date(selectedRecord.timestamp).toLocaleString() : "N/A"}
-              </p>
+              <p>Played at: {selectedRecord.timestamp ? new Date(selectedRecord.timestamp).toLocaleString() : "N/A"}</p>
               <p>Winner: {selectedRecord.winner}</p>
-              <p>
-                Team Red: {selectedRecord.teamRedCount} | Team Blue: {selectedRecord.teamBlueCount}
-              </p>
+              <p>Team Red: {selectedRecord.teamRedCount} | Team Blue: {selectedRecord.teamBlueCount}</p>
               {selectedRecord.thumbnail && (
                 <img src={selectedRecord.thumbnail} alt={`Game #${selectedRecord.gameId}`} style={{ width: 150, height: 150, objectFit: "cover" }} />
               )}
               <div style={{ marginTop: 6 }}>
-                <button className="auto-replay-btn" onClick={recordToggleAutoReplay}>
+                <button className="auto-replay-btn" onClick={() => {
+                  setSelectedAutoReplay(!selectedAutoReplay);
+                  if (!selectedAutoReplay) setSelectedReplayIndex(0);
+                }}>
                   {selectedAutoReplay ? "Stop Auto Replay" : "Start Auto Replay"}
                 </button>
               </div>
@@ -1127,15 +1232,15 @@ function App() {
         </div>
       </div>
 
-      {/* Whole Skins Overlay */}
+      {/* WholeSkinsPanel Overlay */}
       {showWholeSkins && (
         <WholeSkinsPanel
-          ownedSkins={ownedSkins}
-          onSelectSkin={skinId => {
+          onSelectSkin={(skinId) => {
             alert(`Selected skin #${skinId}`);
             setShowWholeSkins(false);
           }}
           onClose={() => setShowWholeSkins(false)}
+          ownedSkins={ownedSkins}
         />
       )}
 
