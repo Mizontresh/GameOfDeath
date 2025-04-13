@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+// App.js
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { io } from "socket.io-client";
 import { ethers } from "ethers";
 import "./App.css";
@@ -13,7 +14,6 @@ const gameABI = [
   "function currentPhase() external view returns (uint8)",
   "function currentGameId() external view returns (uint256)"
 ];
-
 const bettingABI = [
   "function placeBet(uint256 gameId, uint8 team, uint256 tickets) external payable",
   "function getBets(uint256 gameId) external view returns (tuple(address user, uint8 team, uint256 tickets)[])",
@@ -21,13 +21,11 @@ const bettingABI = [
   "function closeBetting(uint256 gameId) external",
   "function clearBet(uint256 gameId) external"
 ];
-
 const mizonsABI = [
   "function balanceOf(address owner) external view returns (uint256)",
   "function mint(address to, uint256 amount) external",
   "function approve(address spender, uint256 amount) external returns (bool)"
 ];
-
 const chestMinterABI = [
   "function mintRandomChest() external returns (uint256)",
   "function tokenChestType(uint256 tokenId) external view returns (uint8)",
@@ -35,14 +33,19 @@ const chestMinterABI = [
   "function balanceOf(address owner) external view returns (uint256)",
   "function tokenURI(uint256 tokenId) external view returns (string)"
 ];
-
 const chestOpenerABI = [
   "function openChest(uint256 chestId) external payable",
   "function itemCounter() external view returns (uint256)",
   "function tokenURI(uint256 tokenId) external view returns (string)",
-  "function tokenAwardedItem(uint256 tokenId) external view returns (uint16)",
+  "function tokenAwardedItem(uint256 tokenId) external view returns (uint256)",
   "function balanceOf(address owner) external view returns (uint256)",
-  "function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)"
+  "function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)",
+  "function safeTransferFrom(address from, address to, uint256 tokenId, bytes data) external"
+];
+const skinLockABI = [
+  "function getLockedSkins(address owner) external view returns (tuple(uint256 tokenId, uint256 bakedId)[])",
+  "function lockedTokens(uint256 tokenId) external view returns (address)",
+  "function unlockNFT(uint256 tokenId) external"
 ];
 
 // -------------------- Environment Constants --------------------
@@ -51,46 +54,51 @@ const bettingAddress = process.env.REACT_APP_BETTING_ADDRESS;
 const mizonsAddress = process.env.REACT_APP_MIZONS_ADDRESS;
 const chestMinterAddress = process.env.REACT_APP_CHEST_MINTER_ADDRESS;
 const chestOpenerAddress = process.env.REACT_APP_CHEST_OPENER_ADDRESS;
+const skinLockAddress = process.env.REACT_APP_SKIN_LOCK_ADDRESS;
 const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:3000";
 
-// -------------------- Utility: Convert IPFS URL to Gateway URL --------------------
+// -------------------- Utility Functions --------------------
 function toGatewayUrl(url) {
+  if (!url) return "";
   if (url.startsWith("ipfs://")) {
-    const cidAndPath = url.replace("ipfs://", "");
-    return `https://ipfs.io/ipfs/${cidAndPath}`;
+    return `https://ipfs.io/ipfs/${url.slice(7)}`;
   }
   return url;
 }
 
-// -------------------- Helper Functions --------------------
 function convertToAugmentedBoard(numericalBoard) {
-  return numericalBoard.map(val => ({ value: val, skin: null }));
+  return numericalBoard.map((val) => ({ value: val, skin: null }));
+}
+
+function formatMizons(balance) {
+  const bal = Number(ethers.formatUnits(balance, 18));
+  if (bal === 0) return "0";
+  if (bal < 0.000001 || bal > 1_000_000) return bal.toExponential(6);
+  return bal.toFixed(6);
 }
 
 // -------------------- Inventory Component --------------------
 function Inventory({ inventory, backendUrl, onOpenChest }) {
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(4, 1fr)",
-        gap: 4,
-        justifyItems: "center"
-      }}
-    >
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(4, 1fr)",
+      gap: "4px",
+      justifyItems: "center"
+    }}>
       {inventory.length === 0 ? (
         <p>No chests found.</p>
       ) : (
-        inventory.map(chest => (
+        inventory.map((chest) => (
           <div
             key={chest.tokenId}
-            style={{ position: "relative", textAlign: "center", cursor: "pointer" }}
+            style={{ textAlign: "center", cursor: "pointer" }}
             onClick={() => onOpenChest(chest.tokenId)}
           >
             <img
               src={`${backendUrl}/chests/icons/chest${chest.type}/frame1.png`}
               alt={`Chest Type ${chest.type}`}
-              style={{ width: 35, height: "auto" }}
+              style={{ width: "35px", height: "auto" }}
             />
           </div>
         ))
@@ -100,26 +108,25 @@ function Inventory({ inventory, backendUrl, onOpenChest }) {
 }
 
 // -------------------- RecordsList Component --------------------
-function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, refreshKey, setLatestRecord }) {
+function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, refreshKey }) {
   const [records, setRecords] = useState([]);
   const [skip, setSkip] = useState(0);
-  const limit = 10;
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
+  const limit = 10;
 
   async function fetchRecords() {
     if (loading) return;
     setLoading(true);
     try {
-      const currentSkip = skip;
       const endpoint =
         showMyGames && userAddress
-          ? `${backendUrl}/api/records/${userAddress}?skip=${currentSkip}&limit=${limit}`
-          : `${backendUrl}/api/allRecords?skip=${currentSkip}&limit=${limit}`;
+          ? `${backendUrl}/api/records/${userAddress}?skip=${skip}&limit=${limit}`
+          : `${backendUrl}/api/allRecords?skip=${skip}&limit=${limit}`;
       const res = await fetch(endpoint);
       const data = await res.json();
-      setRecords(prev => [...prev, ...data.records]);
-      setSkip(currentSkip + limit);
+      setRecords((prev) => [...prev, ...data.records]);
+      setSkip(skip + limit);
       if (data.records.length < limit) setHasMore(false);
     } catch (err) {
       console.error("Error fetching records:", err);
@@ -129,7 +136,7 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
   }
 
   useEffect(() => {
-    async function refreshRecords() {
+    (async function refreshRecords() {
       setRecords([]);
       setSkip(0);
       setHasMore(true);
@@ -144,17 +151,13 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
         setRecords(data.records);
         setSkip(limit);
         if (data.records.length < limit) setHasMore(false);
-        if (data.records.length > 0) {
-          setLatestRecord(data.records[0]);
-        }
       } catch (err) {
         console.error("Error refreshing records:", err);
       } finally {
         setLoading(false);
       }
-    }
-    refreshRecords();
-  }, [showMyGames, refreshKey, userAddress, backendUrl, setLatestRecord]);
+    })();
+  }, [showMyGames, refreshKey, userAddress, backendUrl]);
 
   return (
     <div className="records-list-container">
@@ -163,7 +166,9 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
       ) : (
         <ul className="game-records-list">
           {records.map((rec, index) => {
-            const dateString = rec.timestamp ? new Date(rec.timestamp).toLocaleString() : "N/A";
+            const dateString = rec.timestamp
+              ? new Date(rec.timestamp).toLocaleString()
+              : "N/A";
             return (
               <li
                 key={`${rec.gameId}-${index}`}
@@ -179,7 +184,9 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
                 )}
                 <div className="record-info">
                   <strong>Game #{rec.gameId}</strong>
-                  <p>{rec.winner} won at {dateString}</p>
+                  <p>
+                    {rec.winner} won at {dateString}
+                  </p>
                 </div>
               </li>
             );
@@ -197,46 +204,241 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
   );
 }
 
+// -------------------- LockedSkinSlots Component --------------------
+function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLockedSkins }) {
+  const [lockedSkins, setLockedSkins] = useState([]);
+  const [selectedLockedSkin, setSelectedLockedSkin] = useState(null);
+  const MAX_SLOTS = 3;
+
+  const fetchLockedSkins = useCallback(async () => {
+    if (!skinLockContract || !userAddress) return;
+    try {
+      const result = await skinLockContract.getLockedSkins(userAddress);
+      const parsed = result.map((item) => ({
+        tokenId: Number(item.tokenId),
+        bakedId: Number(item.bakedId),
+      }));
+      setLockedSkins(parsed.slice(0, MAX_SLOTS));
+    } catch (err) {
+      console.error("Error fetching locked skins:", err);
+    }
+  }, [skinLockContract, userAddress]);
+
+  useEffect(() => {
+    fetchLockedSkins();
+    const interval = setInterval(fetchLockedSkins, 5000);
+    return () => clearInterval(interval);
+  }, [fetchLockedSkins]);
+
+  const handleSlotClick = (item) => {
+    if (item) setSelectedLockedSkin(item);
+  };
+
+  const confirmUnlock = async () => {
+    if (!selectedLockedSkin) return;
+    try {
+      const { tokenId, bakedId } = selectedLockedSkin;
+      const tx = await skinLockContract.unlockNFT(tokenId);
+      await tx.wait();
+      alert(`Unlocked skin: tokenId ${tokenId} (bakedId ${bakedId})!`);
+      fetchLockedSkins();
+      if (refreshLockedSkins) refreshLockedSkins();
+    } catch (err) {
+      console.error("Error unlocking skin:", err);
+      alert("Error unlocking skin: " + err.message);
+    } finally {
+      setSelectedLockedSkin(null);
+    }
+  };
+
+  const handleCloseUnlockModal = () => setSelectedLockedSkin(null);
+
+  return (
+    <div style={{ position: "relative" }}>
+      <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+        {Array.from({ length: MAX_SLOTS }, (_, i) => {
+          const item = lockedSkins[i];
+          return (
+            <div
+              key={i}
+              style={{
+                width: "50px",
+                height: "50px",
+                border: "1px solid #ff00e2",
+                borderRadius: "4px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: item ? "pointer" : "default",
+                background: item ? "#222" : "transparent",
+              }}
+              onClick={() => handleSlotClick(item)}
+              title={item ? `Locked Skin #${item.bakedId}` : "Empty slot"}
+            >
+              {item ? (
+                <img
+                  src={`${backendUrl}/skins/icons/${item.bakedId}.png`}
+                  alt={`Locked Skin #${item.bakedId}`}
+                  style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                />
+              ) : (
+                <span style={{ color: "#ff00e2", fontSize: "0.8rem" }}>Empty</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {selectedLockedSkin && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+          onClick={handleCloseUnlockModal}
+        >
+          <div
+            style={{
+              background: "#333",
+              color: "#fff",
+              padding: "20px",
+              borderRadius: "5px",
+              minWidth: "300px",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3>Unlock Skin #{selectedLockedSkin.bakedId}</h3>
+            <img
+              src={`${backendUrl}/skins/icons/${selectedLockedSkin.bakedId}.png`}
+              alt={`Locked Skin #${selectedLockedSkin.bakedId}`}
+              style={{
+                width: "120px",
+                height: "120px",
+                objectFit: "contain",
+                display: "block",
+                margin: "10px auto",
+              }}
+            />
+            <p>
+              Unlock token #{selectedLockedSkin.tokenId} (baked ID{" "}
+              {selectedLockedSkin.bakedId})?
+            </p>
+            <div
+              style={{ display: "flex", gap: "8px", justifyContent: "center" }}
+            >
+              <button onClick={confirmUnlock}>Yes, Unlock</button>
+              <button onClick={handleCloseUnlockModal}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // -------------------- WholeSkinsPanel Component --------------------
-function WholeSkinsPanel({ onSelectSkin, onClose, ownedSkins }) {
+function WholeSkinsPanel({
+  onClose,
+  chestOpenerContract,
+  skinLockAddress,
+  userAddress,
+  ownedSkins,
+  fetchOwnedSkins,
+  skinLockContract
+}) {
+  const bakedIdList = ownedSkins.map((item) => item.bakedId);
   const GRID_COLUMNS = 32;
   const CELL_SIZE = 18;
   const TOTAL_SKINS = 1024;
   const scale = 70 / (GRID_COLUMNS * CELL_SIZE);
 
+  async function getUserLockedCount() {
+    if (!skinLockContract || !userAddress) return 0;
+    try {
+      const locked = await skinLockContract.getLockedSkins(userAddress);
+      return locked.length;
+    } catch (err) {
+      console.error("Error in getUserLockedCount:", err);
+      return 0;
+    }
+  }
+
+  async function lockSkin(bakedId) {
+    if (!chestOpenerContract || !userAddress || !skinLockAddress) return;
+    const matching = ownedSkins.filter((item) => item.bakedId === bakedId);
+    if (!matching.length) {
+      alert("No token found for this skin. Make sure you own it.");
+      return;
+    }
+    const tokenId = matching[0].tokenId;
+    try {
+      const userLocked = await getUserLockedCount();
+      if (userLocked >= 3) {
+        alert("You already have 3 locked skins. Cannot lock more!");
+        return;
+      }
+      const data = new ethers.AbiCoder().encode(["uint256"], [bakedId]);
+      const tx =
+        await chestOpenerContract["safeTransferFrom(address,address,uint256,bytes)"](
+          userAddress,
+          skinLockAddress,
+          tokenId,
+          data
+        );
+      await tx.wait();
+      alert(`Locked Skin #${bakedId} successfully!`);
+      fetchOwnedSkins();
+    } catch (err) {
+      console.error("Error locking skin:", err);
+      alert("Error locking skin: " + err.message);
+    }
+  }
+
   function getSkinCoords(skinId) {
-    return { x: (skinId % GRID_COLUMNS) * CELL_SIZE, y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE };
+    return {
+      x: (skinId % GRID_COLUMNS) * CELL_SIZE,
+      y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE
+    };
   }
 
   return (
-    <div className="whole-skins-overlay">
-      <div style={{ position: "relative", width: "70vmin", height: "70vmin", margin: "0 auto", overflow: "hidden" }}>
+    <div className="whole-skins-overlay" onClick={onClose} style={{ cursor: "auto" }}>
+      <div
+        style={{
+          position: "relative",
+          width: "70vmin",
+          height: "70vmin",
+          margin: "0 auto",
+          overflow: "hidden"
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <img
           src={`${backendUrl}/skins/whole.png`}
           alt="All Skins"
-          style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+          style={{ width: "100%", height: "100%", objectFit: "contain" }}
         />
         {Array.from({ length: TOTAL_SKINS }, (_, i) => {
           const { x, y } = getSkinCoords(i);
-          const isOwned = ownedSkins.includes(i);
+          const isOwned = bakedIdList.includes(i);
           return (
             <div
               key={i}
               style={{
                 position: "absolute",
-                left: x * scale + "vmin",
-                top: y * scale + "vmin",
-                width: CELL_SIZE * scale + "vmin",
-                height: CELL_SIZE * scale + "vmin",
+                left: `${x * scale}vmin`,
+                top: `${y * scale}vmin`,
+                width: `${CELL_SIZE * scale}vmin`,
+                height: `${CELL_SIZE * scale}vmin`,
                 backgroundColor: isOwned ? "transparent" : "rgba(128,128,128,0.5)",
-                cursor: isOwned ? "pointer" : "not-allowed",
+                cursor: isOwned ? "pointer" : "not-allowed"
               }}
               onClick={() => {
-                if (!isOwned) {
-                  alert("You do not own this skin");
-                } else {
-                  onSelectSkin(i);
-                }
+                if (isOwned) lockSkin(i);
               }}
             />
           );
@@ -254,38 +456,30 @@ function WholeSkinsPanel({ onSelectSkin, onClose, ownedSkins }) {
 }
 
 // -------------------- LorePanel Component --------------------
-/**
- * The LorePanel displays a grid of all 1024 skins.
- * When an owned skin is clicked, it fetches lore metadata from 
- * `${backendUrl}/skins/text1/<skinId>.json` and shows a modal displaying:
- * - A large image,
- * - The title, optional subtitle,
- * - Every metadata category (key–value pair) dynamically,
- * with the close button placed in the top–right of the modal overlay.
- */
 function LorePanel({ onClose, ownedSkins }) {
+  const [selectedLore, setSelectedLore] = useState(null);
+  const bakedIdList = ownedSkins.map((item) => item.bakedId);
   const GRID_COLUMNS = 32;
   const CELL_SIZE = 18;
   const TOTAL_SKINS = 1024;
   const scale = 70 / (GRID_COLUMNS * CELL_SIZE);
-  const [selectedLore, setSelectedLore] = useState(null);
 
   function getSkinCoords(skinId) {
-    return { x: (skinId % GRID_COLUMNS) * CELL_SIZE, y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE };
+    return {
+      x: (skinId % GRID_COLUMNS) * CELL_SIZE,
+      y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE
+    };
   }
 
   async function handleClick(skinId) {
-    if (!ownedSkins.includes(skinId)) {
+    if (!bakedIdList.includes(skinId)) {
       alert("You do not own this skin");
       return;
     }
     try {
       const response = await fetch(`${backendUrl}/skins/text1/${skinId}.json`);
-      if (!response.ok) {
-        throw new Error("Failed to fetch lore");
-      }
+      if (!response.ok) throw new Error("Failed to fetch lore");
       const metadata = await response.json();
-      // Merge with the skinId so we can fallback to an icon if no image is provided.
       setSelectedLore({ ...metadata, skinId });
     } catch (error) {
       console.error("Error fetching lore:", error);
@@ -293,13 +487,12 @@ function LorePanel({ onClose, ownedSkins }) {
     }
   }
 
-  // Closes only the lore modal
   function handleCloseLoreModal() {
     setSelectedLore(null);
   }
 
   return (
-    <div className="whole-skins-overlay" onClick={onClose}>
+    <div className="whole-skins-overlay" onClick={onClose} style={{ cursor: "auto" }}>
       <div
         style={{
           position: "relative",
@@ -308,34 +501,33 @@ function LorePanel({ onClose, ownedSkins }) {
           margin: "0 auto",
           overflow: "hidden"
         }}
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <img
           src={`${backendUrl}/skins/whole.png`}
           alt="All Skins"
-          style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+          style={{ width: "100%", height: "100%", objectFit: "contain" }}
         />
         {Array.from({ length: TOTAL_SKINS }, (_, i) => {
           const { x, y } = getSkinCoords(i);
-          const isOwned = ownedSkins.includes(i);
+          const isOwned = bakedIdList.includes(i);
           return (
             <div
               key={i}
               style={{
                 position: "absolute",
-                left: x * scale + "vmin",
-                top: y * scale + "vmin",
-                width: CELL_SIZE * scale + "vmin",
-                height: CELL_SIZE * scale + "vmin",
+                left: `${x * scale}vmin`,
+                top: `${y * scale}vmin`,
+                width: `${CELL_SIZE * scale}vmin`,
+                height: `${CELL_SIZE * scale}vmin`,
                 backgroundColor: isOwned ? "transparent" : "rgba(128,128,128,0.5)",
-                cursor: isOwned ? "pointer" : "not-allowed",
+                cursor: isOwned ? "pointer" : "not-allowed"
               }}
               onClick={() => handleClick(i)}
             />
           );
         })}
       </div>
-      {/* Fixed Close Button for the entire Lore overlay */}
       <button
         onClick={onClose}
         style={{
@@ -353,18 +545,12 @@ function LorePanel({ onClose, ownedSkins }) {
       >
         Close Lore
       </button>
-      {/* Lore Modal for selected skin */}
       {selectedLore && (
         <div className="lore-modal-overlay" onClick={handleCloseLoreModal}>
           <div
             className="lore-modal-content"
-            onClick={e => e.stopPropagation()}
-            style={{
-              display: "flex",
-              flexDirection: "row",
-              gap: "20px",
-              alignItems: "flex-start"
-            }}
+            onClick={(e) => e.stopPropagation()}
+            style={{ display: "flex", flexDirection: "row", gap: "20px", alignItems: "flex-start" }}
           >
             <img
               src={
@@ -373,12 +559,7 @@ function LorePanel({ onClose, ownedSkins }) {
                   : `${backendUrl}/skins/icons/${selectedLore.skinId}.png`
               }
               alt={selectedLore.title || `Skin #${selectedLore.skinId}`}
-              style={{
-                width: "250px",
-                height: "auto",
-                border: "1px solid #fff",
-                borderRadius: "8px"
-              }}
+              style={{ width: "250px", height: "auto", border: "1px solid #fff", borderRadius: "8px" }}
             />
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -407,11 +588,11 @@ function LorePanel({ onClose, ownedSkins }) {
                   if (key === "image" || key === "skinId") return null;
                   return (
                     <div key={key} style={{ marginBottom: "8px" }}>
-                      <strong style={{ textTransform: "capitalize" }}>{key}:</strong>
+                      <strong style={{ textTransform: "capitalize" }}>
+                        {key}:
+                      </strong>
                       <span style={{ marginLeft: "5px" }}>
-                        {typeof value === "object"
-                          ? JSON.stringify(value, null, 2)
-                          : value.toString()}
+                        {typeof value === "object" ? JSON.stringify(value, null, 2) : value.toString()}
                       </span>
                     </div>
                   );
@@ -427,30 +608,20 @@ function LorePanel({ onClose, ownedSkins }) {
 
 // -------------------- Main App Component --------------------
 function App() {
-  // Layout variables.
-  const LEFT_PANEL_WIDTH = 320;
-  const RIGHT_PANEL_WIDTH = 320;
-  const TOP_BAR_HEIGHT = 120;
-  const MIN_BOARD_SIZE = 300;
+  const LEFT_PANEL_WIDTH = 300; // slightly narrower to squeeze more
+  const RIGHT_PANEL_WIDTH = 300;
+  const TOP_BAR_HEIGHT = 100;  // reduce top bar height a bit
+  const MIN_BOARD_SIZE = 280;  // squeeze the board min size slightly
+
   const [boardSize, setBoardSize] = useState(MIN_BOARD_SIZE);
 
-  useEffect(() => {
-    function handleResize() {
-      const availableWidth = window.innerWidth - (LEFT_PANEL_WIDTH + RIGHT_PANEL_WIDTH + 60);
-      const availableHeight = window.innerHeight - (TOP_BAR_HEIGHT + 40);
-      setBoardSize(Math.max(MIN_BOARD_SIZE, Math.min(availableWidth, availableHeight)));
-    }
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  // States.
   const [userAddress, setUserAddress] = useState("");
   const [gameContract, setGameContract] = useState(null);
   const [bettingContract, setBettingContract] = useState(null);
   const [chestMinterContract, setChestMinterContract] = useState(null);
   const [chestOpenerContract, setChestOpenerContract] = useState(null);
+  const [skinLockContract, setSkinLockContract] = useState(null);
+
   const [mizonsBalance, setMizonsBalance] = useState("0");
   const [phaseData, setPhaseData] = useState({ phase: "picking", timeLeft: 30, gameId: 1 });
   const [teamCounts, setTeamCounts] = useState({ red: 0, blue: 0 });
@@ -458,100 +629,52 @@ function App() {
   const [status, setStatus] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Live board & replay history.
   const [liveBoard, setLiveBoard] = useState(Array(4096).fill({ value: 0, skin: null }));
   const [boardHistory, setBoardHistory] = useState([]);
   const [liveReplayIndex, setLiveReplayIndex] = useState(-1);
   const [liveAutoReplay, setLiveAutoReplay] = useState(false);
 
-  // Past record state.
   const [showMyGames, setShowMyGames] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [selectedHistory, setSelectedHistory] = useState(null);
   const [selectedReplayIndex, setSelectedReplayIndex] = useState(-1);
   const [selectedAutoReplay, setSelectedAutoReplay] = useState(false);
-  const [latestRecord, setLatestRecord] = useState(null);
 
-  // Bets & inventory.
   const [liveRedBets, setLiveRedBets] = useState(0);
   const [liveBlueBets, setLiveBlueBets] = useState(0);
   const [betAmount, setBetAmount] = useState(1);
   const [inventory, setInventory] = useState([]);
 
-  // Chest animation state.
-  const [chestAnimation, setChestAnimation] = useState({
-    active: false,
-    step: null,
-    data: null,
-    chestType: null,
-    frame: 1
-  });
+  const [chestAnimation, setChestAnimation] = useState({ active: false, step: null, data: null, chestType: null, frame: 1 });
   const [winnerOverlay, setWinnerOverlay] = useState(null);
 
-  // Owned skins from ChestOpener.
   const [ownedSkins, setOwnedSkins] = useState([]);
-  // Controls for overlay panels.
+
   const [showWholeSkins, setShowWholeSkins] = useState(false);
   const [showLorePanel, setShowLorePanel] = useState(false);
 
   const socketRef = useRef(null);
 
-  // --------------- Board display ---------------
-  let displayBoard;
-  if (selectedHistory) {
-    const replayIndex = selectedReplayIndex < 0 ? selectedHistory.length - 1 : selectedReplayIndex;
-    displayBoard = convertToAugmentedBoard(selectedHistory[replayIndex]);
-  } else if (liveReplayIndex >= 0 && boardHistory.length > 0) {
-    const index = Math.min(liveReplayIndex, boardHistory.length - 1);
-    displayBoard = convertToAugmentedBoard(boardHistory[index]);
-  } else {
-    displayBoard = liveBoard;
-  }
-
-  // --------------- Scoreboard ratio ---------------
-  function computeOpposingStats(board) {
-    let redOnBlue = 0, blueOnRed = 0;
-    for (let y = 0; y < 64; y++) {
-      for (let x = 0; x < 64; x++) {
-        const idx = y * 64 + x;
-        const val = board[idx].value;
-        if (val === 1 && y >= 32) redOnBlue++;
-        if (val === 2 && y < 32) blueOnRed++;
-      }
+  // Adjust board size on window resize
+  useEffect(() => {
+    function handleResize() {
+      const availableWidth = window.innerWidth - (LEFT_PANEL_WIDTH + RIGHT_PANEL_WIDTH + 50);
+      const availableHeight = window.innerHeight - (TOP_BAR_HEIGHT + 50);
+      setBoardSize(Math.max(MIN_BOARD_SIZE, Math.min(availableWidth, availableHeight)));
     }
-    return { redOnBlue, blueOnRed };
-  }
-  const { redOnBlue, blueOnRed } = computeOpposingStats(displayBoard);
-  const totalOpposing = redOnBlue + blueOnRed;
-  const redPercent = totalOpposing > 0 ? (redOnBlue / totalOpposing) * 100 : 50;
-  const bluePercent = totalOpposing > 0 ? (blueOnRed / totalOpposing) * 100 : 50;
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
-  const showVeil = phaseData.phase === "placing" && !selectedRecord && liveReplayIndex < 0;
+  // Ensure the outer container uses full viewport height
+  useEffect(() => {
+    document.documentElement.style.height = "100%";
+    document.body.style.height = "100%";
+  }, []);
 
-  // --------------- Format MIZ balance ---------------
-  function formatMizons(balance) {
-    const bal = Number(ethers.formatUnits(balance, 18));
-    if (bal === 0) return "0";
-    if (bal < 0.000001 || bal > 1000000) return bal.toExponential(6);
-    return bal.toFixed(6);
-  }
-
-  // --------------- selectRecord ---------------
-  function selectRecord(rec) {
-    setSelectedRecord(rec);
-    if (rec.boardHistory && rec.boardHistory.length > 0) {
-      setSelectedHistory(rec.boardHistory);
-      setSelectedReplayIndex(0);
-      setSelectedAutoReplay(false);
-      setLiveReplayIndex(-1);
-    } else {
-      setSelectedHistory(null);
-      setSelectedReplayIndex(-1);
-    }
-  }
-
-  // --------------- Wallet connect/disconnect ---------------
+  // Connect/disconnect wallet
   async function connectWallet() {
     if (!window.ethereum) {
       setErrorMsg("No MetaMask found!");
@@ -568,20 +691,19 @@ function App() {
       setErrorMsg("Connect error: " + err.message);
     }
   }
-
   function disconnectWallet() {
     setUserAddress("");
     setGameContract(null);
     setBettingContract(null);
     setChestMinterContract(null);
     setChestOpenerContract(null);
-    setStatus("");
+    setSkinLockContract(null);
     setErrorMsg("");
+    setStatus("");
   }
-
   useEffect(() => {
     if (window.ethereum) {
-      const handleAccountsChanged = accounts => {
+      const handleAccountsChanged = (accounts) => {
         if (accounts.length > 0) setUserAddress(accounts[0]);
         else setUserAddress("");
       };
@@ -590,12 +712,12 @@ function App() {
     }
   }, []);
 
-  // --------------- Socket.io setup ---------------
+  // Socket.io setup
   useEffect(() => {
     socketRef.current = io(backendUrl, { transports: ["websocket"] });
     socketRef.current.on("connect", () => console.log("Socket connected:", socketRef.current.id));
-    socketRef.current.on("phaseUpdated", data => setPhaseData(data));
-    socketRef.current.on("boardUpdated", augmentedBoard => {
+    socketRef.current.on("phaseUpdated", (data) => setPhaseData(data));
+    socketRef.current.on("boardUpdated", (augmentedBoard) => {
       if (liveReplayIndex < 0 && !selectedHistory) setLiveBoard(augmentedBoard);
     });
     socketRef.current.on("winner", ({ winner }) => {
@@ -604,26 +726,25 @@ function App() {
         setTimeout(() => setWinnerOverlay(null), 3000);
       }
     });
-    socketRef.current.on("newGameRecord", record => {
-      console.log("Received new game record:", record);
-      setRefreshKey(prev => prev + 1);
+    socketRef.current.on("newGameRecord", (record) => {
+      setRefreshKey((prev) => prev + 1);
     });
     socketRef.current.on("disconnect", () => console.log("Socket disconnected"));
     return () => socketRef.current.disconnect();
-  }, [liveReplayIndex, selectedHistory, chestAnimation.active]);
+  }, [chestAnimation.active, liveReplayIndex, selectedHistory]);
 
-  // --------------- Phase polling ---------------
+  // Phase polling
   useEffect(() => {
     const interval = setInterval(() => {
       fetch(`${backendUrl}/api/state`)
-        .then(res => res.json())
-        .then(data => setPhaseData(data))
-        .catch(err => console.error("Error fetching state:", err));
+        .then((res) => res.json())
+        .then((data) => setPhaseData(data))
+        .catch((err) => console.error("Error fetching state:", err));
     }, 2000);
     return () => clearInterval(interval);
   }, []);
 
-  // --------------- Contract setup ---------------
+  // Contract setup
   useEffect(() => {
     if (!window.ethereum || !userAddress) return;
     if (!gameAddress || !bettingAddress || !mizonsAddress || !chestMinterAddress || !chestOpenerAddress) {
@@ -634,14 +755,21 @@ function App() {
       try {
         const provider = new ethers.BrowserProvider(window.ethereum);
         const signer = await provider.getSigner();
+
         const gameC = new ethers.Contract(gameAddress, gameABI, signer);
         const bettingC = new ethers.Contract(bettingAddress, bettingABI, signer);
         const chestMinterC = new ethers.Contract(chestMinterAddress, chestMinterABI, signer);
         const chestOpenerC = new ethers.Contract(chestOpenerAddress, chestOpenerABI, signer);
+
         setGameContract(gameC);
         setBettingContract(bettingC);
         setChestMinterContract(chestMinterC);
         setChestOpenerContract(chestOpenerC);
+
+        if (skinLockAddress && skinLockAddress !== "0x0000000000000000000000000000000000000000") {
+          const lockC = new ethers.Contract(skinLockAddress, skinLockABI, signer);
+          setSkinLockContract(lockC);
+        }
       } catch (err) {
         console.error("Error setting up contracts:", err);
         setErrorMsg("Error setting up contracts: " + err.message);
@@ -650,7 +778,7 @@ function App() {
     setupContracts();
   }, [userAddress]);
 
-  // --------------- Bets polling ---------------
+  // Bets polling
   useEffect(() => {
     if (!phaseData.gameId) return;
     async function fetchBets() {
@@ -658,8 +786,8 @@ function App() {
         const res = await fetch(`${backendUrl}/api/bets/${phaseData.gameId}`);
         const data = await res.json();
         if (data && data.bets) {
-          const red = data.bets.filter(b => b.team === 1).reduce((sum, b) => sum + Number(b.tickets), 0);
-          const blue = data.bets.filter(b => b.team === 2).reduce((sum, b) => sum + Number(b.tickets), 0);
+          const red = data.bets.filter((b) => b.team === 1).reduce((sum, b) => sum + Number(b.tickets), 0);
+          const blue = data.bets.filter((b) => b.team === 2).reduce((sum, b) => sum + Number(b.tickets), 0);
           setLiveRedBets(red);
           setLiveBlueBets(blue);
         }
@@ -672,35 +800,37 @@ function App() {
     return () => clearInterval(interval);
   }, [phaseData.gameId]);
 
-  // --------------- Board history polling ---------------
+  // Board history polling
   useEffect(() => {
     const interval = setInterval(() => {
       fetch(`${backendUrl}/api/history`)
-        .then(res => res.json())
-        .then(data => setBoardHistory(data.boardHistory || []))
-        .catch(err => console.error("loadHistory error:", err));
+        .then((res) => res.json())
+        .then((data) => setBoardHistory(data.boardHistory || []))
+        .catch((err) => console.error("loadHistory error:", err));
     }, 2000);
     return () => clearInterval(interval);
   }, []);
 
-  // --------------- Live board polling ---------------
+  // Live board polling (only during placing phase)
   useEffect(() => {
     if (phaseData.phase !== "placing") return;
     if (selectedHistory || liveReplayIndex >= 0) return;
     const interval = setInterval(() => {
       fetch(`${backendUrl}/api/board`)
-        .then(res => res.json())
-        .then(data => { if (data && data.board) setLiveBoard(data.board); })
-        .catch(err => console.error("Error polling board:", err));
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.board) setLiveBoard(data.board);
+        })
+        .catch((err) => console.error("Error polling board:", err));
     }, 1000);
     return () => clearInterval(interval);
   }, [phaseData.phase, selectedHistory, liveReplayIndex]);
 
-  // --------------- Live auto-replay ---------------
+  // Live auto-replay
   useEffect(() => {
     if (!liveAutoReplay || boardHistory.length === 0) return;
     const autoInterval = setInterval(() => {
-      setLiveReplayIndex(prev => {
+      setLiveReplayIndex((prev) => {
         const newIndex = prev < 0 ? 0 : prev + 1;
         if (newIndex >= boardHistory.length) {
           setLiveAutoReplay(false);
@@ -712,11 +842,11 @@ function App() {
     return () => clearInterval(autoInterval);
   }, [liveAutoReplay, boardHistory]);
 
-  // --------------- Recorded auto-replay ---------------
+  // Recorded auto-replay
   useEffect(() => {
     if (!selectedAutoReplay || !selectedHistory || selectedHistory.length === 0) return;
     const autoInterval = setInterval(() => {
-      setSelectedReplayIndex(prev => {
+      setSelectedReplayIndex((prev) => {
         const newIndex = prev < 0 ? 0 : prev + 1;
         if (newIndex >= selectedHistory.length) {
           setSelectedAutoReplay(false);
@@ -728,7 +858,7 @@ function App() {
     return () => clearInterval(autoInterval);
   }, [selectedAutoReplay, selectedHistory]);
 
-  // --------------- Team info polling ---------------
+  // Team info polling
   useEffect(() => {
     if (!gameContract) return;
     if (selectedHistory || liveReplayIndex >= 0) return;
@@ -736,34 +866,37 @@ function App() {
       (async () => {
         try {
           const counts = await gameContract.getTeamCounts(phaseData.gameId);
-          setTeamCounts({ red: Number(counts.redCount), blue: Number(counts.blueCount) });
+          setTeamCounts({
+            red: Number(counts.redCount),
+            blue: Number(counts.blueCount)
+          });
           if (userAddress) {
             const tId = await gameContract.getTeam(phaseData.gameId, userAddress);
             setUserTeam(Number(tId));
           }
         } catch (err) {
-          console.error("fetchTeamInfo error:", err);
+          console.error("Error fetching team info:", err);
         }
       })();
     }, 1000);
     return () => clearInterval(interval);
   }, [gameContract, userAddress, selectedHistory, liveReplayIndex, phaseData.gameId]);
 
-  // --------------- MIZ balance polling ---------------
+  // MIZ balance polling
   useEffect(() => {
-    if (!window.ethereum || !mizonsAddress || !userAddress) return;
+    if (!userAddress) return;
     const provider = new ethers.BrowserProvider(window.ethereum);
     const mizonsContract = new ethers.Contract(mizonsAddress, mizonsABI, provider);
     const interval = setInterval(() => {
       mizonsContract
         .balanceOf(userAddress)
-        .then(bal => setMizonsBalance(bal.toString()))
-        .catch(err => console.error("Error fetching MIZ balance:", err));
+        .then((bal) => setMizonsBalance(bal.toString()))
+        .catch((err) => console.error("Error fetching MIZ balance:", err));
     }, 1000);
     return () => clearInterval(interval);
-  }, [mizonsAddress, userAddress]);
+  }, [userAddress]);
 
-  // --------------- Refresh inventory ---------------
+  // Refresh chest inventory
   const refreshInventory = useCallback(async () => {
     if (!chestMinterContract || !userAddress) return;
     try {
@@ -782,39 +915,49 @@ function App() {
       console.error("Error fetching inventory:", error);
     }
   }, [chestMinterContract, userAddress]);
-
   useEffect(() => {
     refreshInventory();
   }, [refreshInventory, status]);
 
-  // --------------- Fetch owned skins from ChestOpener ---------------
+  // Fetch owned skins from ChestOpener
   async function fetchOwnedSkinsFromOpener() {
     if (!chestOpenerContract || !userAddress) return;
     try {
       const itemBalanceBN = await chestOpenerContract.balanceOf(userAddress);
       const itemBalance = Number(itemBalanceBN);
-      console.log("ChestOpener balance:", itemBalance);
-      const finalSkins = [];
+      const skins = [];
       for (let i = 0; i < itemBalance; i++) {
         const tokenIdBN = await chestOpenerContract.tokenOfOwnerByIndex(userAddress, i);
         const tokenId = Number(tokenIdBN);
         const awardedItemBN = await chestOpenerContract.tokenAwardedItem(tokenId);
         const awardedItem = Number(awardedItemBN);
-        console.log(`TokenID ${tokenId} awardedItem:`, awardedItem);
-        finalSkins.push(awardedItem);
+        console.log(`Mapping minted token ${tokenId} to bakedID ${awardedItem}`);
+        skins.push({ tokenId, bakedId: awardedItem });
       }
-      const uniqueSkins = Array.from(new Set(finalSkins));
-      setOwnedSkins(uniqueSkins);
+      setOwnedSkins(skins);
     } catch (err) {
-      console.error("Error fetching final skins from ChestOpener:", err);
+      console.error("Error fetching owned skins from ChestOpener:", err);
     }
   }
-
   useEffect(() => {
     fetchOwnedSkinsFromOpener();
   }, [chestOpenerContract, userAddress, status]);
 
-  // --------------- joinTeam ---------------
+  // selectRecord
+  function selectRecord(rec) {
+    setSelectedRecord(rec);
+    if (rec.boardHistory && rec.boardHistory.length > 0) {
+      setSelectedHistory(rec.boardHistory);
+      setSelectedReplayIndex(0);
+      setSelectedAutoReplay(false);
+      setLiveReplayIndex(-1);
+    } else {
+      setSelectedHistory(null);
+      setSelectedReplayIndex(-1);
+    }
+  }
+
+  // joinTeam
   async function joinTeam(teamId) {
     if (!gameContract) {
       setErrorMsg("No contract connected.");
@@ -842,7 +985,7 @@ function App() {
     }
   }
 
-  // --------------- placeSquare ---------------
+  // placeSquare
   async function placeSquare(x, y) {
     if (!gameContract) {
       setErrorMsg("No contract connected.");
@@ -864,18 +1007,18 @@ function App() {
     }
   }
 
-  // --------------- Handle brain chest minting with stirring animation ---------------
+  // handleMintChest
+  // Now the chest image is clickable to mint a chest
   async function handleMintChest() {
     if (!userAddress) {
       alert("Connect your wallet first!");
       return;
     }
     if (!chestMinterContract) {
-      alert("Chest contract not connected.");
+      alert("ChestMinter contract not connected.");
       return;
     }
     try {
-      // Step 1: Show brain chest.
       setChestAnimation({
         active: true,
         step: "brain",
@@ -883,8 +1026,8 @@ function App() {
         frame: 0,
         data: { image: `${backendUrl}/chests/brain.png` }
       });
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      // Step 2: Show stirring animation.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
       setChestAnimation({
         active: true,
         step: "stir",
@@ -892,41 +1035,35 @@ function App() {
         frame: 0,
         data: { image: `${backendUrl}/chests/brain.png` }
       });
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      // Step 3: Mint the chest NFT.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
       const tx = await chestMinterContract.mintRandomChest({ gasLimit: 400000 });
       await tx.wait();
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
       refreshInventory();
       fetchOwnedSkinsFromOpener();
-      // Step 4: Retrieve new chest token info.
+
       const balanceBN = await chestMinterContract.balanceOf(userAddress);
       const balance = Number(balanceBN);
       const tokenIdBN = await chestMinterContract.tokenOfOwnerByIndex(userAddress, balance - 1);
       const tokenId = Number(tokenIdBN);
       const chestTypeBN = await chestMinterContract.tokenChestType(tokenId);
       const chestType = Number(chestTypeBN);
-      // Build backend URLs.
       const metadataUrl = `${backendUrl}/chests/var/${chestType}.json`;
       const imageUrl = `${backendUrl}/chests/icons/chest${chestType}/frame1.png`;
-      console.log("Big Chest Metadata URL:", metadataUrl);
-      console.log("Big Chest Image URL:", imageUrl);
-      // Step 5: Fetch metadata.
       const response = await fetch(metadataUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
       const metadata = await response.json();
       metadata.image = imageUrl;
-      // Step 6: Reveal the minted chest.
+
       setChestAnimation({
         active: true,
         step: "revealed",
         data: metadata,
-        chestType: chestType,
+        chestType,
         frame: 0
       });
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     } catch (err) {
       console.error("Error minting chest:", err);
       alert("Chest minting failed: " + err.message);
@@ -941,50 +1078,64 @@ function App() {
     }
   }
 
-  // --------------- Handle opening a small chest from inventory ---------------
+  // handleOpenChest
   async function handleOpenChest(tokenId) {
-    const chest = inventory.find(c => c.tokenId === tokenId);
+    const chest = inventory.find((c) => c.tokenId === tokenId);
     if (!chest) {
       alert("Chest not found in inventory.");
       return;
     }
-    // Start small chest animation (cycle frames 1 to 5).
-    setChestAnimation({ active: true, step: "opening", chestType: chest.type, frame: 1, data: null });
+    setChestAnimation({
+      active: true,
+      step: "opening",
+      chestType: chest.type,
+      frame: 1,
+      data: null
+    });
     for (let i = 1; i <= 5; i++) {
-      setChestAnimation(prev => ({ ...prev, frame: i }));
-      await new Promise(resolve => setTimeout(resolve, 200));
+      setChestAnimation((prev) => ({ ...prev, frame: i }));
+      await new Promise((resolve) => setTimeout(resolve, 200));
     }
     try {
-      const tx = await chestOpenerContract.openChest(tokenId, { value: ethers.parseEther("0.001") });
+      const tx = await chestOpenerContract.openChest(tokenId, {
+        value: ethers.parseEther("0.001")
+      });
       await tx.wait();
       const newItemIdBN = await chestOpenerContract.itemCounter();
       const newItemId = Number(newItemIdBN) - 1;
       const awardedItemBN = await chestOpenerContract.tokenAwardedItem(newItemId);
       const awardedItem = Number(awardedItemBN);
-      // Build backend URLs for the final item.
       const imageUrl = `${backendUrl}/skins/icons/${awardedItem}.png`;
       const metadataUrl = `${backendUrl}/skins/text1/${awardedItem}.json`;
-      console.log("Awarded Image URL:", imageUrl);
-      console.log("Awarded Metadata URL:", metadataUrl);
       const response = await fetch(metadataUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
       const metadata = await response.json();
       metadata.image = imageUrl;
-      setChestAnimation({ active: true, step: "revealed", data: metadata, chestType: chest.type, frame: 0 });
-      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      setChestAnimation({
+        active: true,
+        step: "revealed",
+        data: metadata,
+        chestType: chest.type,
+        frame: 0
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     } catch (err) {
       console.error("Error opening chest:", err);
       alert("Failed to open chest: " + err.message);
     } finally {
-      setChestAnimation({ active: false, step: null, data: null, chestType: null, frame: 0 });
+      setChestAnimation({
+        active: false,
+        step: null,
+        data: null,
+        chestType: null,
+        frame: 0
+      });
       refreshInventory();
       fetchOwnedSkinsFromOpener();
     }
   }
 
-  // --------------- Approve tokens ---------------
   async function approveTokens() {
     if (!userAddress) {
       alert("Connect your wallet first!");
@@ -994,7 +1145,9 @@ function App() {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const mizonsContract = new ethers.Contract(mizonsAddress, mizonsABI, signer);
-      const tx = await mizonsContract.approve(chestMinterAddress, "1000000000000", { gasLimit: 100000 });
+      const tx = await mizonsContract.approve(chestMinterAddress, "1000000000000", {
+        gasLimit: 100000
+      });
       await tx.wait();
       alert("Approval successful!");
     } catch (err) {
@@ -1003,7 +1156,6 @@ function App() {
     }
   }
 
-  // --------------- Place bet ---------------
   async function placeBet(teamId) {
     if (!bettingContract) {
       setErrorMsg("No betting contract available.");
@@ -1016,7 +1168,9 @@ function App() {
     try {
       setStatus(`Placing ${betAmount} bet(s) on ${teamId === 1 ? "Red" : "Blue"}...`);
       for (let i = 0; i < betAmount; i++) {
-        const tx = await bettingContract.placeBet(phaseData.gameId, teamId, 1, { value: ethers.parseEther("0.00005") });
+        const tx = await bettingContract.placeBet(phaseData.gameId, teamId, 1, {
+          value: ethers.parseEther("0.00005")
+        });
         await tx.wait();
       }
       setStatus(`${betAmount} bet(s) placed on ${teamId === 1 ? "Red" : "Blue"}!`);
@@ -1027,14 +1181,13 @@ function App() {
     }
   }
 
-  // --------------- Live replay controls ---------------
   const livePrevBoard = () => {
     if (boardHistory.length === 0) return;
-    setLiveReplayIndex(prev => (prev < 0 ? boardHistory.length - 1 : Math.max(0, prev - 1)));
+    setLiveReplayIndex((prev) => (prev < 0 ? boardHistory.length - 1 : Math.max(0, prev - 1)));
   };
   const liveNextBoard = () => {
     if (boardHistory.length === 0) return;
-    setLiveReplayIndex(prev => (prev < 0 ? 0 : Math.min(boardHistory.length - 1, prev + 1)));
+    setLiveReplayIndex((prev) => (prev < 0 ? 0 : Math.min(boardHistory.length - 1, prev + 1)));
   };
   const liveGoToLive = () => {
     setLiveAutoReplay(false);
@@ -1043,22 +1196,21 @@ function App() {
   const liveToggleAutoReplay = () => {
     if (boardHistory.length === 0) return;
     if (liveReplayIndex < 0) setLiveReplayIndex(0);
-    setLiveAutoReplay(prev => !prev);
+    setLiveAutoReplay((prev) => !prev);
   };
 
-  // --------------- Recorded replay controls ---------------
   const recordPrevBoard = () => {
     if (!selectedHistory || selectedHistory.length === 0) return;
-    setSelectedReplayIndex(prev => (prev < 0 ? selectedHistory.length - 1 : Math.max(0, prev - 1)));
+    setSelectedReplayIndex((prev) => (prev < 0 ? selectedHistory.length - 1 : Math.max(0, prev - 1)));
   };
   const recordNextBoard = () => {
     if (!selectedHistory || selectedHistory.length === 0) return;
-    setSelectedReplayIndex(prev => (prev < 0 ? 0 : Math.min(selectedHistory.length - 1, prev + 1)));
+    setSelectedReplayIndex((prev) => (prev < 0 ? 0 : Math.min(selectedHistory.length - 1, prev + 1)));
   };
   const recordToggleAutoReplay = () => {
     if (!selectedHistory || selectedHistory.length === 0) return;
     if (!selectedAutoReplay) setSelectedReplayIndex(0);
-    setSelectedAutoReplay(prev => !prev);
+    setSelectedAutoReplay((prev) => !prev);
   };
   const recordGoBackToLive = () => {
     setSelectedRecord(null);
@@ -1067,129 +1219,38 @@ function App() {
     setSelectedAutoReplay(false);
   };
 
-  return (
-    <div className="app-container">
-      <style>{`
-        input[type="range"] {
-          -webkit-appearance: none;
-          appearance: none;
-          width: 100%;
-          height: 6px;
-          background: #222;
-          border-radius: 4px;
-          outline: none;
-          margin: 6px 0;
-          cursor: pointer;
-          border: 1px solid #ff00e2;
-        }
-        input[type="range"]::-webkit-slider-runnable-track {
-          background: #111;
-          border-radius: 4px;
-          box-shadow: 0 0 4px #ff00e2;
-        }
-        input[type="range"]::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          width: 16px;
-          height: 16px;
-          background: #ff00e2;
-          border-radius: 50%;
-          box-shadow: 0 0 6px #ff00e2;
-          margin-top: -5px;
-        }
-        input[type="range"]::-moz-range-track {
-          background: #111;
-          border-radius: 4px;
-          box-shadow: 0 0 4px #ff00e2;
-        }
-        input[type="range"]::-moz-range-thumb {
-          width: 16px;
-          height: 16px;
-          background: #ff00e2;
-          border: none;
-          border-radius: 50%;
-          box-shadow: 0 0 6px #ff00e2;
-        }
-        .chest-animation-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100vw;
-          height: 100vh;
-          background: rgba(0,0,0,0.85);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          z-index: 1100;
-        }
-        .chest-animation-content {
-          text-align: center;
-          animation: chestPop 0.8s ease-out;
-          transition: opacity 0.5s ease;
-        }
-        @keyframes chestPop {
-          0% { transform: scale(0.5); opacity: 0; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-        @keyframes shake {
-          0% { transform: translate(0, 0); }
-          20% { transform: translate(-10px, 0); }
-          40% { transform: translate(10px, 0); }
-          60% { transform: translate(-10px, 0); }
-          80% { transform: translate(10px, 0); }
-          100% { transform: translate(0, 0); }
-        }
-        .shake {
-          animation: shake 1s;
-        }
-        .chest-animation-content img {
-          width: 200px;
-          height: auto;
-          transition: opacity 0.5s ease;
-        }
-        .chest-animation-content p {
-          color: #ff00e2;
-          font-size: 1.5rem;
-          text-shadow: 0 0 4px #ff00e2;
-          margin-top: 1rem;
-        }
-        .stir {
-          animation: stirAnimation 1s infinite;
-        }
-        @keyframes stirAnimation {
-          0% { transform: rotate(0deg); }
-          50% { transform: rotate(5deg); }
-          100% { transform: rotate(0deg); }
-        }
-        .lore-modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100vw;
-          height: 100vh;
-          background: rgba(0,0,0,0.9);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          z-index: 1200;
-          padding: 20px;
-        }
-        .lore-modal-content {
-          background: #111;
-          padding: 20px;
-          border: 2px solid #ff00e2;
-          border-radius: 10px;
-          max-width: 90vw;
-          max-height: 90vh;
-          overflow-y: auto;
-          color: #fff;
-          text-align: left;
-          position: relative;
-          display: flex;
-          flex-direction: row;
-          gap: 20px;
-        }
-      `}</style>
+  let displayBoard;
+  if (selectedHistory) {
+    const replayIndex = selectedReplayIndex < 0 ? selectedHistory.length - 1 : selectedReplayIndex;
+    displayBoard = convertToAugmentedBoard(selectedHistory[replayIndex]);
+  } else if (liveReplayIndex >= 0 && boardHistory.length > 0) {
+    const idx = Math.min(liveReplayIndex, boardHistory.length - 1);
+    displayBoard = convertToAugmentedBoard(boardHistory[idx]);
+  } else {
+    displayBoard = liveBoard;
+  }
 
+  function computeOpposingStats(board) {
+    let redOnBlue = 0;
+    let blueOnRed = 0;
+    for (let y = 0; y < 64; y++) {
+      for (let x = 0; x < 64; x++) {
+        const idx = y * 64 + x;
+        const val = board[idx].value;
+        if (val === 1 && y >= 32) redOnBlue++;
+        if (val === 2 && y < 32) blueOnRed++;
+      }
+    }
+    return { redOnBlue, blueOnRed };
+  }
+  const { redOnBlue, blueOnRed } = computeOpposingStats(displayBoard);
+  const totalOpposing = redOnBlue + blueOnRed;
+  const redPercent = totalOpposing > 0 ? (redOnBlue / totalOpposing) * 100 : 50;
+  const bluePercent = totalOpposing > 0 ? (blueOnRed / totalOpposing) * 100 : 50;
+  const showVeil = phaseData.phase === "placing" && !selectedRecord && liveReplayIndex < 0;
+
+  return (
+    <div className="app-container" style={{ margin: 0, padding: 0, height: "100vh" }}>
       {/* Chest Animation Overlay */}
       {chestAnimation.active && (
         <div className="chest-animation-overlay">
@@ -1203,7 +1264,7 @@ function App() {
             {chestAnimation.step === "opening" && chestAnimation.chestType !== null && (
               <img
                 src={`${backendUrl}/chests/icons/chest${chestAnimation.chestType}/frame${chestAnimation.frame}.png`}
-                alt={`Chest Animation Frame ${chestAnimation.frame}`}
+                alt={`Chest Frame ${chestAnimation.frame}`}
               />
             )}
             {chestAnimation.step === "revealed" && chestAnimation.data && (
@@ -1217,33 +1278,13 @@ function App() {
         </div>
       )}
 
-      {/* Top-Left Buttons */}
-      <div className="top-left-buttons">
-        <button onClick={() => alert("Information: This is Game of Death!")}>Info</button>
-        <button onClick={() => {
-          fetchOwnedSkinsFromOpener().then(() => setShowLorePanel(true));
-        }}>
-          My Lore
-        </button>
-        <button onClick={() => {
-          fetchOwnedSkinsFromOpener().then(() => setShowWholeSkins(true));
-        }}>
-          My Skins
-        </button>
+      {/* Title Bar */}
+      <div className="title-bar" style={{ textAlign: "center", marginBottom: "2px" }}>
+        <h1 style={{ margin: 0, fontSize: "3rem" }}>Game of Death</h1>
       </div>
 
-      {/* Winner Overlay */}
-      {winnerOverlay && !selectedHistory && liveReplayIndex < 0 && !chestAnimation.active && (
-        <div className="winner-overlay">
-          <h1 className="winner-text">{winnerOverlay} TEAM WON!</h1>
-        </div>
-      )}
-
-      {/* Title Bar */}
-      <div className="title-bar"><h1>Game of Death</h1></div>
-
       {/* Scoreboard */}
-      <div className="scoreboard-bar-container">
+      <div className="scoreboard-bar-container" style={{ marginBottom: "4px" }}>
         <div className="score-bar">
           <div className="score-bar-red" style={{ width: `${redPercent}%` }} />
           <div className="score-bar-blue" style={{ width: `${bluePercent}%` }} />
@@ -1254,46 +1295,154 @@ function App() {
       <div className="wallet-corner">
         {userAddress ? (
           <>
-            <p className="tiny-wallet">{userAddress.slice(0, 6)}...{userAddress.slice(-4)}</p>
-            <button className="corner-btn" onClick={disconnectWallet}>Disconnect</button>
+            <p className="tiny-wallet">
+              {userAddress.slice(0, 6)}...{userAddress.slice(-4)}
+            </p>
+            <button className="corner-btn" onClick={disconnectWallet}>
+              Disconnect
+            </button>
           </>
         ) : (
-          <button className="corner-btn" onClick={connectWallet}>Connect Wallet</button>
+          <button className="corner-btn" onClick={connectWallet}>
+            Connect Wallet
+          </button>
         )}
       </div>
 
-      {/* Main Content */}
+      {/* Main Content Layout */}
       <div className="main-content">
-        {/* Left Panel */}
-        <div className="left-panel">
-          <h2>Your MIZ</h2>
-          <div className="miz-balance-container">
-            <img src={logo} alt="MIZ Logo" className="miz-logo" />
-            <p>{formatMizons(mizonsBalance)} MIZ</p>
-          </div>
+        <div
+          className="left-panel"
+          style={{
+            width: LEFT_PANEL_WIDTH,
+            padding: "5px",
+            boxSizing: "border-box",
+            minHeight: "600px", /* smaller minHeight to squeeze */
+            overflowY: "auto",
+          }}
+        ><div className="red-panel"
+        style={{
+          width: LEFT_PANEL_WIDTH,
+          padding: "10px",
+          boxSizing: "border-box",
+          minHeight: "80px", /* smaller minHeight to squeeze */
+          overflowY: "auto",
+          marginTop: "6px",
+           width: "270px",
+            height: "220px",
+             overflowY: "auto" }}>
+          <h2 className="section-title">Your MIZ</h2>
+             <div className="miz-balance-container">
+                        <img src={logo} alt="MIZ Logo" className="miz-logo" />
+                      <p>{formatMizons(mizonsBalance)} MIZ</p>
+                           </div>
 
-          {/* Chest Roll Section */}
-          <div className="chest-roll-section">
-            <h2 style={{ fontSize: "1rem" }}>Chest Roll</h2>
-            <button onClick={approveTokens}>Approve Tokens</button>
-            <button onClick={handleMintChest} style={{ display: "block", margin: "10px auto" }}>
-              <img src={`${backendUrl}/chests/brain.png`} alt="Brain Chest" style={{ width: 100, height: "auto" }} />
-            </button>
-            <div style={{ marginTop: 10, borderTop: "1px solid #ccc", paddingTop: 10, height: "auto", overflowY: "auto" }}>
-              <h3 style={{ fontSize: "1rem", textAlign: "center" }}>Your Inventory</h3>
+                           {skinLockContract && (
+  <div className="locked-skins-section">
+    <h3>Locked Skins</h3>
+    <LockedSkinSlots
+      userAddress={userAddress}
+      skinLockContract={skinLockContract}
+      backendUrl={backendUrl}
+      refreshLockedSkins={fetchOwnedSkinsFromOpener}
+    />
+  </div>
+                                   )}</div>
+
+          {/* Chest & Buttons around it */}
+          <div className="chest-roll-section" style={{ width: "270px", position: "relative", marginTop: "10px" }}>
+            <div
+              style={{
+                position: "relative",
+                width: "100px", // narrower chest
+                margin: "0 auto",
+                cursor: "pointer"
+              }}
+              onClick={handleMintChest} // Make chest clickable to mint
+            >
+              <img
+                src={`${backendUrl}/chests/brain.png`}
+                alt="Brain Chest"
+                style={{ width: "100px", height: "auto" }}
+              />
+              
+              {/* Top-left: Lore */}
+              <button
+                className="chest-square-button lore-info"
+                style={{ fontSize: "0.8rem" }}
+                onClick={(e) => {
+                  e.stopPropagation(); // don't trigger handleMintChest
+                  fetchOwnedSkinsFromOpener().then(() => setShowLorePanel(true));
+                }}
+              >
+                Lore
+              </button>
+
+              {/* Top-right: Skin */}
+              <button
+                className="chest-square-button skin"
+                style={{ fontSize: "0.8rem" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fetchOwnedSkinsFromOpener().then(() => setShowWholeSkins(true));
+                }}
+              >
+                SKIN
+              </button>
+
+              {/* Bottom-left: mizontresh image */}
+              <button
+                className="chest-square-button stop"
+                style={{ padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  alert("This button uses a mizontresh image!");
+                }}
+              >
+                <img
+                  src={`${backendUrl}/skins/icons/mizontresh.png`}
+                  alt="mizontresh"
+                  style={{ width: "70%", height: "70%", objectFit: "contain" }}
+                />
+              </button>
+
+              {/* Bottom-right: Info */}
+              <button
+                className="chest-square-button info"
+                style={{ fontSize: "0.8rem" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  alert("Some Info about the game/chest!");
+                }}
+              >
+                INFO
+              </button>
+            </div>
+
+            {/* Approve & separate Mint Chest button, if user doesn't want to click chest */}
+            <div style={{ textAlign: "center", marginTop: "10px" }}>
+              <button onClick={approveTokens}>Approve Tokens</button>
+              <button onClick={handleMintChest} style={{ display: "block", margin: "6px auto" }}>
+                Mint Chest
+              </button>
+            </div>
+
+            {/* Inventory */}
+            <div className="inventory" style={{marginTop: "6px", width: "255px", height: "64px", overflowY: "auto" }}>
+              <h3 style={{ fontSize: "1rem", textAlign: "center", margin: "0 0 4px 0" }}>Your Inventory</h3>
               <Inventory inventory={inventory} backendUrl={backendUrl} onOpenChest={handleOpenChest} />
             </div>
           </div>
 
-          {/* Phase and Team Info */}
-          <div style={{ marginTop: 20, width: "100%" }}>
-            <div className="phase-info-card">
-              <p>Phase: {phaseData.phase}</p>
-              <p>Time Left: {phaseData.timeLeft > 0 ? phaseData.timeLeft : 0}s</p>
-              <p>Game ID: {phaseData.gameId}</p>
+          {/* Phase & Bet Info */}
+          <div style={{ marginTop: "10px", width: "100%" }}>
+            <div className="phase-info-card" style={{ marginBottom: "8px" }}>
+              <p style={{ margin: 0 }}>Phase: {phaseData.phase}</p>
+              <p style={{ margin: 0 }}>Time Left: {phaseData.timeLeft > 0 ? phaseData.timeLeft : 0}s</p>
+              <p style={{ margin: 0 }}>Game ID: {phaseData.gameId}</p>
             </div>
-            <p style={{ marginTop: 6 }}>Your Team: {userTeam === 1 ? "Red" : userTeam === 2 ? "Blue" : "None"}</p>
-            <div className="join-team-buttons">
+            <p style={{ margin: "4px 0" }}>Your Team: {userTeam === 1 ? "Red" : userTeam === 2 ? "Blue" : "None"}</p>
+            <div className="join-team-buttons" style={{ marginBottom: "6px" }}>
               <button className="join-red" onClick={() => joinTeam(1)} disabled={phaseData.phase !== "picking"}>
                 Join Red
               </button>
@@ -1301,16 +1450,20 @@ function App() {
                 Join Blue
               </button>
             </div>
-            <p>Team Red: {teamCounts.red}</p>
-            <p>Team Blue: {teamCounts.blue}</p>
-
-            {/* Bet Panel */}
-            <h3 style={{ marginTop: 10 }}>Bet Panel</h3>
+            <p style={{ margin: 0 }}>Team Red: {teamCounts.red}</p>
+            <p style={{ margin: 0 }}>Team Blue: {teamCounts.blue}</p>
+            <h3 style={{ margin: "8px 0 4px 0" }}>Bet Panel</h3>
             <p style={{ margin: 0 }}>Red Bets: {liveRedBets}</p>
             <p style={{ margin: 0 }}>Blue Bets: {liveBlueBets}</p>
             <p style={{ margin: 0 }}>Tickets: {betAmount}</p>
-            <input type="range" min="1" max="10" value={betAmount} onChange={e => setBetAmount(Number(e.target.value))} />
-            <div className="bet-buttons">
+            <input
+              type="range"
+              min="1"
+              max="10"
+              value={betAmount}
+              onChange={(e) => setBetAmount(Number(e.target.value))}
+            />
+            <div className="bet-buttons" style={{ marginTop: "6px" }}>
               <button className="bet-red" onClick={() => placeBet(1)} disabled={phaseData.phase !== "picking"}>
                 Bet Red
               </button>
@@ -1323,31 +1476,35 @@ function App() {
 
         {/* Center Board */}
         <div className="center-board">
-          <div className="board-container" style={{ width: boardSize, height: boardSize }}>
+          <div className="board-container" style={{ width: boardSize, height: boardSize, marginBottom: "6px" }}>
             <div className="board-border">
               {showVeil && userTeam === 1 && (
-                <div style={{
-                  position: "absolute",
-                  bottom: 0,
-                  left: 0,
-                  width: "100%",
-                  height: "50%",
-                  background: "rgba(0,0,0,0.3)",
-                  pointerEvents: "none",
-                  zIndex: 999
-                }} />
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "50%",
+                    background: "rgba(0,0,0,0.3)",
+                    pointerEvents: "none",
+                    zIndex: 999
+                  }}
+                />
               )}
               {showVeil && userTeam === 2 && (
-                <div style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: "50%",
-                  background: "rgba(0,0,0,0.3)",
-                  pointerEvents: "none",
-                  zIndex: 999
-                }} />
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "50%",
+                    background: "rgba(0,0,0,0.3)",
+                    pointerEvents: "none",
+                    zIndex: 999
+                  }}
+                />
               )}
               <div className="board-grid">
                 {displayBoard.map((cell, i) => {
@@ -1378,7 +1535,7 @@ function App() {
             </div>
           </div>
           {!selectedHistory && (
-            <div className="replay-container">
+            <div className="replay-container" style={{ marginBottom: "4px" }}>
               <button onClick={livePrevBoard}>←</button>
               <button onClick={liveGoToLive}>Live</button>
               <button onClick={liveNextBoard}>→</button>
@@ -1388,21 +1545,36 @@ function App() {
             </div>
           )}
           {!selectedHistory && liveReplayIndex >= 0 && (
-            <p style={{ marginTop: 4 }}>Viewing Board {liveReplayIndex + 1}/{boardHistory.length}</p>
+            <p style={{ marginTop: "2px", marginBottom: "4px" }}>
+              Viewing Board {liveReplayIndex + 1}/{boardHistory.length}
+            </p>
           )}
           {!selectedHistory && liveReplayIndex < 0 && (
-            <p style={{ marginTop: 4 }}>Viewing Live Board</p>
+            <p style={{ marginTop: "2px", marginBottom: "4px" }}>Viewing Live Board</p>
           )}
         </div>
 
         {/* Right Panel */}
-        <div className="right-panel">
-          <h2>Game Records</h2>
-          <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
-            <button className="toggle-btn" onClick={() => { setShowMyGames(false); setRefreshKey(prev => prev + 1); }}>
+        <div className="right-panel" style={{ width: RIGHT_PANEL_WIDTH }}>
+          <h2 style={{ margin: "0 0 8px 0" }}>Game Records</h2>
+          <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginBottom: "8px" }}>
+            <button
+              className="toggle-btn"
+              onClick={() => {
+                setShowMyGames(false);
+                setRefreshKey((prev) => prev + 1);
+              }}
+            >
               All Games
             </button>
-            <button className="toggle-btn" onClick={() => { setShowMyGames(true); setRefreshKey(prev => prev + 1); }} disabled={!userAddress}>
+            <button
+              className="toggle-btn"
+              onClick={() => {
+                setShowMyGames(true);
+                setRefreshKey((prev) => prev + 1);
+              }}
+              disabled={!userAddress}
+            >
               My Games
             </button>
           </div>
@@ -1412,26 +1584,33 @@ function App() {
             userAddress={userAddress}
             onSelectRecord={selectRecord}
             refreshKey={refreshKey}
-            setLatestRecord={setLatestRecord}
           />
           {selectedRecord && selectedHistory && (
-            <div style={{ marginTop: 10 }}>
+            <div style={{ marginTop: "10px" }}>
               <h3>Game #{selectedRecord.gameId} Details</h3>
-              <p>Played at: {selectedRecord.timestamp ? new Date(selectedRecord.timestamp).toLocaleString() : "N/A"}</p>
+              <p>
+                Played at:{" "}
+                {selectedRecord.timestamp
+                  ? new Date(selectedRecord.timestamp).toLocaleString()
+                  : "N/A"}
+              </p>
               <p>Winner: {selectedRecord.winner}</p>
               <p>Team Red: {selectedRecord.teamRedCount} | Team Blue: {selectedRecord.teamBlueCount}</p>
               {selectedRecord.thumbnail && (
                 <img
                   src={selectedRecord.thumbnail}
                   alt={`Game #${selectedRecord.gameId}`}
-                  style={{ width: 150, height: 150, objectFit: "cover" }}
+                  style={{ width: "150px", height: "150px", objectFit: "cover" }}
                 />
               )}
-              <div style={{ marginTop: 6 }}>
-                <button className="auto-replay-btn" onClick={() => {
-                  setSelectedAutoReplay(!selectedAutoReplay);
-                  if (!selectedAutoReplay) setSelectedReplayIndex(0);
-                }}>
+              <div style={{ marginTop: "6px" }}>
+                <button
+                  className="auto-replay-btn"
+                  onClick={() => {
+                    setSelectedAutoReplay(!selectedAutoReplay);
+                    if (!selectedAutoReplay) setSelectedReplayIndex(0);
+                  }}
+                >
                   {selectedAutoReplay ? "Stop Auto Replay" : "Start Auto Replay"}
                 </button>
               </div>
@@ -1443,37 +1622,43 @@ function App() {
               {selectedReplayIndex < 0 ? (
                 <p>Viewing final snapshot</p>
               ) : (
-                <p>Viewing Board {selectedReplayIndex + 1}/{selectedHistory.length}</p>
+                <p>
+                  Viewing Board {selectedReplayIndex + 1}/{selectedHistory.length}
+                </p>
               )}
             </div>
           )}
         </div>
       </div>
 
-      {/* WholeSkinsPanel Overlay */}
-      {showWholeSkins && (
+      {/* Overlays for Whole Skins and Lore */}
+      {showWholeSkins && chestOpenerContract && (
         <WholeSkinsPanel
-          onSelectSkin={(skinId) => {
-            alert(`Selected skin #${skinId}`);
-            setShowWholeSkins(false);
-          }}
           onClose={() => setShowWholeSkins(false)}
+          chestOpenerContract={chestOpenerContract}
+          skinLockAddress={skinLockAddress}
+          userAddress={userAddress}
           ownedSkins={ownedSkins}
+          fetchOwnedSkins={fetchOwnedSkinsFromOpener}
+          skinLockContract={skinLockContract}
         />
       )}
-
-      {/* LorePanel Overlay */}
       {showLorePanel && (
         <LorePanel
-          ownedSkins={ownedSkins}
           onClose={() => setShowLorePanel(false)}
+          ownedSkins={ownedSkins}
         />
       )}
 
-      {/* Error Bar */}
       {errorMsg && (
         <div className="error-bar">
-          {errorMsg} <button className="error-close" onClick={() => setErrorMsg("")}>x</button>
+          {errorMsg}
+          <button
+            className="error-close"
+            onClick={() => setErrorMsg("")}
+          >
+            x
+          </button>
         </div>
       )}
     </div>

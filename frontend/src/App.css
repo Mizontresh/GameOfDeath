@@ -83,7 +83,7 @@ body {
 .title-bar {
   padding: 10px 0;
   margin-bottom: 10px;
-  background: #111;
+  background: #2c1d2f;
 }
 .title-bar h1 {
   margin: 0;
@@ -307,7 +307,7 @@ body {
 .chest-roll-section {
   background: rgba(255,255,255,0.06);
   border: 2px solid #00bbff;
-  box-shadow: 0 0 6px #00bbff;
+  box-shadow: 0 10px 6px #00bbff;
   border-radius: 6px;
   padding: 6px;
   text-align: center;
@@ -673,4 +673,389 @@ input[type="range"]::-moz-range-thumb {
   border: none;
   border-radius: 50%;
   box-shadow: 0 0 6px #ff00e2;
+}
+/* Chest Animation Overlay: Highest priority overlay on top */
+.chest-animation-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 2000;  /* High z-index so that it sits on top of everything */
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Locked Items Overlay */
+.locked-items-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 2100;  /* Slightly higher than most UI elements */
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 160px;  /* Push content down to avoid the title area */
+}
+
+/* Lore Modal Overlay */
+.lore-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 2200;  /* Set even higher so that the modal is clearly on top */
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+
+/* Additional overlay for the lore modal content (if needed) */
+.lore-modal-content {
+  background: #111;
+  border: 2px solid #ff00e2;
+  border-radius: 10px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  color: #fff;
+  padding: 20px;
+}
+
+/* Winner Overlay (if used) */
+.winner-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 2300;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+}
+/* Overlay containers (unchanged from previous examples) */
+.chest-animation-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 2000; /* Ensures this overlay is on top of everything */
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.chest-animation-content {
+  text-align: center;
+  animation: chestPop 0.8s ease-out;
+  transition: opacity 0.5s ease;
+}
+
+@keyframes chestPop {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Existing stir animation for stirring step */
+.stir {
+  animation: stirAnimation 1s infinite;
+}
+
+@keyframes stirAnimation {
+  0% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(5deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+/* NEW: Brain chest animation
+   This class makes the brain chest gently pulse (scale up/down) */
+.brain-animate {
+  animation: brainAnimate 1.5s ease-out infinite alternate;
+}
+
+@keyframes brainAnimate {
+  0% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(1.1);
+  }
+}
+
+/* Locked Items Overlay (if you need this in your overall stacking context) */
+.locked-items-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 2100;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 160px; /* Push content down away from the top header */
+}
+
+/* Lore Modal Overlay */
+.lore-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 2200;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+
+.lore-modal-content {
+  background: #111;
+  border: 2px solid #ff00e2;
+  border-radius: 10px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  color: #fff;
+  padding: 20px;
+}
+/* App.css */
+.app-container {
+  position: relative;
+  font-family: Arial, sans-serif;
+  background: #000;
+  color: #fff;
+  min-height: 100vh;
+}
+
+/* Fixed overlay for chest animations */
+.chest-animation-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1200;
+}
+
+.chest-animation-content {
+  text-align: center;
+  animation: chestPop 0.8s ease-out;
+}
+
+/* Simple pop animation */
+@keyframes chestPop {
+  0% { transform: scale(0.5); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Stir animation for brain chest */
+.stir {
+  animation: stirAnimation 1s infinite;
+}
+
+@keyframes stirAnimation {
+  0% { transform: rotate(0deg); }
+  50% { transform: rotate(5deg); }
+  100% { transform: rotate(0deg); }
+}
+
+/* Overlay for locked items, lore modals, etc. */
+.whole-skins-overlay, .lore-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 1300;
+}
+
+/* Additional styling as needed... */
+/* App.css */
+
+/* 
+  Base container (for reference):
+  .chest-roll-section {
+    position: relative;
+    margin-top: 20px;
+  }
+  .chest-image-container {
+    position: relative;
+    width: 120px;
+    margin: 0 auto; 
+  }
+*/
+
+/* The four corner buttons share this base class */
+.chest-square-button {
+  position: absolute;
+  width: 70px;
+  height: 70px;
+
+  /* "Line button" style: 
+     - transparent background
+     - colored border
+     - same color text
+     - hover to fill in color
+  */
+  border: 2px solid #ff00e2; /* or #f00, #00f, etc. */
+  border-radius: 4px;
+  background: transparent;
+  color: #ff00e2;
+
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: bold;
+  text-align: center;
+
+  /* Smooth hover transition */
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+/* On hover: fill in color and switch text to white */
+.chest-square-button:hover {
+  background: #ff00e2;
+  color: #fff;
+}
+
+/* Lore Info: top-left corner around the chest */
+.chest-square-button.lore-info {
+  top: -0px;
+  left: -85px;
+}
+
+/* Skin: top-right corner */
+.chest-square-button.skin {
+  top: 0px;
+  right: -85px;
+}
+
+/* Stop: bottom-left corner */
+.chest-square-button.stop {
+  bottom: -390px;
+  left: -85px;
+  color: #ff0000;
+  border: 2px solid #ff0000;
+}
+
+/* Info: bottom-right corner */
+.chest-square-button.info {
+  bottom: -390px;
+  right: -85px;
+}
+/* Neon Red styling for the MIZ section and Locked Skins */
+
+.section-title {
+  margin: 0 0 8px 0;
+  font-size: 1.1rem;
+  color: #ff073a;  /* neon red */
+}
+
+.miz-balance-container {
+  margin-bottom: -5px;
+  border: 2px solid #ff073a;  /* neon red border */
+  padding: 12px;
+  border-radius: 10px;
+  background-color: #000;  /* dark background for contrast */
+}
+
+.miz-balance-container .miz-logo {
+  width: 40px;
+  height: 40px;
+}
+
+.miz-balance-container p {
+  margin-left: 2px;
+  color: #ff073a;
+  font-weight: bold;
+}
+
+.locked-skins-section {
+  margin-top: 6px;
+  margin-bottom: -5px;
+  border: 2px solid #ff073a;
+  padding: 4px;
+  border-radius: 4px;
+  background-color: #000;
+}
+
+.locked-skins-section h3 {
+  margin: 0;
+  color: #ff073a;
+}
+.red-panel {
+  background: rgba(243, 21, 21, 0.03);
+  border: 4px solid #ff0000;
+  border-radius: 6px;
+  box-shadow: 0 0 100px #ff0000;
+  padding: 0px 0px;
+  width: 300px;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 0px;
+  align-items: center;
+  text-align: center;
+  margin: 10px -100px;
+}
+.inventory {
+  background: rgba(6, 4, 40, 0.06);
+  border: 2px solid #00bbff;
+  box-shadow: 0 10px 6px #00bbff;
+  border-radius: 6px;
+  padding: 6px;
+  text-align: center;
+}
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #000;
+  font-family: "Orbitron", sans-serif;
+  color: #fff;
+  /* REMOVE or COMMENT OUT this line */
+  /* overflow: hidden; */
+  box-sizing: border-box;
+}
+.app-container {
+  position: relative;
+  min-height: 100vh;
+  text-align: center;
+  /* Let it scroll if content overflows the viewport */
+  overflow-y: auto;
 }

@@ -27,6 +27,7 @@ const gameRecordSchema = new mongoose.Schema({
   teamRedCount: Number,
   teamBlueCount: Number,
   boardHistory: { type: [[Number]], default: [] },
+  skinHistory: { type: [[Number]], default: [] },
   players: [String],
   thumbnail: String,
 });
@@ -47,9 +48,7 @@ const io = new Server(serverHttp, { cors: { origin: "*" } });
 //-------------------------------------
 // Ethereum Setup
 //-------------------------------------
-const wsProvider = new ethers.WebSocketProvider(
-  process.env.WS_PROVIDER || "ws://127.0.0.1:8545"
-);
+const wsProvider = new ethers.WebSocketProvider(process.env.WS_PROVIDER || "ws://127.0.0.1:8545");
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, wsProvider);
 
 // Load contract artifacts
@@ -73,12 +72,13 @@ const mizons = new ethers.Contract(mizonsAddress, mizonsArtifact.abi, wallet);
 //-------------------------------------
 // In-memory State & Constants
 //-------------------------------------
-let phase = "picking"; // valid phases: "picking", "placing", "conway", "final"
+let phase = "picking"; // Valid phases: "picking", "placing", "conway", "final"
 let phaseTimeLeft = 30;
 let boardHistory = [];
+let skinHistory = [];
 let transitionInProgress = false;
-let currentGameId = 1; // updated from chain on startup/reset
-let cycleCount = 0; // intermediate conway cycles completed
+let currentGameId = 1; // Updated from chain on startup/reset
+let cycleCount = 0;
 let conwayActive = false;
 let activePlayers = new Set();
 
@@ -89,10 +89,73 @@ const PICKING_TIME = 30;
 const PLACING_TIME = 30;
 const FINAL_COUNTDOWN = 20; // final phase lasts 20 seconds
 const CONWAY_STEPS = 10;
-const MAX_CYCLES = 2; // after MAX_CYCLES intermediate cycles, run final cycle
+const MAX_CYCLES = 2;
 
 //-------------------------------------
-// Helper Functions
+// Skin Matrix Helpers
+//-------------------------------------
+// liveSkinOverlay holds the skin ID for each cell (0 means no skin)
+let liveSkinOverlay = Array(4096).fill(0);
+
+// Determine propagation probability based on distinct skins present.
+function getPropagationProbability(skinMatrix) {
+  const distinctSkins = new Set(skinMatrix.filter(id => id > 0));
+  if (distinctSkins.size === 0) return 0; // No skins
+  if (distinctSkins.size === 1) return 1; // 100%
+  if (distinctSkins.size === 2) return 0.5;
+  return 1/3;
+}
+
+// For each non-empty board cell that currently has no skin, propagate a neighbor's skin
+function propagateSkins(currentSkinMatrix, board) {
+  const width = 64; // Board size: 64x64
+  const newSkinMatrix = [...currentSkinMatrix];
+  const prob = getPropagationProbability(currentSkinMatrix);
+  for (let i = 0; i < board.length; i++) {
+    if (board[i] !== 0 && currentSkinMatrix[i] === 0) {
+      const row = Math.floor(i / width);
+      const col = i % width;
+      let neighborSkins = [];
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const nr = row + dr;
+          const nc = col + dc;
+          if (nr >= 0 && nr < width && nc >= 0 && nc < width) {
+            const ni = nr * width + nc;
+            if (currentSkinMatrix[ni] > 0) {
+              neighborSkins.push(currentSkinMatrix[ni]);
+            }
+          }
+        }
+      }
+      if (neighborSkins.length > 0 && Math.random() < prob) {
+        newSkinMatrix[i] = neighborSkins[Math.floor(Math.random() * neighborSkins.length)];
+      }
+    }
+  }
+  return newSkinMatrix;
+}
+
+//-------------------------------------
+// Additional API Endpoint: Set Skin on a Tile
+//-------------------------------------
+app.post("/api/setSkin", async (req, res) => {
+  try {
+    const { index, skinId } = req.body;
+    if (typeof index !== "number" || index < 0 || index >= 4096) {
+      return res.status(400).json({ error: "Invalid index" });
+    }
+    liveSkinOverlay[index] = skinId;
+    io.emit("skinOverlayUpdated", liveSkinOverlay);
+    res.json({ message: "Skin updated", index, skinId, liveSkinOverlay });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+//-------------------------------------
+// Helper Functions (Common)
 //-------------------------------------
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -151,7 +214,8 @@ async function getOnChainBoard() {
 }
 
 function convertToAugmentedBoard(numericalBoard) {
-  return numericalBoard.map(val => ({ value: val, skin: null }));
+  // Return an object for each cell that includes both the team value and the skin value.
+  return numericalBoard.map((val, i) => ({ value: val, skin: liveSkinOverlay[i] }));
 }
 
 function packBoard(cells) {
@@ -232,47 +296,51 @@ async function distributeWinnings(gameId, winningTeam) {
 }
 
 //-------------------------------------
-// recordGame
+// resetGame (defined early so it is available for startup)
 //-------------------------------------
-async function recordGame(winner) {
+async function resetGame() {
   try {
-    const counts = await gameContract.getTeamCounts(currentGameId);
-    const bets = await bettingContract.getBets(currentGameId);
-    bets.forEach(b => {
-      activePlayers.add(b.user.toLowerCase());
+    await queueTransaction(async (nonce) => {
+      const tx = await bettingContract.clearBet(currentGameId, { nonce });
+      console.log(`Cleared bets for gameId=${currentGameId}, tx: ${tx.hash}`);
+      await waitForTxConfirmation(tx);
+      console.log("Bets cleared for gameId", currentGameId);
     });
-    let thumbnail = "";
-    if (boardHistory.length > 0) {
-      thumbnail = await generateThumbnail(boardHistory[boardHistory.length - 1], currentGameId);
-    }
-    const record = {
-      gameId: currentGameId,
-      winner,
-      timestamp: new Date(),
-      teamRedCount: Number(counts.redCount),
-      teamBlueCount: Number(counts.blueCount),
-      boardHistory,
-      players: Array.from(activePlayers),
-      thumbnail,
-    };
-    await new GameRecord(record).save();
-    console.log("Game record saved in MongoDB:", record);
-    io.emit("newGameRecord", record);
-    if (winner === "Red") {
-      await distributeWinnings(currentGameId, 1);
-    } else if (winner === "Blue") {
-      await distributeWinnings(currentGameId, 2);
-    } else {
-      console.log("Tie => no payouts.");
-    }
-    activePlayers.clear();
   } catch (err) {
-    console.error("Error in recordGame:", err);
+    console.error("Error clearing bets (ignored):", err.message);
   }
+  const newId = currentGameId + 1;
+  try {
+    await queueTransaction(async (nonce) => {
+      const tx = await gameContract.newGame(newId, { nonce });
+      console.log("newGame tx:", tx.hash);
+      await waitForTxConfirmation(tx);
+      console.log("Game reset on-chain to new gameId:", newId);
+    });
+  } catch (err) {
+    console.error("Error calling newGame on-chain:", err);
+  }
+  try {
+    const onChainGameId = await gameContract.currentGameId();
+    currentGameId = Number(onChainGameId);
+    console.log("Updated local currentGameId from chain:", currentGameId);
+  } catch (err) {
+    console.error("Error fetching currentGameId from chain:", err);
+    currentGameId = newId;
+  }
+  phase = "picking";
+  phaseTimeLeft = PICKING_TIME;
+  boardHistory = [];
+  skinHistory = [];
+  cycleCount = 0;
+  activePlayers.clear();
+  console.log("Local state reset, new gameId:", currentGameId);
+  io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
+  await openBettingForCurrentGame();
 }
 
 //-------------------------------------
-// Off-chain Conway Steps
+// Off-chain Conway Steps (with skin propagation)
 //-------------------------------------
 async function runConwaySteps(steps) {
   conwayActive = true;
@@ -281,6 +349,9 @@ async function runConwaySteps(steps) {
   for (let turn = 1; turn <= steps; turn++) {
     currentBoard = conway.runOneStep(currentBoard);
     boardHistory.push([...currentBoard]);
+    // Update the skin matrix based on propagation rules.
+    liveSkinOverlay = propagateSkins(liveSkinOverlay, currentBoard);
+    skinHistory.push([...liveSkinOverlay]);
     io.emit("boardUpdated", convertToAugmentedBoard(currentBoard));
     console.log(`Conway step ${turn} completed.`);
     await sleep(300);
@@ -301,6 +372,7 @@ async function runFinalCycle() {
   console.log("Running final conway cycle...");
   const snapshot = await getOnChainBoard();
   boardHistory.push([...snapshot]);
+  skinHistory.push([...liveSkinOverlay]);
   await runConwaySteps(CONWAY_STEPS);
 
   let redOnBlue = 0, blueOnRed = 0;
@@ -325,6 +397,45 @@ async function runFinalCycle() {
   phase = "final";
   phaseTimeLeft = FINAL_COUNTDOWN;
   io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
+}
+
+//-------------------------------------
+// recordGame (updated to include skinHistory)
+//-------------------------------------
+async function recordGame(winner) {
+  try {
+    const counts = await gameContract.getTeamCounts(currentGameId);
+    const bets = await bettingContract.getBets(currentGameId);
+    bets.forEach(b => activePlayers.add(b.user.toLowerCase()));
+    let thumbnail = "";
+    if (boardHistory.length > 0) {
+      thumbnail = await generateThumbnail(boardHistory[boardHistory.length - 1], currentGameId);
+    }
+    const record = {
+      gameId: currentGameId,
+      winner,
+      timestamp: new Date(),
+      teamRedCount: Number(counts.redCount),
+      teamBlueCount: Number(counts.blueCount),
+      boardHistory,
+      skinHistory,
+      players: Array.from(activePlayers),
+      thumbnail,
+    };
+    await new GameRecord(record).save();
+    console.log("Game record saved in MongoDB:", record);
+    io.emit("newGameRecord", record);
+    if (winner === "Red") {
+      await distributeWinnings(currentGameId, 1);
+    } else if (winner === "Blue") {
+      await distributeWinnings(currentGameId, 2);
+    } else {
+      console.log("Tie => no payouts.");
+    }
+    activePlayers.clear();
+  } catch (err) {
+    console.error("Error in recordGame:", err);
+  }
 }
 
 //-------------------------------------
@@ -413,7 +524,7 @@ async function transitionPhase() {
 }
 
 //-------------------------------------
-// Main Loop
+// Main Loop (Countdown)
 //-------------------------------------
 setInterval(async () => {
   try {
@@ -433,49 +544,6 @@ setInterval(async () => {
     console.error("Error in main loop:", err);
   }
 }, 1000);
-
-//-------------------------------------
-// resetGame
-//-------------------------------------
-async function resetGame() {
-  try {
-    await queueTransaction(async (nonce) => {
-      const tx = await bettingContract.clearBet(currentGameId, { nonce });
-      console.log(`Cleared bets for gameId=${currentGameId}, tx: ${tx.hash}`);
-      await waitForTxConfirmation(tx);
-      console.log("Bets cleared for gameId", currentGameId);
-    });
-  } catch (err) {
-    console.error("Error clearing bets (ignored):", err.message);
-  }
-  const newId = currentGameId + 1;
-  try {
-    await queueTransaction(async (nonce) => {
-      const tx = await gameContract.newGame(newId, { nonce });
-      console.log("newGame tx:", tx.hash);
-      await waitForTxConfirmation(tx);
-      console.log("Game reset on-chain to new gameId:", newId);
-    });
-  } catch (err) {
-    console.error("Error calling newGame on-chain:", err);
-  }
-  try {
-    const onChainGameId = await gameContract.currentGameId();
-    currentGameId = Number(onChainGameId);
-    console.log("Updated local currentGameId from chain:", currentGameId);
-  } catch (err) {
-    console.error("Error fetching currentGameId from chain:", err);
-    currentGameId = newId;
-  }
-  phase = "picking";
-  phaseTimeLeft = PICKING_TIME;
-  boardHistory = [];
-  cycleCount = 0;
-  activePlayers.clear();
-  console.log("Local state reset, new gameId:", currentGameId);
-  io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
-  await openBettingForCurrentGame();
-}
 
 //-------------------------------------
 // Contract Event Listeners
@@ -516,17 +584,14 @@ app.get("/api/state", (req, res) => {
 });
 
 app.get("/api/history", (req, res) => {
-  res.json({ boardHistory });
+  res.json({ boardHistory, skinHistory });
 });
 
 app.get("/api/allRecords", async (req, res) => {
   try {
     const skip = parseInt(req.query.skip) || 0;
     const limit = parseInt(req.query.limit) || 10;
-    const records = await GameRecord.find()
-      .sort({ gameId: -1 })
-      .skip(skip)
-      .limit(limit);
+    const records = await GameRecord.find().sort({ gameId: -1 }).skip(skip).limit(limit);
     res.json({ records });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -538,10 +603,7 @@ app.get("/api/records/:userAddress", async (req, res) => {
     const skip = parseInt(req.query.skip) || 0;
     const limit = parseInt(req.query.limit) || 10;
     const userAddr = req.params.userAddress.toLowerCase();
-    const records = await GameRecord.find({ players: userAddr })
-      .sort({ gameId: -1 })
-      .skip(skip)
-      .limit(limit);
+    const records = await GameRecord.find({ players: userAddr }).sort({ gameId: -1 }).skip(skip).limit(limit);
     res.json({ records });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -603,7 +665,6 @@ app.post("/admin/reset-to-game1", async (req, res) => {
     const onChainGameId = await gameContract.currentGameId();
     currentGameId = Number(onChainGameId);
     console.log("Fetched currentGameId from chain:", currentGameId);
-
     const onChainPhase = await gameContract.currentPhase();
     if (Number(onChainPhase) === 3) {
       console.log("Contract in final phase at startup; resetting game...");
