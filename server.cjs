@@ -1,4 +1,3 @@
-// server.cjs
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
@@ -40,8 +39,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
-app.use('/skins', express.static(path.join(__dirname, 'skins')));
-app.use('/chests', express.static(path.join(__dirname, 'chests')));
+app.use("/skins", express.static(path.join(__dirname, "skins")));
+app.use("/chests", express.static(path.join(__dirname, "chests")));
 const serverHttp = http.createServer(app);
 const io = new Server(serverHttp, { cors: { origin: "*" } });
 
@@ -55,86 +54,119 @@ const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, wsProvider);
 const gameArtifact = require("./artifacts/contracts/GameOfDeath.sol/GameOfDeath.json");
 const bettingArtifact = require("./artifacts/contracts/GameOfDeathBetting.sol/GameOfDeathBetting.json");
 const mizonsArtifact = require("./artifacts/contracts/Mizons.sol/Mizons.json");
+const skinLockArtifact = require("./artifacts/contracts/SkinLockRegistry.sol/SkinLockRegistry.json");
 
 const gameAddress = process.env.GAMEOFDEATH_ADDRESS;
 const bettingAddress = process.env.GAMEOFDEATH_BETTING_ADDRESS;
 const mizonsAddress = process.env.MIZONS_ADDRESS;
+const skinLockAddress = process.env.SKIN_LOCK_ADDRESS;
 
 console.log("Connecting to contracts...");
 console.log("Game Address:", gameAddress);
 console.log("Betting Address:", bettingAddress);
 console.log("Mizons Address:", mizonsAddress);
+if (skinLockAddress) {
+  console.log("SkinLockRegistry Address:", skinLockAddress);
+}
 
 const gameContract = new ethers.Contract(gameAddress, gameArtifact.abi, wallet);
 const bettingContract = new ethers.Contract(bettingAddress, bettingArtifact.abi, wallet);
 const mizons = new ethers.Contract(mizonsAddress, mizonsArtifact.abi, wallet);
+let skinLockContract;
+if (skinLockAddress) {
+  skinLockContract = new ethers.Contract(skinLockAddress, skinLockArtifact.abi, wallet);
+  console.log("SkinLockRegistry contract connected at:", skinLockAddress);
+}
+
+//-------------------------------------
+// Helper: Determine spawned skin for user
+//-------------------------------------
+async function determineSpawnedSkinForUser(user) {
+  if (!skinLockContract) return 0;
+  try {
+    const lockedSkins = await skinLockContract.getLockedSkins(user);
+    if (lockedSkins.length === 0) {
+      console.log("User has 0 locked skins => no spawn");
+      return 0;
+    }
+    const index = Math.floor(Math.random() * lockedSkins.length);
+    const chosen = lockedSkins[index];
+    const bakedId = Number(chosen.bakedId);
+    console.log(`Spawning skin for user ${user} => bakedId ${bakedId} (among locked skins)`);
+    return bakedId;
+  } catch (error) {
+    console.error("Error fetching locked skins for user", user, error);
+    return 0;
+  }
+}
 
 //-------------------------------------
 // In-memory State & Constants
 //-------------------------------------
-let phase = "picking"; // Valid phases: "picking", "placing", "conway", "final"
+let phase = "picking";
 let phaseTimeLeft = 30;
 let boardHistory = [];
 let skinHistory = [];
 let transitionInProgress = false;
-let currentGameId = 1; // Updated from chain on startup/reset
+let currentGameId = 1; // Updated from chain on startup/reset.
 let cycleCount = 0;
 let conwayActive = false;
 let activePlayers = new Set();
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 
-// Timing constants
+// Timing constants.
 const PICKING_TIME = 30;
 const PLACING_TIME = 30;
-const FINAL_COUNTDOWN = 20; // final phase lasts 20 seconds
+const FINAL_COUNTDOWN = 20;
 const CONWAY_STEPS = 10;
 const MAX_CYCLES = 2;
+
+// Delay constants (in ms)
+const STEP_DELAY = 1000;             // Standard step delay during placing cycles.
+const FINAL_CYCLE_STEP_DELAY = 3000;   // Much slower step delay for the final cycle.
 
 //-------------------------------------
 // Skin Matrix Helpers
 //-------------------------------------
-// liveSkinOverlay holds the skin ID for each cell (0 means no skin)
 let liveSkinOverlay = Array(4096).fill(0);
 
-// Determine propagation probability based on distinct skins present.
-function getPropagationProbability(skinMatrix) {
-  const distinctSkins = new Set(skinMatrix.filter(id => id > 0));
-  if (distinctSkins.size === 0) return 0; // No skins
-  if (distinctSkins.size === 1) return 1; // 100%
-  if (distinctSkins.size === 2) return 0.5;
-  return 1/3;
-}
-
-// For each non-empty board cell that currently has no skin, propagate a neighbor's skin
-function propagateSkins(currentSkinMatrix, board) {
-  const width = 64; // Board size: 64x64
-  const newSkinMatrix = [...currentSkinMatrix];
-  const prob = getPropagationProbability(currentSkinMatrix);
-  for (let i = 0; i < board.length; i++) {
-    if (board[i] !== 0 && currentSkinMatrix[i] === 0) {
-      const row = Math.floor(i / width);
-      const col = i % width;
-      let neighborSkins = [];
-      for (let dr = -1; dr <= 1; dr++) {
-        for (let dc = -1; dc <= 1; dc++) {
-          if (dr === 0 && dc === 0) continue;
-          const nr = row + dr;
-          const nc = col + dc;
-          if (nr >= 0 && nr < width && nc >= 0 && nc < width) {
-            const ni = nr * width + nc;
-            if (currentSkinMatrix[ni] > 0) {
-              neighborSkins.push(currentSkinMatrix[ni]);
+/*
+  runSkinStep implements Conway’s Game of Life exactly on the skin grid.
+  It is completely independent once seeded.
+    - A live cell (nonzero) survives if it has exactly 2 or 3 live neighbors.
+    - Otherwise, it dies.
+    - A dead cell becomes live if it has exactly 3 live neighbors.
+      In that case, the new skin is chosen randomly from the three neighbor cells.
+*/
+function runSkinStep(oldSkinGrid) {
+  let newSkinGrid = new Array(4096).fill(0);
+  for (let y = 0; y < 64; y++) {
+    for (let x = 0; x < 64; x++) {
+      let i = y * 64 + x;
+      let liveNeighbors = [];
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          let nx = x + dx, ny = y + dy;
+          if (nx >= 0 && nx < 64 && ny >= 0 && ny < 64) {
+            let j = ny * 64 + nx;
+            if (oldSkinGrid[j] !== 0) {
+              liveNeighbors.push(oldSkinGrid[j]);
             }
           }
         }
       }
-      if (neighborSkins.length > 0 && Math.random() < prob) {
-        newSkinMatrix[i] = neighborSkins[Math.floor(Math.random() * neighborSkins.length)];
+      if (oldSkinGrid[i] !== 0) {
+        newSkinGrid[i] = (liveNeighbors.length === 2 || liveNeighbors.length === 3) ? oldSkinGrid[i] : 0;
+      } else {
+        newSkinGrid[i] = (liveNeighbors.length === 3)
+          ? liveNeighbors[Math.floor(Math.random() * liveNeighbors.length)]
+          : 0;
       }
     }
   }
-  return newSkinMatrix;
+  return newSkinGrid;
 }
 
 //-------------------------------------
@@ -152,6 +184,11 @@ app.post("/api/setSkin", async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// NEW: API endpoint to deliver the live skin overlay to the frontend.
+app.get("/api/skinOverlay", (req, res) => {
+  res.json({ skinOverlay: liveSkinOverlay });
 });
 
 //-------------------------------------
@@ -214,8 +251,7 @@ async function getOnChainBoard() {
 }
 
 function convertToAugmentedBoard(numericalBoard) {
-  // Return an object for each cell that includes both the team value and the skin value.
-  return numericalBoard.map((val, i) => ({ value: val, skin: liveSkinOverlay[i] }));
+  return numericalBoard.map(val => ({ value: val }));
 }
 
 function packBoard(cells) {
@@ -296,7 +332,7 @@ async function distributeWinnings(gameId, winningTeam) {
 }
 
 //-------------------------------------
-// resetGame (defined early so it is available for startup)
+// resetGame
 //-------------------------------------
 async function resetGame() {
   try {
@@ -334,27 +370,31 @@ async function resetGame() {
   skinHistory = [];
   cycleCount = 0;
   activePlayers.clear();
+  // Reset the skin overlay completely.
+  liveSkinOverlay = Array(4096).fill(0);
   console.log("Local state reset, new gameId:", currentGameId);
   io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
   await openBettingForCurrentGame();
 }
 
 //-------------------------------------
-// Off-chain Conway Steps (with skin propagation)
+// Off-chain Conway Steps (with skin simulation)
 //-------------------------------------
-async function runConwaySteps(steps) {
+// Accepts a second parameter "delay" (in ms) for step delay.
+async function runConwaySteps(steps, delay = STEP_DELAY) {
   conwayActive = true;
   console.log(`Running Conway steps: ${steps} steps`);
   let currentBoard = await getOnChainBoard();
   for (let turn = 1; turn <= steps; turn++) {
     currentBoard = conway.runOneStep(currentBoard);
     boardHistory.push([...currentBoard]);
-    // Update the skin matrix based on propagation rules.
-    liveSkinOverlay = propagateSkins(liveSkinOverlay, currentBoard);
+    // Evolve the skin grid independently following Game of Life rules.
+    liveSkinOverlay = runSkinStep(liveSkinOverlay);
+    // Also record the skin state to history so that board and skin histories stay synced.
     skinHistory.push([...liveSkinOverlay]);
     io.emit("boardUpdated", convertToAugmentedBoard(currentBoard));
     console.log(`Conway step ${turn} completed.`);
-    await sleep(300);
+    await sleep(delay);
   }
   conwayActive = false;
   await queueTransaction(async (nonce) => {
@@ -373,8 +413,8 @@ async function runFinalCycle() {
   const snapshot = await getOnChainBoard();
   boardHistory.push([...snapshot]);
   skinHistory.push([...liveSkinOverlay]);
-  await runConwaySteps(CONWAY_STEPS);
-
+  // Use a much slower delay for the final cycle.
+  await runConwaySteps(CONWAY_STEPS, FINAL_CYCLE_STEP_DELAY);
   let redOnBlue = 0, blueOnRed = 0;
   const board = await getOnChainBoard();
   for (let y = 0; y < 64; y++) {
@@ -392,7 +432,6 @@ async function runFinalCycle() {
   console.log("Winner is:", winner);
   io.emit("winner", { winner });
   await recordGame(winner);
-
   await setContractPhase("final");
   phase = "final";
   phaseTimeLeft = FINAL_COUNTDOWN;
@@ -466,7 +505,6 @@ async function setContractPhase(newPhase, attempt = 1) {
   const PHASE_MAP = { picking: 0, placing: 1, conway: 2, final: 3 };
   const phaseEnum = PHASE_MAP[newPhase];
   if (phaseEnum === undefined) throw new Error("Unknown phase: " + newPhase);
-
   console.log(`Setting phase to ${newPhase} (enum: ${phaseEnum}), attempt ${attempt}`);
   try {
     await queueTransaction(async (nonce) => {
@@ -553,13 +591,28 @@ gameContract.on("TeamJoined", (gameId, user, teamId) => {
   activePlayers.add(user.toLowerCase());
 });
 
+// Updated SquarePlaced event handler with skin integration.
 gameContract.on("SquarePlaced", (gameId, user, x, y, color) => {
   console.log("SquarePlaced event:", gameId.toString(), user, x.toString(), y.toString(), color.toString());
   activePlayers.add(user.toLowerCase());
   (async () => {
     try {
       const board = await getOnChainBoard();
+      const index = Number(y) * 64 + Number(x);
+      // Attempt to spawn a locked skin if available.
+      const spawnedSkin = await determineSpawnedSkinForUser(user);
+      if (spawnedSkin !== 0) {
+        console.log(`Placing locked skin ID ${spawnedSkin} at board index ${index}`);
+        liveSkinOverlay[index] = spawnedSkin;
+      } else if (board[index] !== 0) {
+        console.log(`No locked skin spawned, seeding base skin ${board[index]} at index ${index}`);
+        liveSkinOverlay[index] = board[index];
+      } else {
+        console.log("No skin spawned for this square.");
+      }
       boardHistory.push([...board]);
+      // Also record the current skin overlay state for synchronized history.
+      skinHistory.push([...liveSkinOverlay]);
       io.emit("boardUpdated", convertToAugmentedBoard(board));
     } catch (err) {
       console.error("Error in SquarePlaced handler:", err);
