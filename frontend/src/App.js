@@ -172,7 +172,7 @@ function MusicPlayer({ backendUrl }) {
   );
 }
 
-// -------------------- LockedSkinSlots Component (with Unlock) --------------------
+// -------------------- LockedSkinSlots --------------------
 function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLockedSkins }) {
   const [lockedSkins, setLockedSkins] = useState([]);
   const [selectedLockedSkin, setSelectedLockedSkin] = useState(null);
@@ -269,7 +269,7 @@ function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLoc
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            zIndex: 1200,
+            zIndex: 6000,
           }}
           onClick={handleCloseUnlockModal}
         >
@@ -307,7 +307,7 @@ function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLoc
   );
 }
 
-// -------------------- MizontreshOverlay (unchanged, shows buy + lock) --------------------
+// -------------------- MizontreshOverlay --------------------
 function MizontreshOverlay({
   onClose,
   mizontreshContract,
@@ -358,13 +358,11 @@ function MizontreshOverlay({
   async function lockToken(tokenId) {
     if (!skinLockContract || !mizontreshContract || !userAddress || !skinLockAddress) return;
     try {
-      // Approve the skinLockAddress if not already.
       const currentApproved = await mizontreshContract.getApproved(tokenId);
       if (currentApproved.toLowerCase() !== skinLockAddress.toLowerCase()) {
         const approveTx = await mizontreshContract.approve(skinLockAddress, tokenId);
         await approveTx.wait();
       }
-      // Transfer to lock
       const data = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1024]);
       const tx = await mizontreshContract["safeTransferFrom(address,address,uint256,bytes)"](
         userAddress,
@@ -426,32 +424,36 @@ function MizontreshOverlay({
           {buying ? "Purchasing..." : "Buy Mizontresh (0.5122018 ETH)"}
         </button>
         {error && <p style={{ color: "#ff8080" }}>{error}</p>}
+
         <h3>Your Mizontresh Inventory</h3>
-        {inventory.length === 0 ? (
-          <p>No tokens owned.</p>
-        ) : (
-          <ul style={{ listStyle: "none", padding: 0 }}>
-            {inventory.map((tokenId) => (
-              <li key={tokenId} style={{ margin: "5px 0" }}>
-                Token #{tokenId}{" "}
-                <button
-                  onClick={() => lockToken(tokenId)}
-                  style={{
-                    marginLeft: "10px",
-                    padding: "5px 10px",
-                    backgroundColor: "#333",
-                    color: "#fff",
-                    border: "1px solid #ff00e2",
-                    borderRadius: "4px",
-                    cursor: "pointer"
-                  }}
-                >
-                  Lock Token
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <div style={{ maxHeight: "200px", overflowY: "auto", marginBottom: "10px" }}>
+          {inventory.length === 0 ? (
+            <p>No tokens owned.</p>
+          ) : (
+            <ul style={{ listStyle: "none", padding: 0 }}>
+              {inventory.map((tokenId) => (
+                <li key={tokenId} style={{ margin: "5px 0" }}>
+                  Token #{tokenId}{" "}
+                  <button
+                    onClick={() => lockToken(tokenId)}
+                    style={{
+                      marginLeft: "10px",
+                      padding: "5px 10px",
+                      backgroundColor: "#333",
+                      color: "#fff",
+                      border: "1px solid #ff00e2",
+                      borderRadius: "4px",
+                      cursor: "pointer"
+                    }}
+                  >
+                    Lock Token
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
         <h3>Lore</h3>
         <div
           style={{
@@ -492,7 +494,7 @@ function MizontreshOverlay({
   );
 }
 
-// -------------------- InfoPanel Component --------------------
+// -------------------- InfoPanel --------------------
 function InfoPanel({ onClose }) {
   return (
     <div className="info-panel-overlay" onClick={onClose}>
@@ -547,7 +549,7 @@ function Inventory({ inventory, backendUrl, onOpenChest }) {
   );
 }
 
-// -------------------- RecordsList Component --------------------
+// -------------------- RecordsList --------------------
 function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, refreshKey }) {
   const [records, setRecords] = useState([]);
   const [skip, setSkip] = useState(0);
@@ -642,14 +644,24 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
   );
 }
 
-// -------------------- LorePanel Component --------------------
+// -------------------- LorePanel --------------------
 function LorePanel({ onClose, ownedSkins }) {
+  const [panelSize, setPanelSize] = useState(400);
+  useEffect(() => {
+    function handleResize() {
+      const size = Math.min(window.innerWidth, window.innerHeight);
+      setPanelSize(size);
+    }
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const [selectedLore, setSelectedLore] = useState(null);
   const bakedIdList = ownedSkins.map((item) => item.bakedId);
   const GRID_COLUMNS = 32;
-  const CELL_SIZE = 18;
   const TOTAL_SKINS = 1024;
-  const scale = 70 / (GRID_COLUMNS * CELL_SIZE);
+  const CELL_SIZE = panelSize / GRID_COLUMNS;
 
   function getSkinCoords(skinId) {
     return {
@@ -683,17 +695,18 @@ function LorePanel({ onClose, ownedSkins }) {
       <div
         style={{
           position: "relative",
-          width: "70vmin",
-          height: "70vmin",
+          width: panelSize,
+          height: panelSize,
           margin: "0 auto",
-          overflow: "hidden"
+          overflow: "hidden",
+          backgroundColor: "#000"
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <img
           src={`${backendUrl}/skins/whole.png`}
           alt="All Skins"
-          style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          style={{ width: panelSize, height: panelSize, objectFit: "cover" }}
         />
         {Array.from({ length: TOTAL_SKINS }, (_, i) => {
           const { x, y } = getSkinCoords(i);
@@ -703,10 +716,10 @@ function LorePanel({ onClose, ownedSkins }) {
               key={i}
               style={{
                 position: "absolute",
-                left: `${x * scale}vmin`,
-                top: `${y * scale}vmin`,
-                width: `${CELL_SIZE * scale}vmin`,
-                height: `${CELL_SIZE * scale}vmin`,
+                left: x,
+                top: y,
+                width: CELL_SIZE,
+                height: CELL_SIZE,
                 backgroundColor: isOwned ? "transparent" : "rgba(128,128,128,0.5)",
                 cursor: isOwned ? "pointer" : "not-allowed"
               }}
@@ -727,7 +740,7 @@ function LorePanel({ onClose, ownedSkins }) {
           padding: "8px",
           cursor: "pointer",
           borderRadius: "4px",
-          zIndex: 1300
+          zIndex: 6000
         }}
       >
         Close Lore
@@ -796,7 +809,7 @@ function LorePanel({ onClose, ownedSkins }) {
   );
 }
 
-// -------------------- WholeSkinsPanel Component (Lock from chest) --------------------
+// -------------------- WholeSkinsPanel --------------------
 function WholeSkinsPanel({
   onClose,
   chestOpenerContract,
@@ -806,11 +819,21 @@ function WholeSkinsPanel({
   fetchOwnedSkins,
   skinLockContract,
 }) {
+  const [panelSize, setPanelSize] = useState(400);
+  useEffect(() => {
+    function handleResize() {
+      const size = Math.min(window.innerWidth, window.innerHeight);
+      setPanelSize(size);
+    }
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const bakedIdList = ownedSkins.map((item) => item.bakedId);
   const GRID_COLUMNS = 32;
-  const CELL_SIZE = 18;
   const TOTAL_SKINS = 1024;
-  const scale = 70 / (GRID_COLUMNS * CELL_SIZE);
+  const CELL_SIZE = panelSize / GRID_COLUMNS;
 
   async function getUserLockedCount() {
     if (!skinLockContract || !userAddress) return 0;
@@ -854,7 +877,10 @@ function WholeSkinsPanel({
   }
 
   function getSkinCoords(skinId) {
-    return { x: (skinId % GRID_COLUMNS) * CELL_SIZE, y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE };
+    return {
+      x: (skinId % GRID_COLUMNS) * CELL_SIZE,
+      y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE
+    };
   }
 
   return (
@@ -862,32 +888,33 @@ function WholeSkinsPanel({
       <div
         style={{
           position: "relative",
-          width: "70vmin",
-          height: "70vmin",
+          width: panelSize,
+          height: panelSize,
           margin: "0 auto",
-          overflow: "hidden"
+          overflow: "hidden",
+          backgroundColor: "#000"
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <img
           src={`${backendUrl}/skins/whole.png`}
           alt="All Skins"
-          style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          style={{ width: panelSize, height: panelSize, objectFit: "cover" }}
         />
         {Array.from({ length: TOTAL_SKINS }, (_, i) => {
-          const { x, y } = getSkinCoords(i);
           const isOwned = bakedIdList.includes(i);
+          const { x, y } = getSkinCoords(i);
           return (
             <div
               key={i}
               style={{
                 position: "absolute",
-                left: `${x * scale}vmin`,
-                top: `${y * scale}vmin`,
-                width: `${CELL_SIZE * scale}vmin`,
-                height: `${CELL_SIZE * scale}vmin`,
+                left: x,
+                top: y,
+                width: CELL_SIZE,
+                height: CELL_SIZE,
                 backgroundColor: isOwned ? "transparent" : "rgba(128,128,128,0.5)",
-                cursor: isOwned ? "pointer" : "not-allowed"
+                cursor: isOwned ? "pointer" : "not-allowed",
               }}
               onClick={() => {
                 if (isOwned) lockSkin(i);
@@ -963,7 +990,7 @@ function App() {
   // Chests
   const [inventory, setInventory] = useState([]);
 
-  // The big chest opening animation
+  // Chest animation
   const [chestAnimation, setChestAnimation] = useState({
     active: false,
     step: null,
@@ -1003,7 +1030,8 @@ function App() {
     function handleResize() {
       const availableWidth = window.innerWidth - (LEFT_PANEL_WIDTH + RIGHT_PANEL_WIDTH + 50);
       const availableHeight = window.innerHeight - (TOP_BAR_HEIGHT + 50);
-      setBoardSize(Math.max(MIN_BOARD_SIZE, Math.min(availableWidth, availableHeight)));
+      const baseSize = Math.min(availableWidth, availableHeight);
+      setBoardSize(Math.max(MIN_BOARD_SIZE, baseSize));
     }
     handleResize();
     window.addEventListener("resize", handleResize);
@@ -1291,7 +1319,7 @@ function App() {
     fetchOwnedSkinsFromOpener();
   }, [chestOpenerContract, userAddress, status]);
 
-  // Selecting a record
+  // Select a record
   function selectRecord(rec) {
     setSelectedRecord(rec);
     if (rec.boardHistory && rec.boardHistory.length > 0) {
@@ -1402,7 +1430,7 @@ function App() {
     }
   }
 
-  // Mint chest (with big brain & stir animation)
+  // Mint chest
   async function handleMintChest() {
     if (!userAddress) {
       alert("Connect your wallet first!");
@@ -1479,7 +1507,7 @@ function App() {
     }
   }
 
-  // Open a chest (frames 1..5, then reveal item)
+  // Open chest
   async function handleOpenChest(tokenId) {
     const chest = inventory.find((c) => c.tokenId === tokenId);
     if (!chest) {
@@ -1541,7 +1569,7 @@ function App() {
     }
   }
 
-  // For returning to live after viewing a record
+  // Return to live from record
   function recordGoBackToLive() {
     setSelectedRecord(null);
     setSelectedHistory(null);
@@ -1549,7 +1577,18 @@ function App() {
     setSelectedAutoReplay(false);
   }
 
-  // Which board to show (live or record)
+  if (!isVerified) {
+    return (
+      <AgeVerification
+        onVerify={(answer) => {
+          if (answer) setIsVerified(true);
+          else window.location.href = "about:blank";
+        }}
+      />
+    );
+  }
+
+  // Decide which board to show (live vs record)
   let displayBoard;
   if (selectedHistory) {
     const replayIndex =
@@ -1562,7 +1601,7 @@ function App() {
     displayBoard = liveBoard;
   }
 
-  // Which skin grid?
+  // Which skin overlay?
   const currentSkinGrid =
     selectedRecord && selectedRecord.skinHistory && selectedHistory
       ? selectedReplayIndex >= 0
@@ -1570,7 +1609,7 @@ function App() {
         : selectedRecord.skinHistory[selectedRecord.skinHistory.length - 1]
       : skinOverlay;
 
-  // Opposing stats
+  // Compute scoreboard stats
   function computeOpposingStats(board) {
     let redOnBlue = 0;
     let blueOnRed = 0;
@@ -1592,20 +1631,10 @@ function App() {
   // If in placing phase, veil the opposite side
   const showVeil = phaseData.phase === "placing" && !selectedHistory && liveReplayIndex < 0;
 
-  if (!isVerified) {
-    return (
-      <AgeVerification
-        onVerify={(answer) => {
-          if (answer) setIsVerified(true);
-          else window.location.href = "about:blank";
-        }}
-      />
-    );
-  }
-
   return (
     <div className="app-container" style={{ margin: 0, padding: 0, height: "100vh" }}>
       <MusicPlayer backendUrl={backendUrl} />
+
       {showInfoPanel && <InfoPanel onClose={() => setShowInfoPanel(false)} />}
       {showMizontreshOverlay && mizontreshContract && (
         <MizontreshOverlay
@@ -1631,7 +1660,6 @@ function App() {
             alignItems: "center"
           }}
           onClick={() => {
-            // if we are in "revealed" step, click to close
             if (chestAnimation.step === "revealed") {
               setChestAnimation({ active: false, step: null, data: null, chestType: null, frame: 0 });
             }
@@ -1864,7 +1892,15 @@ function App() {
 
         {/* CENTER BOARD */}
         <div className="center-board" style={{ position: "relative" }}>
-          <div className="board-container" style={{ width: boardSize, height: boardSize, marginBottom: "6px", position: "relative" }}>
+          <div
+            className="board-container"
+            style={{
+              width: boardSize,
+              height: boardSize,
+              marginBottom: "6px",
+              position: "relative",
+            }}
+          >
             <div className="board-border" style={{ position: "relative" }}>
               {showVeil && userTeam === 1 && (
                 <div
@@ -2078,6 +2114,40 @@ function App() {
           </button>
         </div>
       )}
+
+      {/* Add some mobile-specific overrides */}
+      <style>{`
+        @media (max-width: 768px) {
+          .main-content {
+            flex-direction: column;
+            align-items: center;
+            height: auto;
+          }
+          .left-panel, .right-panel {
+            width: 100%;
+            max-width: 500px;
+            margin: 10px 0;
+          }
+          .center-board {
+            margin: 0 auto 20px auto;
+            overflow: auto;
+          }
+          .board-container {
+            width: 100vw !important;
+            height: 100vw !important;
+            transform: none !important;
+            transform-origin: top left !important;
+          }
+          .whole-skins-overlay > div {
+            width: 100% !important;
+            height: 100% !important;
+          }
+          .whole-skins-overlay button.close-whole-skins-btn {
+            top: 10px !important;
+            right: 10px !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
