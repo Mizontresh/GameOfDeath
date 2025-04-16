@@ -1,3 +1,5 @@
+// App.js
+
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { io } from "socket.io-client";
 import { ethers } from "ethers";
@@ -43,8 +45,16 @@ const chestOpenerABI = [
 ];
 const skinLockABI = [
   "function getLockedSkins(address owner) external view returns (tuple(uint256 tokenId, uint256 bakedId)[])",
-  "function lockedTokens(uint256 tokenId) external view returns (address)",
-  "function unlockNFT(uint256 tokenId) external"
+  "function lockedTokens(uint256 tokenId) external view returns (address)"
+];
+const mizontreshABI = [
+  "function balanceOf(address owner) external view returns (uint256)",
+  "function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)",
+  "function buyToken() external payable",
+  "function getApproved(uint256 tokenId) external view returns (address)",
+  "function approve(address to, uint256 tokenId) external",
+  "function setApprovalForAll(address operator, bool approved) external",
+  "function safeTransferFrom(address from, address to, uint256 tokenId, bytes data) external"
 ];
 
 // -------------------- Environment Constants --------------------
@@ -54,6 +64,7 @@ const mizonsAddress = process.env.REACT_APP_MIZONS_ADDRESS;
 const chestMinterAddress = process.env.REACT_APP_CHEST_MINTER_ADDRESS;
 const chestOpenerAddress = process.env.REACT_APP_CHEST_OPENER_ADDRESS;
 const skinLockAddress = process.env.REACT_APP_SKIN_LOCK_ADDRESS;
+const mizontreshAddress = process.env.REACT_APP_MIZONTRESH_ADDRESS;
 const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:3000";
 
 // -------------------- Utility Functions --------------------
@@ -65,8 +76,6 @@ function toGatewayUrl(url) {
   return url;
 }
 
-/* Updated: convertToAugmentedBoard now only attaches board cell values.
-   The skin overlay is rendered separately using the local state [skinOverlay]. */
 function convertToAugmentedBoard(numericalBoard) {
   return numericalBoard.map(val => ({ value: val }));
 }
@@ -78,16 +87,337 @@ function formatMizons(balance) {
   return bal.toFixed(6);
 }
 
+// -------------------- AgeVerification Component --------------------
+function AgeVerification({ onVerify }) {
+  return (
+    <div className="age-verification-overlay">
+      <div className="age-verification-modal">
+        <h2>Age Verification</h2>
+        <p>Please confirm that you are 18 years of age or older to proceed.</p>
+        <div className="age-verification-buttons">
+          <button onClick={() => onVerify(true)}>Yes, I am 18 or older</button>
+          <button onClick={() => onVerify(false)}>No, I am not 18</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// -------------------- MusicPlayer Component --------------------
+function MusicPlayer({ backendUrl }) {
+  const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(0.5);
+  const audioRef = useRef(null);
+
+  const playRandomSong = useCallback(() => {
+    if (!audioRef.current) return;
+    const songNumber = Math.floor(Math.random() * 256);
+    audioRef.current.src = `${backendUrl}/songs/${songNumber}.mp3`;
+    audioRef.current.play().catch(err => console.error("Error playing audio:", err));
+  }, [backendUrl]);
+
+  useEffect(() => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+      audioRef.current.loop = false;
+      audioRef.current.volume = volume;
+      audioRef.current.muted = muted;
+      playRandomSong();
+      audioRef.current.play().catch(err => console.error("Autoplay error:", err));
+    }
+    const audio = audioRef.current;
+    audio.addEventListener("ended", playRandomSong);
+    return () => {
+      audio.removeEventListener("ended", playRandomSong);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.muted = muted;
+    }
+  }, [muted]);
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        bottom: "10px",
+        left: "10px",
+        zIndex: 15000,
+        background: "rgba(0,0,0,0.5)",
+        padding: "6px 10px",
+        borderRadius: "5px"
+      }}
+    >
+      <button className="music-button" onClick={() => setMuted(prev => !prev)}>
+        {muted ? "Unmute" : "Mute"}
+      </button>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        value={volume}
+        onChange={(e) => setVolume(parseFloat(e.target.value))}
+        style={{ marginLeft: "10px" }}
+      />
+    </div>
+  );
+}
+
+// -------------------- MizontreshOverlay Component --------------------
+function MizontreshOverlay({
+  onClose,
+  mizontreshContract,
+  skinLockAddress,
+  skinLockContract,
+  userAddress,
+  refreshInventory,
+}) {
+  const [inventory, setInventory] = useState([]);
+  const [buying, setBuying] = useState(false);
+  const [error, setError] = useState("");
+
+  // Fetch the current user's Mizontresh tokens.
+  useEffect(() => {
+    async function fetchInventory() {
+      if (!mizontreshContract || !userAddress) return;
+      try {
+        const balanceBN = await mizontreshContract.balanceOf(userAddress);
+        const balance = Number(balanceBN);
+        const tokens = [];
+        for (let i = 0; i < balance; i++) {
+          const tokenIdBN = await mizontreshContract.tokenOfOwnerByIndex(userAddress, i);
+          tokens.push(Number(tokenIdBN));
+        }
+        setInventory(tokens);
+      } catch (err) {
+        console.error("Error fetching Mizontresh inventory:", err);
+      }
+    }
+    fetchInventory();
+  }, [mizontreshContract, userAddress, buying]);
+
+  async function handleBuy() {
+    if (!mizontreshContract) return;
+    setBuying(true);
+    try {
+      const tx = await mizontreshContract.buyToken({ value: ethers.parseEther("0.5122018") });
+      await tx.wait();
+      alert("Mizontresh token purchased!");
+      if (refreshInventory) refreshInventory();
+    } catch (err) {
+      console.error("Error purchasing Mizontresh token:", err);
+      setError("Purchase failed: " + err.message);
+    } finally {
+      setBuying(false);
+    }
+  }
+
+  // Lock a token (no UI for unlocking in this design)
+  async function lockToken(tokenId) {
+    if (!skinLockContract || !mizontreshContract || !userAddress || !skinLockAddress) return;
+    try {
+      // Make sure the user has approved the token for skinLockAddress
+      const currentApproved = await mizontreshContract.getApproved(tokenId);
+      if (currentApproved.toLowerCase() !== skinLockAddress.toLowerCase()) {
+        const approveTx = await mizontreshContract.approve(skinLockAddress, tokenId);
+        await approveTx.wait();
+      }
+
+      // Transfer to lock
+      const data = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1024]);
+      const tx = await mizontreshContract["safeTransferFrom(address,address,uint256,bytes)"](
+        userAddress,
+        skinLockAddress,
+        tokenId,
+        data
+      );
+      await tx.wait();
+      alert(`Locked token #${tokenId}`);
+      if (refreshInventory) refreshInventory();
+    } catch (err) {
+      console.error("Error locking token:", err);
+      setError("Lock failed: " + err.message);
+    }
+  }
+
+  return (
+    <div
+      className="overlay"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        backgroundColor: "rgba(0,0,0,0.85)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <div
+        className="overlay-content"
+        style={{
+          background: "#222",
+          border: "2px solid #ff00e2",
+          borderRadius: "10px",
+          padding: "20px",
+          maxWidth: "500px",
+          width: "90%",
+          color: "#fff",
+          textAlign: "center",
+        }}
+      >
+        <h2>Mizontresh Shop</h2>
+        <p style={{ color: "red" }}>
+          Warning: You are wasting your money, this is useless!
+        </p>
+        <button
+          onClick={handleBuy}
+          disabled={buying}
+          style={{
+            margin: "10px",
+            padding: "10px 20px",
+            fontSize: "1rem",
+            backgroundColor: "#ff00e2",
+            color: "#fff",
+            border: "none",
+            borderRadius: "4px",
+            cursor: "pointer",
+          }}
+        >
+          {buying ? "Purchasing..." : "Buy Mizontresh (0.5122018 ETH)"}
+        </button>
+        {error && <p style={{ color: "#ff8080" }}>{error}</p>}
+        <h3>Your Mizontresh Inventory</h3>
+        {inventory.length === 0 ? (
+          <p>No tokens owned.</p>
+        ) : (
+          <ul style={{ listStyle: "none", padding: 0 }}>
+            {inventory.map((tokenId) => (
+              <li key={tokenId} style={{ margin: "5px 0" }}>
+                Token #{tokenId}{" "}
+                <button
+                  onClick={() => lockToken(tokenId)}
+                  style={{
+                    marginLeft: "10px",
+                    padding: "5px 10px",
+                    backgroundColor: "#333",
+                    color: "#fff",
+                    border: "1px solid #ff00e2",
+                    borderRadius: "4px",
+                    cursor: "pointer"
+                  }}
+                >
+                  Lock Token
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <h3>Lore</h3>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: "10px",
+            marginTop: "10px",
+          }}
+        >
+          {Array.from({ length: 9 }).map((_, idx) => (
+            <div
+              key={idx}
+              style={{
+                border: "1px solid #fff",
+                padding: "10px",
+                textAlign: "center",
+              }}
+            >
+              Lore {idx + 1}
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={onClose}
+          style={{
+            marginTop: "20px",
+            padding: "8px 16px",
+            backgroundColor: "#ff00e2",
+            border: "none",
+            borderRadius: "4px",
+            cursor: "pointer"
+          }}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// -------------------- InfoPanel Component --------------------
+function InfoPanel({ onClose }) {
+  return (
+    <div className="info-panel-overlay" onClick={onClose}>
+      <div className="info-panel-content" onClick={(e) => e.stopPropagation()}>
+        <h2>How to Play "Game of Death"</h2>
+        <p>
+          In <strong>Game of Death</strong> you must choose between two teams: Red and Blue.
+          <br /><br />
+          During the <em>picking phase</em>, players join a team. Once the phase ends, the game enters
+          the <em>placing phase</em> where your objective is to strategically place squares on your
+          designated half of a 64×64 board.
+          <br /><br />
+          In the subsequent evolution phase (inspired by Conway’s Game of Life), your squares
+          interact according to survival and birth rules. The team that manages to capture more
+          territory on the opponent's side wins the game.
+          <br /><br />
+          <strong>Tips:</strong>
+          <ul>
+            <li>Plan your moves carefully; every square affects the next evolution.</li>
+            <li>You can secure limited special skins by locking them in your inventory.</li>
+            <li>Bet on your team to gain extra rewards if they win.</li>
+          </ul>
+        </p>
+        <button onClick={onClose}>Close Info</button>
+      </div>
+    </div>
+  );
+}
+
 // -------------------- Inventory Component --------------------
 function Inventory({ inventory, backendUrl, onOpenChest }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "4px", justifyItems: "center" }}>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(4, 1fr)",
+        gap: "4px",
+        justifyItems: "center"
+      }}
+    >
       {inventory.length === 0 ? (
         <p>No chests found.</p>
       ) : (
         inventory.map((chest) => (
-          <div key={chest.tokenId} style={{ textAlign: "center", cursor: "pointer" }} onClick={() => onOpenChest(chest.tokenId)}>
-            <img src={`${backendUrl}/chests/icons/chest${chest.type}/frame1.png`} alt={`Chest Type ${chest.type}`} style={{ width: "35px", height: "auto" }} />
+          <div
+            key={chest.tokenId}
+            style={{ textAlign: "center", cursor: "pointer" }}
+            onClick={() => onOpenChest(chest.tokenId)}
+          >
+            <img
+              src={`${backendUrl}/chests/icons/chest${chest.type}/frame1.png`}
+              alt={`Chest Type ${chest.type}`}
+              style={{ width: "35px", height: "auto" }}
+            />
           </div>
         ))
       )}
@@ -154,13 +484,27 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
       ) : (
         <ul className="game-records-list">
           {records.map((rec, index) => {
-            const dateString = rec.timestamp ? new Date(rec.timestamp).toLocaleString() : "N/A";
+            const dateString = rec.timestamp
+              ? new Date(rec.timestamp).toLocaleString()
+              : "N/A";
             return (
-              <li key={`${rec.gameId}-${index}`} className="game-record-item" onClick={() => onSelectRecord(rec)}>
-                {rec.thumbnail && <img src={rec.thumbnail} alt={`Game #${rec.gameId}`} className="record-thumbnail" />}
+              <li
+                key={`${rec.gameId}-${index}`}
+                className="game-record-item"
+                onClick={() => onSelectRecord(rec)}
+              >
+                {rec.thumbnail && (
+                  <img
+                    src={rec.thumbnail}
+                    alt={`Game #${rec.gameId}`}
+                    className="record-thumbnail"
+                  />
+                )}
                 <div className="record-info">
                   <strong>Game #{rec.gameId}</strong>
-                  <p>{rec.winner} won at {dateString}</p>
+                  <p>
+                    {rec.winner} won at {dateString}
+                  </p>
                 </div>
               </li>
             );
@@ -179,9 +523,9 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
 }
 
 // -------------------- LockedSkinSlots Component --------------------
+// NOTE: We now only SHOW locked skins. No "unlock" button or modal.
 function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLockedSkins }) {
   const [lockedSkins, setLockedSkins] = useState([]);
-  const [selectedLockedSkin, setSelectedLockedSkin] = useState(null);
   const MAX_SLOTS = 3;
 
   const fetchLockedSkins = useCallback(async () => {
@@ -204,90 +548,52 @@ function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLoc
     return () => clearInterval(interval);
   }, [fetchLockedSkins]);
 
-  const handleSlotClick = (item) => {
-    if (item) setSelectedLockedSkin(item);
-  };
-
-  const confirmUnlock = async () => {
-    if (!selectedLockedSkin) return;
-    try {
-      const { tokenId, bakedId } = selectedLockedSkin;
-      const tx = await skinLockContract.unlockNFT(tokenId);
-      await tx.wait();
-      alert(`Unlocked skin: tokenId ${tokenId} (bakedId ${bakedId})!`);
-      fetchLockedSkins();
-      if (refreshLockedSkins) refreshLockedSkins();
-    } catch (err) {
-      console.error("Error unlocking skin:", err);
-      alert("Error unlocking skin: " + err.message);
-    } finally {
-      setSelectedLockedSkin(null);
-    }
-  };
-
-  const handleCloseUnlockModal = () => setSelectedLockedSkin(null);
-
+  // Just display them, no click to unlock
   return (
-    <div style={{ position: "relative" }}>
-      <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-        {Array.from({ length: MAX_SLOTS }, (_, i) => {
-          const item = lockedSkins[i];
-          return (
-            <div
-              key={i}
-              style={{
-                width: "50px",
-                height: "50px",
-                border: "1px solid #ff00e2",
-                borderRadius: "4px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: item ? "pointer" : "default",
-                background: item ? "#222" : "transparent",
-              }}
-              onClick={() => handleSlotClick(item)}
-              title={item ? `Locked Skin #${item.bakedId}` : "Empty slot"}
-            >
-              {item ? (
-                <img src={`${backendUrl}/skins/icons/${item.bakedId}.png`} alt={`Locked Skin #${item.bakedId}`} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-              ) : (
-                <span style={{ color: "#ff00e2", fontSize: "0.8rem" }}>Empty</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      {selectedLockedSkin && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.7)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-          }}
-          onClick={handleCloseUnlockModal}
-        >
-          <div style={{ background: "#333", color: "#fff", padding: "20px", borderRadius: "5px", minWidth: "300px" }} onClick={(e) => e.stopPropagation()}>
-            <h3>Unlock Skin #{selectedLockedSkin.bakedId}</h3>
-            <img src={`${backendUrl}/skins/icons/${selectedLockedSkin.bakedId}.png`} alt={`Locked Skin #${selectedLockedSkin.bakedId}`} style={{ width: "120px", height: "120px", objectFit: "contain", display: "block", margin: "10px auto" }} />
-            <p>Unlock token #{selectedLockedSkin.tokenId} (baked ID {selectedLockedSkin.bakedId})?</p>
-            <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-              <button onClick={confirmUnlock}>Yes, Unlock</button>
-              <button onClick={handleCloseUnlockModal}>Cancel</button>
-            </div>
+    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+      {Array.from({ length: MAX_SLOTS }, (_, i) => {
+        const item = lockedSkins[i];
+        return (
+          <div
+            key={i}
+            style={{
+              width: "50px",
+              height: "50px",
+              border: "1px solid #ff00e2",
+              borderRadius: "4px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: item ? "#222" : "transparent",
+            }}
+            title={item ? `Locked Skin #${item.bakedId}` : "Empty slot"}
+          >
+            {item ? (
+              <img
+                src={`${backendUrl}/skins/icons/${item.bakedId}.png`}
+                alt={`Locked Skin #${item.bakedId}`}
+                style={{ width: "100%", height: "100%", objectFit: "contain" }}
+              />
+            ) : (
+              <span style={{ color: "#ff00e2", fontSize: "0.8rem" }}>Empty</span>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })}
     </div>
   );
 }
 
 // -------------------- WholeSkinsPanel Component --------------------
-function WholeSkinsPanel({ onClose, chestOpenerContract, skinLockAddress, userAddress, ownedSkins, fetchOwnedSkins, skinLockContract }) {
+function WholeSkinsPanel({
+  onClose,
+  chestOpenerContract,
+  skinLockAddress,
+  userAddress,
+  ownedSkins,
+  fetchOwnedSkins,
+  skinLockContract,
+}) {
   const bakedIdList = ownedSkins.map((item) => item.bakedId);
   const GRID_COLUMNS = 32;
   const CELL_SIZE = 18;
@@ -305,6 +611,7 @@ function WholeSkinsPanel({ onClose, chestOpenerContract, skinLockAddress, userAd
     }
   }
 
+  // Lock from chest
   async function lockSkin(bakedId) {
     if (!chestOpenerContract || !userAddress || !skinLockAddress) return;
     const matching = ownedSkins.filter((item) => item.bakedId === bakedId);
@@ -320,7 +627,12 @@ function WholeSkinsPanel({ onClose, chestOpenerContract, skinLockAddress, userAd
         return;
       }
       const data = new ethers.AbiCoder().encode(["uint256"], [bakedId]);
-      const tx = await chestOpenerContract["safeTransferFrom(address,address,uint256,bytes)"](userAddress, skinLockAddress, tokenId, data);
+      const tx = await chestOpenerContract["safeTransferFrom(address,address,uint256,bytes)"](
+        userAddress,
+        skinLockAddress,
+        tokenId,
+        data
+      );
       await tx.wait();
       alert(`Locked Skin #${bakedId} successfully!`);
       fetchOwnedSkins();
@@ -339,8 +651,21 @@ function WholeSkinsPanel({ onClose, chestOpenerContract, skinLockAddress, userAd
 
   return (
     <div className="whole-skins-overlay" onClick={onClose} style={{ cursor: "auto" }}>
-      <div style={{ position: "relative", width: "70vmin", height: "70vmin", margin: "0 auto", overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
-        <img src={`${backendUrl}/skins/whole.png`} alt="All Skins" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+      <div
+        style={{
+          position: "relative",
+          width: "70vmin",
+          height: "70vmin",
+          margin: "0 auto",
+          overflow: "hidden"
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <img
+          src={`${backendUrl}/skins/whole.png`}
+          alt="All Skins"
+          style={{ width: "100%", height: "100%", objectFit: "contain" }}
+        />
         {Array.from({ length: TOTAL_SKINS }, (_, i) => {
           const { x, y } = getSkinCoords(i);
           const isOwned = bakedIdList.includes(i);
@@ -356,12 +681,18 @@ function WholeSkinsPanel({ onClose, chestOpenerContract, skinLockAddress, userAd
                 backgroundColor: isOwned ? "transparent" : "rgba(128,128,128,0.5)",
                 cursor: isOwned ? "pointer" : "not-allowed"
               }}
-              onClick={() => { if (isOwned) lockSkin(i); }}
+              onClick={() => {
+                if (isOwned) lockSkin(i);
+              }}
             />
           );
         })}
       </div>
-      <button className="close-whole-skins-btn" onClick={onClose} style={{ position: "absolute", top: "20px", right: "20px" }}>
+      <button
+        className="close-whole-skins-btn"
+        onClick={onClose}
+        style={{ position: "absolute", top: "20px", right: "20px" }}
+      >
         Close
       </button>
     </div>
@@ -378,7 +709,10 @@ function LorePanel({ onClose, ownedSkins }) {
   const scale = 70 / (GRID_COLUMNS * CELL_SIZE);
 
   function getSkinCoords(skinId) {
-    return { x: (skinId % GRID_COLUMNS) * CELL_SIZE, y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE };
+    return {
+      x: (skinId % GRID_COLUMNS) * CELL_SIZE,
+      y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE
+    };
   }
 
   async function handleClick(skinId) {
@@ -403,8 +737,21 @@ function LorePanel({ onClose, ownedSkins }) {
 
   return (
     <div className="whole-skins-overlay" onClick={onClose} style={{ cursor: "auto" }}>
-      <div style={{ position: "relative", width: "70vmin", height: "70vmin", margin: "0 auto", overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
-        <img src={`${backendUrl}/skins/whole.png`} alt="All Skins" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+      <div
+        style={{
+          position: "relative",
+          width: "70vmin",
+          height: "70vmin",
+          margin: "0 auto",
+          overflow: "hidden"
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <img
+          src={`${backendUrl}/skins/whole.png`}
+          alt="All Skins"
+          style={{ width: "100%", height: "100%", objectFit: "contain" }}
+        />
         {Array.from({ length: TOTAL_SKINS }, (_, i) => {
           const { x, y } = getSkinCoords(i);
           const isOwned = bakedIdList.includes(i);
@@ -444,20 +791,56 @@ function LorePanel({ onClose, ownedSkins }) {
       </button>
       {selectedLore && (
         <div className="lore-modal-overlay" onClick={handleCloseLoreModal}>
-          <div className="lore-modal-content" onClick={(e) => e.stopPropagation()} style={{ display: "flex", flexDirection: "row", gap: "20px", alignItems: "flex-start" }}>
-            <img src={selectedLore.image ? toGatewayUrl(selectedLore.image) : `${backendUrl}/skins/icons/${selectedLore.skinId}.png`} alt={selectedLore.title || `Skin #${selectedLore.skinId}`} style={{ width: "250px", height: "auto", border: "1px solid #fff", borderRadius: "8px" }} />
+          <div
+            className="lore-modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{ display: "flex", flexDirection: "row", gap: "20px", alignItems: "flex-start" }}
+          >
+            <img
+              src={
+                selectedLore.image
+                  ? toGatewayUrl(selectedLore.image)
+                  : `${backendUrl}/skins/icons/${selectedLore.skinId}.png`
+              }
+              alt={selectedLore.title || `Skin #${selectedLore.skinId}`}
+              style={{
+                width: "250px",
+                height: "auto",
+                border: "1px solid #fff",
+                borderRadius: "8px"
+              }}
+            />
             <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <h2 style={{ color: "#ff00e2", margin: 0 }}>{selectedLore.title || `Skin #${selectedLore.skinId}`}</h2>
+              <div
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+              >
+                <h2 style={{ color: "#ff00e2", margin: 0 }}>
+                  {selectedLore.title || `Skin #${selectedLore.skinId}`}
+                </h2>
               </div>
-              {selectedLore.subtitle && <h4 style={{ color: "#fff", marginTop: "0.5rem" }}>{selectedLore.subtitle}</h4>}
-              <div style={{ color: "#fff", background: "#222", border: "1px solid #333", borderRadius: "6px", padding: "10px", marginTop: "1rem", maxHeight: "40vh", overflowY: "auto" }}>
+              {selectedLore.subtitle && (
+                <h4 style={{ color: "#fff", marginTop: "0.5rem" }}>{selectedLore.subtitle}</h4>
+              )}
+              <div
+                style={{
+                  color: "#fff",
+                  background: "#222",
+                  border: "1px solid #333",
+                  borderRadius: "6px",
+                  padding: "10px",
+                  marginTop: "1rem",
+                  maxHeight: "40vh",
+                  overflowY: "auto"
+                }}
+              >
                 {Object.entries(selectedLore).map(([key, value]) => {
                   if (key === "image" || key === "skinId") return null;
                   return (
                     <div key={key} style={{ marginBottom: "8px" }}>
                       <strong style={{ textTransform: "capitalize" }}>{key}:</strong>
-                      <span style={{ marginLeft: "5px" }}>{typeof value === "object" ? JSON.stringify(value, null, 2) : value.toString()}</span>
+                      <span style={{ marginLeft: "5px" }}>
+                        {typeof value === "object" ? JSON.stringify(value, null, 2) : value}
+                      </span>
                     </div>
                   );
                 })}
@@ -477,6 +860,16 @@ function App() {
   const TOP_BAR_HEIGHT = 100;
   const MIN_BOARD_SIZE = 280;
 
+  // Age verification
+  const [isVerified, setIsVerified] = useState(false);
+
+  // Info panel
+  const [showInfoPanel, setShowInfoPanel] = useState(false);
+
+  // Mizontresh overlay
+  const [showMizontreshOverlay, setShowMizontreshOverlay] = useState(false);
+
+  // Contracts and addresses
   const [boardSize, setBoardSize] = useState(MIN_BOARD_SIZE);
   const [userAddress, setUserAddress] = useState("");
   const [gameContract, setGameContract] = useState(null);
@@ -484,7 +877,9 @@ function App() {
   const [chestMinterContract, setChestMinterContract] = useState(null);
   const [chestOpenerContract, setChestOpenerContract] = useState(null);
   const [skinLockContract, setSkinLockContract] = useState(null);
+  const [mizontreshContract, setMizontreshContract] = useState(null);
 
+  // General
   const [mizonsBalance, setMizonsBalance] = useState("0");
   const [phaseData, setPhaseData] = useState({ phase: "picking", timeLeft: 30, gameId: 1 });
   const [teamCounts, setTeamCounts] = useState({ red: 0, blue: 0 });
@@ -492,11 +887,13 @@ function App() {
   const [status, setStatus] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
+  // Board state
   const [liveBoard, setLiveBoard] = useState(Array(4096).fill({ value: 0 }));
   const [boardHistory, setBoardHistory] = useState([]);
   const [liveReplayIndex, setLiveReplayIndex] = useState(-1);
   const [liveAutoReplay, setLiveAutoReplay] = useState(false);
 
+  // Records
   const [showMyGames, setShowMyGames] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -504,31 +901,36 @@ function App() {
   const [selectedReplayIndex, setSelectedReplayIndex] = useState(-1);
   const [selectedAutoReplay, setSelectedAutoReplay] = useState(false);
 
+  // Bets
   const [liveRedBets, setLiveRedBets] = useState(0);
   const [liveBlueBets, setLiveBlueBets] = useState(0);
   const [betAmount, setBetAmount] = useState(1);
-  const [inventory, setInventory] = useState([]);
 
-  const [chestAnimation, setChestAnimation] = useState({ active: false, step: null, data: null, chestType: null, frame: 1 });
-  const [winnerOverlay, setWinnerOverlay] = useState(null);
+  // Chests
+  const [inventory, setInventory] = useState([]);
+  const [chestAnimation, setChestAnimation] = useState({
+    active: false,
+    step: null,
+    data: null,
+    chestType: null,
+    frame: 1
+  });
+
+  // Skins
   const [ownedSkins, setOwnedSkins] = useState([]);
   const [showWholeSkins, setShowWholeSkins] = useState(false);
   const [showLorePanel, setShowLorePanel] = useState(false);
-
-  // NEW: State for skin overlay fetched from backend.
   const [skinOverlay, setSkinOverlay] = useState(Array(4096).fill(0));
 
   const socketRef = useRef(null);
 
-  // NEW: Periodically fetch skin overlay data from backend.
+  // Fetch the skin overlay
   useEffect(() => {
     async function fetchSkinOverlay() {
       try {
         const res = await fetch(`${backendUrl}/api/skinOverlay`);
         const data = await res.json();
-        if (data.skinOverlay) {
-          setSkinOverlay(data.skinOverlay);
-        }
+        if (data.skinOverlay) setSkinOverlay(data.skinOverlay);
       } catch (err) {
         console.error("Error fetching skin overlay:", err);
       }
@@ -536,9 +938,9 @@ function App() {
     fetchSkinOverlay();
     const interval = setInterval(fetchSkinOverlay, 1000);
     return () => clearInterval(interval);
-  }, [backendUrl]);
+  }, []);
 
-  // Adjust board size on window resize.
+  // Responsive sizing
   useEffect(() => {
     function handleResize() {
       const availableWidth = window.innerWidth - (LEFT_PANEL_WIDTH + RIGHT_PANEL_WIDTH + 50);
@@ -550,13 +952,13 @@ function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Ensure full viewport height.
+  // Force full height
   useEffect(() => {
     document.documentElement.style.height = "100%";
     document.body.style.height = "100%";
   }, []);
 
-  // Wallet connect/disconnect.
+  // Connect wallet
   async function connectWallet() {
     if (!window.ethereum) {
       setErrorMsg("No MetaMask found!");
@@ -580,6 +982,7 @@ function App() {
     setChestMinterContract(null);
     setChestOpenerContract(null);
     setSkinLockContract(null);
+    setMizontreshContract(null);
     setErrorMsg("");
     setStatus("");
   }
@@ -594,28 +997,24 @@ function App() {
     }
   }, []);
 
-  // Socket.io setup.
+  // Socket
   useEffect(() => {
     socketRef.current = io(backendUrl, { transports: ["websocket"] });
     socketRef.current.on("connect", () => console.log("Socket connected:", socketRef.current.id));
     socketRef.current.on("phaseUpdated", (data) => setPhaseData(data));
     socketRef.current.on("boardUpdated", (augmentedBoard) => {
-      if (liveReplayIndex < 0 && !selectedHistory) setLiveBoard(augmentedBoard);
-    });
-    socketRef.current.on("winner", ({ winner }) => {
-      if (!chestAnimation.active) {
-        setWinnerOverlay(winner);
-        setTimeout(() => setWinnerOverlay(null), 3000);
+      if (liveReplayIndex < 0 && !selectedHistory) {
+        setLiveBoard(augmentedBoard);
       }
     });
-    socketRef.current.on("newGameRecord", (record) => {
+    socketRef.current.on("newGameRecord", () => {
       setRefreshKey((prev) => prev + 1);
     });
     socketRef.current.on("disconnect", () => console.log("Socket disconnected"));
     return () => socketRef.current.disconnect();
-  }, [chestAnimation.active, liveReplayIndex, selectedHistory]);
+  }, [liveReplayIndex, selectedHistory]);
 
-  // Phase polling.
+  // Fallback poll for phase
   useEffect(() => {
     const interval = setInterval(() => {
       fetch(`${backendUrl}/api/state`)
@@ -626,10 +1025,17 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Contract setup.
+  // Setup contracts
   useEffect(() => {
     if (!window.ethereum || !userAddress) return;
-    if (!gameAddress || !bettingAddress || !mizonsAddress || !chestMinterAddress || !chestOpenerAddress) {
+    if (
+      !gameAddress ||
+      !bettingAddress ||
+      !mizonsAddress ||
+      !chestMinterAddress ||
+      !chestOpenerAddress ||
+      !mizontreshAddress
+    ) {
       setErrorMsg("Missing contract addresses in env variables.");
       return;
     }
@@ -637,18 +1043,27 @@ function App() {
       try {
         const provider = new ethers.BrowserProvider(window.ethereum);
         const signer = await provider.getSigner();
+
         const gameC = new ethers.Contract(gameAddress, gameABI, signer);
         const bettingC = new ethers.Contract(bettingAddress, bettingABI, signer);
         const chestMinterC = new ethers.Contract(chestMinterAddress, chestMinterABI, signer);
         const chestOpenerC = new ethers.Contract(chestOpenerAddress, chestOpenerABI, signer);
+
         setGameContract(gameC);
         setBettingContract(bettingC);
         setChestMinterContract(chestMinterC);
         setChestOpenerContract(chestOpenerC);
-        if (skinLockAddress && skinLockAddress !== "0x0000000000000000000000000000000000000000") {
+
+        if (
+          skinLockAddress &&
+          skinLockAddress !== "0x0000000000000000000000000000000000000000"
+        ) {
           const lockC = new ethers.Contract(skinLockAddress, skinLockABI, signer);
           setSkinLockContract(lockC);
         }
+
+        const mizontreshC = new ethers.Contract(mizontreshAddress, mizontreshABI, signer);
+        setMizontreshContract(mizontreshC);
       } catch (err) {
         console.error("Error setting up contracts:", err);
         setErrorMsg("Error setting up contracts: " + err.message);
@@ -657,7 +1072,7 @@ function App() {
     setupContracts();
   }, [userAddress]);
 
-  // Bets polling.
+  // Fetch bets
   useEffect(() => {
     if (!phaseData.gameId) return;
     async function fetchBets() {
@@ -665,8 +1080,12 @@ function App() {
         const res = await fetch(`${backendUrl}/api/bets/${phaseData.gameId}`);
         const data = await res.json();
         if (data && data.bets) {
-          const red = data.bets.filter((b) => b.team === 1).reduce((sum, b) => sum + Number(b.tickets), 0);
-          const blue = data.bets.filter((b) => b.team === 2).reduce((sum, b) => sum + Number(b.tickets), 0);
+          const red = data.bets
+            .filter((b) => b.team === 1)
+            .reduce((sum, b) => sum + Number(b.tickets), 0);
+          const blue = data.bets
+            .filter((b) => b.team === 2)
+            .reduce((sum, b) => sum + Number(b.tickets), 0);
           setLiveRedBets(red);
           setLiveBlueBets(blue);
         }
@@ -679,7 +1098,7 @@ function App() {
     return () => clearInterval(interval);
   }, [phaseData.gameId]);
 
-  // Board history polling.
+  // Fetch board history
   useEffect(() => {
     const interval = setInterval(() => {
       fetch(`${backendUrl}/api/history`)
@@ -690,20 +1109,22 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Live board polling (only during placing phase).
+  // Poll live board if placing
   useEffect(() => {
     if (phaseData.phase !== "placing") return;
     if (selectedHistory || liveReplayIndex >= 0) return;
     const interval = setInterval(() => {
       fetch(`${backendUrl}/api/board`)
         .then((res) => res.json())
-        .then((data) => { if (data && data.board) setLiveBoard(data.board); })
+        .then((data) => {
+          if (data && data.board) setLiveBoard(data.board);
+        })
         .catch((err) => console.error("Error polling board:", err));
     }, 1000);
     return () => clearInterval(interval);
   }, [phaseData.phase, selectedHistory, liveReplayIndex]);
 
-  // Live auto-replay.
+  // Live auto replay
   useEffect(() => {
     if (!liveAutoReplay || boardHistory.length === 0) return;
     const autoInterval = setInterval(() => {
@@ -719,7 +1140,7 @@ function App() {
     return () => clearInterval(autoInterval);
   }, [liveAutoReplay, boardHistory]);
 
-  // Recorded auto-replay.
+  // Selected record auto replay
   useEffect(() => {
     if (!selectedAutoReplay || !selectedHistory || selectedHistory.length === 0) return;
     const autoInterval = setInterval(() => {
@@ -735,7 +1156,7 @@ function App() {
     return () => clearInterval(autoInterval);
   }, [selectedAutoReplay, selectedHistory]);
 
-  // Team info polling.
+  // Poll team counts
   useEffect(() => {
     if (!gameContract) return;
     if (selectedHistory || liveReplayIndex >= 0) return;
@@ -756,7 +1177,7 @@ function App() {
     return () => clearInterval(interval);
   }, [gameContract, userAddress, selectedHistory, liveReplayIndex, phaseData.gameId]);
 
-  // MIZ balance polling.
+  // Poll MIZ
   useEffect(() => {
     if (!userAddress) return;
     const provider = new ethers.BrowserProvider(window.ethereum);
@@ -770,7 +1191,7 @@ function App() {
     return () => clearInterval(interval);
   }, [userAddress]);
 
-  // Refresh chest inventory.
+  // Refresh chest inventory
   const refreshInventory = useCallback(async () => {
     if (!chestMinterContract || !userAddress) return;
     try {
@@ -789,11 +1210,12 @@ function App() {
       console.error("Error fetching inventory:", error);
     }
   }, [chestMinterContract, userAddress]);
+
   useEffect(() => {
     refreshInventory();
   }, [refreshInventory, status]);
 
-  // Fetch owned skins from ChestOpener.
+  // Fetch owned skins from chestOpener
   async function fetchOwnedSkinsFromOpener() {
     if (!chestOpenerContract || !userAddress) return;
     try {
@@ -805,7 +1227,6 @@ function App() {
         const tokenId = Number(tokenIdBN);
         const awardedItemBN = await chestOpenerContract.tokenAwardedItem(tokenId);
         const awardedItem = Number(awardedItemBN);
-        console.log(`Mapping minted token ${tokenId} to bakedID ${awardedItem}`);
         skins.push({ tokenId, bakedId: awardedItem });
       }
       setOwnedSkins(skins);
@@ -817,7 +1238,7 @@ function App() {
     fetchOwnedSkinsFromOpener();
   }, [chestOpenerContract, userAddress, status]);
 
-  // selectRecord.
+  // Selecting a record
   function selectRecord(rec) {
     setSelectedRecord(rec);
     if (rec.boardHistory && rec.boardHistory.length > 0) {
@@ -831,7 +1252,7 @@ function App() {
     }
   }
 
-  // joinTeam.
+  // Join team
   async function joinTeam(teamId) {
     if (!gameContract) {
       setErrorMsg("No contract connected.");
@@ -859,7 +1280,7 @@ function App() {
     }
   }
 
-  // placeSquare.
+  // Place square
   async function placeSquare(x, y) {
     if (!gameContract) {
       setErrorMsg("No contract connected.");
@@ -881,7 +1302,7 @@ function App() {
     }
   }
 
-  // handleMintChest.
+  // Mint chest
   async function handleMintChest() {
     if (!userAddress) {
       alert("Connect your wallet first!");
@@ -892,6 +1313,7 @@ function App() {
       return;
     }
     try {
+      // Step 1: Brain animation
       setChestAnimation({
         active: true,
         step: "brain",
@@ -900,6 +1322,8 @@ function App() {
         data: { image: `${backendUrl}/chests/brain.png` }
       });
       await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      // Step 2: Stir
       setChestAnimation({
         active: true,
         step: "stir",
@@ -908,23 +1332,31 @@ function App() {
         data: { image: `${backendUrl}/chests/brain.png` }
       });
       await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      // Mint
       const tx = await chestMinterContract.mintRandomChest({ gasLimit: 400000 });
       await tx.wait();
       await new Promise((resolve) => setTimeout(resolve, 800));
       refreshInventory();
       fetchOwnedSkinsFromOpener();
+
+      // Find new chest
       const balanceBN = await chestMinterContract.balanceOf(userAddress);
       const balance = Number(balanceBN);
       const tokenIdBN = await chestMinterContract.tokenOfOwnerByIndex(userAddress, balance - 1);
       const tokenId = Number(tokenIdBN);
       const chestTypeBN = await chestMinterContract.tokenChestType(tokenId);
       const chestType = Number(chestTypeBN);
+
+      // Metadata
       const metadataUrl = `${backendUrl}/chests/var/${chestType}.json`;
       const imageUrl = `${backendUrl}/chests/icons/chest${chestType}/frame1.png`;
       const response = await fetch(metadataUrl);
       if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
       const metadata = await response.json();
       metadata.image = imageUrl;
+
+      // Reveal
       setChestAnimation({
         active: true,
         step: "revealed",
@@ -937,11 +1369,17 @@ function App() {
       console.error("Error minting chest:", err);
       alert("Chest minting failed: " + err.message);
     } finally {
-      setChestAnimation({ active: false, step: null, data: null, chestType: null, frame: 0 });
+      setChestAnimation({
+        active: false,
+        step: null,
+        data: null,
+        chestType: null,
+        frame: 0
+      });
     }
   }
 
-  // handleOpenChest.
+  // Open chest
   async function handleOpenChest(tokenId) {
     const chest = inventory.find((c) => c.tokenId === tokenId);
     if (!chest) {
@@ -955,23 +1393,30 @@ function App() {
       frame: 1,
       data: null
     });
+
+    // Animate frames
     for (let i = 1; i <= 5; i++) {
       setChestAnimation((prev) => ({ ...prev, frame: i }));
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
     try {
-      const tx = await chestOpenerContract.openChest(tokenId, { value: ethers.parseEther("0.001") });
+      const tx = await chestOpenerContract.openChest(tokenId, {
+        value: ethers.parseEther("0.001")
+      });
       await tx.wait();
       const newItemIdBN = await chestOpenerContract.itemCounter();
       const newItemId = Number(newItemIdBN) - 1;
       const awardedItemBN = await chestOpenerContract.tokenAwardedItem(newItemId);
       const awardedItem = Number(awardedItemBN);
+
+      // Fetch item metadata
       const imageUrl = `${backendUrl}/skins/icons/${awardedItem}.png`;
       const metadataUrl = `${backendUrl}/skins/text1/${awardedItem}.json`;
       const response = await fetch(metadataUrl);
       if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
       const metadata = await response.json();
       metadata.image = imageUrl;
+
       setChestAnimation({
         active: true,
         step: "revealed",
@@ -984,12 +1429,19 @@ function App() {
       console.error("Error opening chest:", err);
       alert("Failed to open chest: " + err.message);
     } finally {
-      setChestAnimation({ active: false, step: null, data: null, chestType: null, frame: 0 });
+      setChestAnimation({
+        active: false,
+        step: null,
+        data: null,
+        chestType: null,
+        frame: 0
+      });
       refreshInventory();
       fetchOwnedSkinsFromOpener();
     }
   }
 
+  // Approve MIZ tokens for chest purchase
   async function approveTokens() {
     if (!userAddress) {
       alert("Connect your wallet first!");
@@ -999,7 +1451,9 @@ function App() {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const mizonsContract = new ethers.Contract(mizonsAddress, mizonsABI, signer);
-      const tx = await mizonsContract.approve(chestMinterAddress, "1000000000000", { gasLimit: 100000 });
+      const tx = await mizonsContract.approve(chestMinterAddress, "1000000000000", {
+        gasLimit: 100000
+      });
       await tx.wait();
       alert("Approval successful!");
     } catch (err) {
@@ -1008,6 +1462,7 @@ function App() {
     }
   }
 
+  // Place bet
   async function placeBet(teamId) {
     if (!bettingContract) {
       setErrorMsg("No betting contract available.");
@@ -1020,7 +1475,9 @@ function App() {
     try {
       setStatus(`Placing ${betAmount} bet(s) on ${teamId === 1 ? "Red" : "Blue"}...`);
       for (let i = 0; i < betAmount; i++) {
-        const tx = await bettingContract.placeBet(phaseData.gameId, teamId, 1, { value: ethers.parseEther("0.00005") });
+        const tx = await bettingContract.placeBet(phaseData.gameId, teamId, 1, {
+          value: ethers.parseEther("0.00005")
+        });
         await tx.wait();
       }
       setStatus(`${betAmount} bet(s) placed on ${teamId === 1 ? "Red" : "Blue"}!`);
@@ -1031,47 +1488,12 @@ function App() {
     }
   }
 
-  const livePrevBoard = () => {
-    if (boardHistory.length === 0) return;
-    setLiveReplayIndex((prev) => (prev < 0 ? boardHistory.length - 1 : Math.max(0, prev - 1)));
-  };
-  const liveNextBoard = () => {
-    if (boardHistory.length === 0) return;
-    setLiveReplayIndex((prev) => (prev < 0 ? 0 : Math.min(boardHistory.length - 1, prev + 1)));
-  };
-  const liveGoToLive = () => {
-    setLiveAutoReplay(false);
-    setLiveReplayIndex(-1);
-  };
-  const liveToggleAutoReplay = () => {
-    if (boardHistory.length === 0) return;
-    if (liveReplayIndex < 0) setLiveReplayIndex(0);
-    setLiveAutoReplay((prev) => !prev);
-  };
-
-  const recordPrevBoard = () => {
-    if (!selectedHistory || selectedHistory.length === 0) return;
-    setSelectedReplayIndex((prev) => (prev < 0 ? selectedHistory.length - 1 : Math.max(0, prev - 1)));
-  };
-  const recordNextBoard = () => {
-    if (!selectedHistory || selectedHistory.length === 0) return;
-    setSelectedReplayIndex((prev) => (prev < 0 ? 0 : Math.min(selectedHistory.length - 1, prev + 1)));
-  };
-  const recordToggleAutoReplay = () => {
-    if (!selectedHistory || selectedHistory.length === 0) return;
-    if (!selectedAutoReplay) setSelectedReplayIndex(0);
-    setSelectedAutoReplay((prev) => !prev);
-  };
-  const recordGoBackToLive = () => {
-    setSelectedRecord(null);
-    setSelectedHistory(null);
-    setSelectedReplayIndex(-1);
-    setSelectedAutoReplay(false);
-  };
-
+  // Decide which board to display (live or record)
   let displayBoard;
   if (selectedHistory) {
-    const replayIndex = selectedReplayIndex < 0 ? selectedHistory.length - 1 : selectedReplayIndex;
+    const replayIndex = selectedReplayIndex < 0
+      ? selectedHistory.length - 1
+      : selectedReplayIndex;
     displayBoard = convertToAugmentedBoard(selectedHistory[replayIndex]);
   } else if (liveReplayIndex >= 0 && boardHistory.length > 0) {
     const idx = Math.min(liveReplayIndex, boardHistory.length - 1);
@@ -1080,15 +1502,15 @@ function App() {
     displayBoard = liveBoard;
   }
 
-  // NEW: Determine the skin grid to use.
-  // If history mode data exists, use it; otherwise, use the live skinOverlay fetched from backend.
+  // Which skin overlay to show?
   const currentSkinGrid =
-    (selectedRecord && selectedRecord.skinHistory && selectedHistory
+    selectedRecord && selectedRecord.skinHistory && selectedHistory
       ? selectedReplayIndex >= 0
         ? selectedRecord.skinHistory[selectedReplayIndex]
         : selectedRecord.skinHistory[selectedRecord.skinHistory.length - 1]
-      : skinOverlay) || skinOverlay;
+      : skinOverlay;
 
+  // Counting squares across the center
   function computeOpposingStats(board) {
     let redOnBlue = 0;
     let blueOnRed = 0;
@@ -1106,59 +1528,92 @@ function App() {
   const totalOpposing = redOnBlue + blueOnRed;
   const redPercent = totalOpposing > 0 ? (redOnBlue / totalOpposing) * 100 : 50;
   const bluePercent = totalOpposing > 0 ? (blueOnRed / totalOpposing) * 100 : 50;
-  const showVeil = phaseData.phase === "placing" && !selectedRecord && liveReplayIndex < 0;
+
+  const showVeil = phaseData.phase === "placing" && !selectedHistory && liveReplayIndex < 0;
+
+  if (!isVerified) {
+    return (
+      <AgeVerification
+        onVerify={(answer) => {
+          if (answer) setIsVerified(true);
+          else window.location.href = "about:blank";
+        }}
+      />
+    );
+  }
+
+  function recordGoBackToLive() {
+    setSelectedRecord(null);
+    setSelectedHistory(null);
+    setSelectedReplayIndex(-1);
+    setSelectedAutoReplay(false);
+  }
 
   return (
     <div className="app-container" style={{ margin: 0, padding: 0, height: "100vh" }}>
-      {/* Chest Animation Overlay */}
-      {chestAnimation.active && (
-        <div className="chest-animation-overlay">
-          <div className="chest-animation-content">
-            {chestAnimation.step === "brain" && chestAnimation.data && <img src={chestAnimation.data.image} alt="Brain Chest" />}
-            {chestAnimation.step === "stir" && chestAnimation.data && <img className="stir" src={chestAnimation.data.image} alt="Brain Chest Stirring" />}
-            {chestAnimation.step === "opening" && chestAnimation.chestType !== null && (
-              <img src={`${backendUrl}/chests/icons/chest${chestAnimation.chestType}/frame${chestAnimation.frame}.png`} alt={`Chest Frame ${chestAnimation.frame}`} />
-            )}
-            {chestAnimation.step === "revealed" && chestAnimation.data && (
-              <>
-                <img src={chestAnimation.data.image} alt={chestAnimation.data.name} />
-                <h3>{chestAnimation.data.name}</h3>
-                <p>{chestAnimation.data.description}</p>
-              </>
-            )}
-          </div>
-        </div>
+      <MusicPlayer backendUrl={backendUrl} />
+
+      {showInfoPanel && <InfoPanel onClose={() => setShowInfoPanel(false)} />}
+      {showMizontreshOverlay && mizontreshContract && (
+        <MizontreshOverlay
+          onClose={() => setShowMizontreshOverlay(false)}
+          mizontreshContract={mizontreshContract}
+          skinLockAddress={skinLockAddress}
+          skinLockContract={skinLockContract}
+          userAddress={userAddress}
+          refreshInventory={refreshInventory}
+        />
       )}
 
-      {/* Title Bar */}
       <div className="title-bar" style={{ textAlign: "center", marginBottom: "2px" }}>
         <h1 style={{ margin: 0, fontSize: "3rem" }}>Game of Death</h1>
       </div>
-
-      {/* Scoreboard */}
       <div className="scoreboard-bar-container" style={{ marginBottom: "4px" }}>
         <div className="score-bar">
           <div className="score-bar-red" style={{ width: `${redPercent}%` }} />
           <div className="score-bar-blue" style={{ width: `${bluePercent}%` }} />
         </div>
       </div>
-
-      {/* Wallet Corner */}
       <div className="wallet-corner">
         {userAddress ? (
           <>
-            <p className="tiny-wallet">{userAddress.slice(0, 6)}...{userAddress.slice(-4)}</p>
-            <button className="corner-btn" onClick={disconnectWallet}>Disconnect</button>
+            <p className="tiny-wallet">
+              {userAddress.slice(0, 6)}...{userAddress.slice(-4)}
+            </p>
+            <button className="corner-btn" onClick={disconnectWallet}>
+              Disconnect
+            </button>
           </>
         ) : (
-          <button className="corner-btn" onClick={connectWallet}>Connect Wallet</button>
+          <button className="corner-btn" onClick={connectWallet}>
+            Connect Wallet
+          </button>
         )}
       </div>
 
-      {/* Main Content Layout */}
       <div className="main-content">
-        <div className="left-panel" style={{ width: "300px", padding: "5px", boxSizing: "border-box", minHeight: "600px", overflowY: "auto" }}>
-          <div className="red-panel" style={{ width: "270px", padding: "10px", boxSizing: "border-box", minHeight: "80px", overflowY: "auto", marginTop: "6px", height: "220px" }}>
+        {/* LEFT PANEL */}
+        <div
+          className="left-panel"
+          style={{
+            width: "300px",
+            padding: "5px",
+            boxSizing: "border-box",
+            minHeight: "600px",
+            overflowY: "auto"
+          }}
+        >
+          <div
+            className="red-panel"
+            style={{
+              width: "270px",
+              padding: "10px",
+              boxSizing: "border-box",
+              minHeight: "80px",
+              marginTop: "6px",
+              height: "220px"
+            }}
+          >
             <h2 className="section-title">Your MIZ</h2>
             <div className="miz-balance-container">
               <img src={logo} alt="MIZ Logo" className="miz-logo" />
@@ -1167,43 +1622,131 @@ function App() {
             {skinLockContract && (
               <div className="locked-skins-section">
                 <h3>Locked Skins</h3>
-                <LockedSkinSlots userAddress={userAddress} skinLockContract={skinLockContract} backendUrl={backendUrl} refreshLockedSkins={fetchOwnedSkinsFromOpener} />
+                <LockedSkinSlots
+                  userAddress={userAddress}
+                  skinLockContract={skinLockContract}
+                  backendUrl={backendUrl}
+                  refreshLockedSkins={fetchOwnedSkinsFromOpener}
+                />
               </div>
             )}
           </div>
 
-          {/* Chest & Buttons */}
-          <div className="chest-roll-section" style={{ width: "270px", position: "relative", marginTop: "10px" }}>
-            <div style={{ position: "relative", width: "100px", margin: "0 auto", cursor: "pointer" }} onClick={handleMintChest}>
-              <img src={`${backendUrl}/chests/brain.png`} alt="Brain Chest" style={{ width: "100px", height: "auto" }} />
-              <button className="chest-square-button lore-info" style={{ fontSize: "0.8rem" }} onClick={(e) => { e.stopPropagation(); fetchOwnedSkinsFromOpener().then(() => setShowLorePanel(true)); }}>Lore</button>
-              <button className="chest-square-button skin" style={{ fontSize: "0.8rem" }} onClick={(e) => { e.stopPropagation(); fetchOwnedSkinsFromOpener().then(() => setShowWholeSkins(true)); }}>SKIN</button>
-              <button className="chest-square-button stop" style={{ padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={(e) => { e.stopPropagation(); alert("This button uses a mizontresh image!"); }}>
-                <img src={`${backendUrl}/skins/icons/mizontresh.png`} alt="mizontresh" style={{ width: "70%", height: "70%", objectFit: "contain" }} />
+          <div
+            className="chest-roll-section"
+            style={{ width: "270px", position: "relative", marginTop: "10px" }}
+          >
+            <div
+              style={{ position: "relative", width: "100px", margin: "0 auto", cursor: "pointer" }}
+              onClick={handleMintChest}
+            >
+              <img
+                src={`${backendUrl}/chests/brain.png`}
+                alt="Brain Chest"
+                style={{ width: "100px", height: "auto" }}
+              />
+              <button
+                className="chest-square-button lore-info"
+                style={{ fontSize: "0.8rem" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fetchOwnedSkinsFromOpener().then(() => setShowLorePanel(true));
+                }}
+              >
+                Lore
               </button>
-              <button className="chest-square-button info" style={{ fontSize: "0.8rem" }} onClick={(e) => { e.stopPropagation(); alert("Some Info about the game/chest!"); }}>INFO</button>
+              <button
+                className="chest-square-button skin"
+                style={{ fontSize: "0.8rem" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fetchOwnedSkinsFromOpener().then(() => setShowWholeSkins(true));
+                }}
+              >
+                SKIN
+              </button>
+              <button
+                className="chest-square-button stop"
+                style={{
+                  padding: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "#222",
+                  border: "1px solid #ff00e2",
+                  borderRadius: "4px"
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMizontreshOverlay(true);
+                }}
+              >
+                <img
+                  src={`${backendUrl}/skins/icons/1024.png`}
+                  alt="1024"
+                  style={{ width: "70%", height: "70%", objectFit: "contain" }}
+                />
+              </button>
+              <button
+                className="chest-square-button info"
+                style={{ fontSize: "0.8rem" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowInfoPanel(true);
+                }}
+              >
+                INFO
+              </button>
             </div>
             <div style={{ textAlign: "center", marginTop: "10px" }}>
               <button onClick={approveTokens}>Approve Tokens</button>
-              <button onClick={handleMintChest} style={{ display: "block", margin: "6px auto" }}>Mint Chest</button>
+              <button onClick={handleMintChest} style={{ display: "block", margin: "6px auto" }}>
+                Mint Chest
+              </button>
             </div>
-            <div className="inventory" style={{ marginTop: "6px", width: "255px", height: "64px", overflowY: "auto" }}>
-              <h3 style={{ fontSize: "1rem", textAlign: "center", margin: "0 0 4px 0" }}>Your Inventory</h3>
-              <Inventory inventory={inventory} backendUrl={backendUrl} onOpenChest={handleOpenChest} />
+            <div
+              className="inventory"
+              style={{ marginTop: "6px", width: "255px", height: "64px", overflowY: "auto" }}
+            >
+              <h3
+                style={{ fontSize: "1rem", textAlign: "center", margin: "0 0 4px 0" }}
+              >
+                Your Inventory
+              </h3>
+              <Inventory
+                inventory={inventory}
+                backendUrl={backendUrl}
+                onOpenChest={handleOpenChest}
+              />
             </div>
           </div>
 
-          {/* Phase & Bet Info */}
           <div style={{ marginTop: "10px", width: "100%" }}>
             <div className="phase-info-card" style={{ marginBottom: "8px" }}>
               <p style={{ margin: 0 }}>Phase: {phaseData.phase}</p>
-              <p style={{ margin: 0 }}>Time Left: {phaseData.timeLeft > 0 ? phaseData.timeLeft : 0}s</p>
+              <p style={{ margin: 0 }}>
+                Time Left: {phaseData.timeLeft > 0 ? phaseData.timeLeft : 0}s
+              </p>
               <p style={{ margin: 0 }}>Game ID: {phaseData.gameId}</p>
             </div>
-            <p style={{ margin: "4px 0" }}>Your Team: {userTeam === 1 ? "Red" : userTeam === 2 ? "Blue" : "None"}</p>
+            <p style={{ margin: "4px 0" }}>
+              Your Team: {userTeam === 1 ? "Red" : userTeam === 2 ? "Blue" : "None"}
+            </p>
             <div className="join-team-buttons" style={{ marginBottom: "6px" }}>
-              <button className="join-red" onClick={() => joinTeam(1)} disabled={phaseData.phase !== "picking"}>Join Red</button>
-              <button className="join-blue" onClick={() => joinTeam(2)} disabled={phaseData.phase !== "picking"}>Join Blue</button>
+              <button
+                className="join-red"
+                onClick={() => joinTeam(1)}
+                disabled={phaseData.phase !== "picking"}
+              >
+                Join Red
+              </button>
+              <button
+                className="join-blue"
+                onClick={() => joinTeam(2)}
+                disabled={phaseData.phase !== "picking"}
+              >
+                Join Blue
+              </button>
             </div>
             <p style={{ margin: 0 }}>Team Red: {teamCounts.red}</p>
             <p style={{ margin: 0 }}>Team Blue: {teamCounts.blue}</p>
@@ -1211,23 +1754,71 @@ function App() {
             <p style={{ margin: 0 }}>Red Bets: {liveRedBets}</p>
             <p style={{ margin: 0 }}>Blue Bets: {liveBlueBets}</p>
             <p style={{ margin: 0 }}>Tickets: {betAmount}</p>
-            <input type="range" min="1" max="10" value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} />
+            <input
+              type="range"
+              min="1"
+              max="10"
+              value={betAmount}
+              onChange={(e) => setBetAmount(Number(e.target.value))}
+            />
             <div className="bet-buttons" style={{ marginTop: "6px" }}>
-              <button className="bet-red" onClick={() => placeBet(1)} disabled={phaseData.phase !== "picking"}>Bet Red</button>
-              <button className="bet-blue" onClick={() => placeBet(2)} disabled={phaseData.phase !== "picking"}>Bet Blue</button>
+              <button
+                className="bet-red"
+                onClick={() => placeBet(1)}
+                disabled={phaseData.phase !== "picking"}
+              >
+                Bet Red
+              </button>
+              <button
+                className="bet-blue"
+                onClick={() => placeBet(2)}
+                disabled={phaseData.phase !== "picking"}
+              >
+                Bet Blue
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Center Board */}
+        {/* CENTER BOARD */}
         <div className="center-board" style={{ position: "relative" }}>
-          <div className="board-container" style={{ width: boardSize, height: boardSize, marginBottom: "6px", position: "relative" }}>
+          <div
+            className="board-container"
+            style={{
+              width: boardSize,
+              height: boardSize,
+              marginBottom: "6px",
+              position: "relative"
+            }}
+          >
             <div className="board-border" style={{ position: "relative" }}>
               {showVeil && userTeam === 1 && (
-                <div style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: "50%", background: "rgba(0,0,0,0.3)", pointerEvents: "none", zIndex: 10 }} />
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "50%",
+                    background: "rgba(0,0,0,0.3)",
+                    pointerEvents: "none",
+                    zIndex: 10
+                  }}
+                />
               )}
               {showVeil && userTeam === 2 && (
-                <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "50%", background: "rgba(0,0,0,0.3)", pointerEvents: "none", zIndex: 10 }} />
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "50%",
+                    background: "rgba(0,0,0,0.3)",
+                    pointerEvents: "none",
+                    zIndex: 10
+                  }}
+                />
               )}
               <div className="board-grid">
                 {displayBoard.map((cell, i) => {
@@ -1241,23 +1832,54 @@ function App() {
                     if (userTeam === 2 && y < 32) cellClass += " dim-cell";
                   }
                   return (
-                    <div key={i} className={cellClass} onClick={() => { if (selectedHistory) return; if (phaseData.phase !== "placing") return; if (userTeam === 1 && y >= 32) return; if (userTeam === 2 && y < 32) return; placeSquare(x, y); }} />
+                    <div
+                      key={i}
+                      className={cellClass}
+                      onClick={() => {
+                        if (selectedHistory) return;
+                        if (phaseData.phase !== "placing") return;
+                        if (userTeam === 1 && y >= 32) return;
+                        if (userTeam === 2 && y < 32) return;
+                        placeSquare(x, y);
+                      }}
+                    />
                   );
                 })}
               </div>
-              {/* NEW: Skin Overlay Layer */}
-              <div style={{ position: "absolute", top: 0, left: 0, width: boardSize, height: boardSize, zIndex: 5000, pointerEvents: "none", display: "grid", gridTemplateColumns: "repeat(64, 1fr)", gridTemplateRows: "repeat(64, 1fr)" }}>
+
+              {/* Skin Overlay */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: boardSize,
+                  height: boardSize,
+                  zIndex: 5000,
+                  pointerEvents: "none",
+                  display: "grid",
+                  gridTemplateColumns: "repeat(64, 1fr)",
+                  gridTemplateRows: "repeat(64, 1fr)"
+                }}
+              >
                 {currentSkinGrid.map((skin, i) =>
                   skin ? (
-                    <img key={i} src={`${backendUrl}/skins/icons/${skin}.png`} alt={`Skin ${skin}`} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                    <img
+                      key={i}
+                      src={`${backendUrl}/skins/icons/${skin}.png`}
+                      alt={`Skin ${skin}`}
+                      style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                    />
                   ) : (
-                    <div key={i} style={{ width: "100%", height: "100%" }} />
+                    <div
+                      key={i}
+                      style={{ width: "100%", height: "100%" }}
+                    />
                   )
                 )}
               </div>
             </div>
           </div>
-          {/* Static LIVE Indicator */}
           {!selectedHistory && (
             <div style={{ marginBottom: "4px", textAlign: "center" }}>
               <span style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#fff" }}>LIVE</span>
@@ -1265,42 +1887,114 @@ function App() {
           )}
         </div>
 
-        {/* Right Panel */}
+        {/* RIGHT PANEL */}
         <div className="right-panel" style={{ width: "300px" }}>
           <h2 style={{ margin: "0 0 8px 0" }}>Game Records</h2>
-          <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginBottom: "8px" }}>
-            <button className="toggle-btn" onClick={() => { setShowMyGames(false); setRefreshKey((prev) => prev + 1); }}>All Games</button>
-            <button className="toggle-btn" onClick={() => { setShowMyGames(true); setRefreshKey((prev) => prev + 1); }} disabled={!userAddress}>My Games</button>
+          <div
+            style={{
+              display: "flex",
+              gap: "8px",
+              justifyContent: "center",
+              marginBottom: "8px"
+            }}
+          >
+            <button
+              className="toggle-btn"
+              onClick={() => {
+                setShowMyGames(false);
+                setRefreshKey((prev) => prev + 1);
+              }}
+            >
+              All Games
+            </button>
+            <button
+              className="toggle-btn"
+              onClick={() => {
+                setShowMyGames(true);
+                setRefreshKey((prev) => prev + 1);
+              }}
+              disabled={!userAddress}
+            >
+              My Games
+            </button>
           </div>
-          <RecordsList backendUrl={backendUrl} showMyGames={showMyGames} userAddress={userAddress} onSelectRecord={selectRecord} refreshKey={refreshKey} />
+          <RecordsList
+            backendUrl={backendUrl}
+            showMyGames={showMyGames}
+            userAddress={userAddress}
+            onSelectRecord={selectRecord}
+            refreshKey={refreshKey}
+          />
+
+          {/* Selected record details */}
           {selectedRecord && selectedHistory && (
             <div style={{ marginTop: "10px" }}>
               <h3>Game #{selectedRecord.gameId} Details</h3>
-              <p>Played at: {selectedRecord.timestamp ? new Date(selectedRecord.timestamp).toLocaleString() : "N/A"}</p>
+              <p>
+                Played at:{" "}
+                {selectedRecord.timestamp
+                  ? new Date(selectedRecord.timestamp).toLocaleString()
+                  : "N/A"}
+              </p>
               <p>Winner: {selectedRecord.winner}</p>
-              <p>Team Red: {selectedRecord.teamRedCount} | Team Blue: {selectedRecord.teamBlueCount}</p>
-              {selectedRecord.thumbnail && <img src={selectedRecord.thumbnail} alt={`Game #${selectedRecord.gameId}`} style={{ width: "150px", height: "150px", objectFit: "cover" }} />}
+              <p>
+                Team Red: {selectedRecord.teamRedCount} | Team Blue: {selectedRecord.teamBlueCount}
+              </p>
+              {selectedRecord.thumbnail && (
+                <img
+                  src={selectedRecord.thumbnail}
+                  alt={`Game #${selectedRecord.gameId}`}
+                  style={{ width: "150px", height: "150px", objectFit: "cover" }}
+                />
+              )}
               <div style={{ marginTop: "6px" }}>
-                <button className="auto-replay-btn" onClick={() => { setSelectedAutoReplay(!selectedAutoReplay); if (!selectedAutoReplay) setSelectedReplayIndex(0); }}>
+                <button
+                  className="auto-replay-btn"
+                  onClick={() => {
+                    setSelectedAutoReplay(!selectedAutoReplay);
+                    if (!selectedAutoReplay) setSelectedReplayIndex(0);
+                  }}
+                >
                   {selectedAutoReplay ? "Stop Auto Replay" : "Start Auto Replay"}
                 </button>
               </div>
               <div className="replay-container" style={{ justifyContent: "center" }}>
-                <button onClick={recordPrevBoard}>←</button>
+                <button
+                  onClick={() => {
+                    setSelectedReplayIndex((prev) => {
+                      if (selectedHistory.length === 0) return -1;
+                      if (prev < 0) return selectedHistory.length - 1;
+                      return Math.max(0, prev - 1);
+                    });
+                  }}
+                >
+                  ←
+                </button>
                 <button onClick={recordGoBackToLive}>Exit</button>
-                <button onClick={recordNextBoard}>→</button>
+                <button
+                  onClick={() => {
+                    setSelectedReplayIndex((prev) => {
+                      if (selectedHistory.length === 0) return -1;
+                      if (prev < 0) return 0;
+                      return Math.min(selectedHistory.length - 1, prev + 1);
+                    });
+                  }}
+                >
+                  →
+                </button>
               </div>
               {selectedReplayIndex < 0 ? (
                 <p>Viewing final snapshot</p>
               ) : (
-                <p>Viewing Board {selectedReplayIndex + 1}/{selectedHistory.length}</p>
+                <p>
+                  Viewing Board {selectedReplayIndex + 1}/{selectedHistory.length}
+                </p>
               )}
             </div>
           )}
         </div>
       </div>
 
-      {/* Overlays for Whole Skins and Lore */}
       {showWholeSkins && chestOpenerContract && (
         <WholeSkinsPanel
           onClose={() => setShowWholeSkins(false)}
@@ -1312,12 +2006,16 @@ function App() {
           skinLockContract={skinLockContract}
         />
       )}
-      {showLorePanel && <LorePanel onClose={() => setShowLorePanel(false)} ownedSkins={ownedSkins} />}
+      {showLorePanel && (
+        <LorePanel onClose={() => setShowLorePanel(false)} ownedSkins={ownedSkins} />
+      )}
 
       {errorMsg && (
         <div className="error-bar">
           {errorMsg}
-          <button className="error-close" onClick={() => setErrorMsg("")}>x</button>
+          <button className="error-close" onClick={() => setErrorMsg("")}>
+            x
+          </button>
         </div>
       )}
     </div>

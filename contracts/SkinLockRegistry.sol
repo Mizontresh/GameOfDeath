@@ -13,88 +13,100 @@ interface IAllowedNFT {
 /**
  * @title SkinLockRegistry
  * @notice This contract acts as a reversible NFT locker.
- * It only accepts tokens sent via safeTransferFrom if they come from a designated allowed NFT contract.
- * When an NFT is sent here, the contract queries the allowed NFT contract (via tokenAwardedItem)
- * to compute the token’s baked ID (e.g. a number from 0 to 1023) and stores this baked ID along with the tokenId and original owner.
- *
- * Each address can lock up to 3 skins. The contract provides a getter to retrieve for each owner
- * a list of locked tokens along with their baked IDs.
+ *         It only accepts tokens sent via safeTransferFrom if they come from an allowed NFT contract.
  */
 contract SkinLockRegistry is Ownable, IERC721Receiver {
-    // The allowed NFT contract address.
-    address public allowedNFT;
+    // Mapping to track allowed NFT contract addresses.
+    mapping(address => bool) public allowedNFTs;
 
     // Mapping from token ID to the original owner.
     mapping(uint256 => address) public lockedTokens;
 
-    // Struct that stores locked token data.
+    // Mapping from token ID to the origin NFT contract address.
+    mapping(uint256 => address) public tokenOrigin;
+
+    // Struct to store locked token data.
     struct LockedSkin {
         uint256 tokenId;
         uint256 bakedId;
     }
 
-    // Mapping from owner to an array of their locked skins.
+    // Mapping from owner => array of their locked skins
     mapping(address => LockedSkin[]) private lockedSkinsOf;
 
-    // Maximum number of skins an address can lock.
+    // Maximum skins each address may lock.
     uint256 public constant MAX_LOCKED_SKINS = 3;
 
-    // Emitted when a token is locked.
+    // Events
     event TokenLocked(
         uint256 indexed tokenId,
         address indexed originalOwner,
-        address nftContract,
+        address indexed nftContract,
         uint256 bakedId,
         uint256 timestamp
     );
-
-    // Emitted when a token is unlocked.
     event TokenUnlocked(
         uint256 indexed tokenId,
         address indexed returnedTo,
-        address nftContract,
+        address indexed nftContract,
         uint256 timestamp
     );
 
     /**
-     * @notice Constructor sets the allowed NFT contract address.
-     * @param _allowedNFT The address of the NFT contract allowed to send tokens.
+     * @notice Constructor requires you to specify an owner, and optionally an initial allowed NFT.
+     * @param _initialAllowedNFT The address of the NFT contract to allow by default. (Or `address(0)` if none.)
+     * @param initialOwner The address to set as owner (Ownable).
      */
-    constructor(address _allowedNFT) Ownable(msg.sender) {
-        require(_allowedNFT != address(0), "Allowed NFT address cannot be zero");
-        allowedNFT = _allowedNFT;
+    constructor(address _initialAllowedNFT, address initialOwner) Ownable(initialOwner) {
+        if (_initialAllowedNFT != address(0)) {
+            allowedNFTs[_initialAllowedNFT] = true;
+        }
     }
 
     /**
-     * @notice Handles safe transfers of NFTs.
-     * @dev This function is automatically called when an NFT is sent via safeTransferFrom.
-     * Extra data is provided but ignored; instead, the contract calls tokenAwardedItem on the allowed NFT.
-     * @param _operator The address that initiated the transfer.
-     * @param from The original owner of the token.
-     * @param tokenId The token ID being locked.
-     * @param _data Extra data (ignored).
-     * @return bytes4 Returns the selector to confirm receipt.
+     * @notice Add an allowed NFT contract (only owner).
+     */
+    function addAllowedNFT(address nftAddress) external onlyOwner {
+        require(nftAddress != address(0), "Zero address");
+        allowedNFTs[nftAddress] = true;
+    }
+
+    /**
+     * @notice Remove an allowed NFT contract (only owner).
+     */
+    function removeAllowedNFT(address nftAddress) external onlyOwner {
+        allowedNFTs[nftAddress] = false;
+    }
+
+    /**
+     * @notice The ERC721Receiver callback. Called when an NFT is transferred via safeTransferFrom.
+     * @dev Requires:
+     *  1) `allowedNFTs[msg.sender]` is true.
+     *  2) The original owner hasn't locked >= MAX_LOCKED_SKINS.
+     *  3) The token isn't already locked.
+     *  4) We can read a bakedId from `tokenAwardedItem(tokenId)`.
      */
     function onERC721Received(
-        address _operator,
+        address operator,
         address from,
         uint256 tokenId,
-        bytes calldata _data
+        bytes calldata data
     ) external override returns (bytes4) {
-        // Ensure the token comes from the allowed NFT contract.
-        require(msg.sender == allowedNFT, "Token not from allowed NFT contract");
+        // Ensure the NFT contract is allowed.
+        require(allowedNFTs[msg.sender], "Token not from an allowed NFT contract");
 
-        // Check that the sender hasn't already locked the maximum allowed skins.
-        require(lockedSkinsOf[from].length < MAX_LOCKED_SKINS, "Maximum locked skins reached");
+        // Check that the sender hasn't locked more than the maximum allowed.
+        require(lockedSkinsOf[from].length < MAX_LOCKED_SKINS, "Max locked skins reached");
 
-        // Ensure the token is not already locked.
+        // Ensure the token isn't already locked.
         require(lockedTokens[tokenId] == address(0), "Token already locked");
 
-        // Instead of using _data, query the allowed NFT for the baked ID.
+        // Query the NFT contract for the baked ID.
         uint256 bakedId = IAllowedNFT(msg.sender).tokenAwardedItem(tokenId);
 
-        // Record the original owner.
+        // Record the original owner and origin of the token.
         lockedTokens[tokenId] = from;
+        tokenOrigin[tokenId] = msg.sender;
 
         // Store the locked skin data.
         lockedSkinsOf[from].push(LockedSkin(tokenId, bakedId));
@@ -106,15 +118,13 @@ contract SkinLockRegistry is Ownable, IERC721Receiver {
 
     /**
      * @notice Returns an array of locked skins for a given owner.
-     * @param owner The address to query.
-     * @return An array of LockedSkin structs.
      */
     function getLockedSkins(address owner) external view returns (LockedSkin[] memory) {
         return lockedSkinsOf[owner];
     }
 
     /**
-     * @notice Unlocks an NFT, returning it to its original owner.
+     * @notice Unlock an NFT, returning it to its original owner.
      * @param tokenId The token ID to unlock.
      */
     function unlockNFT(uint256 tokenId) external {
@@ -122,10 +132,11 @@ contract SkinLockRegistry is Ownable, IERC721Receiver {
         require(originalOwner != address(0), "Token is not locked");
         require(msg.sender == originalOwner, "Only the original owner can unlock");
 
-        // Clear the locked token record.
         lockedTokens[tokenId] = address(0);
+        address origin = tokenOrigin[tokenId];
+        tokenOrigin[tokenId] = address(0);
 
-        // Remove the token from the owner's lockedSkins array.
+        // Remove token from owner's lockedSkins array
         LockedSkin[] storage skins = lockedSkinsOf[originalOwner];
         for (uint256 i = 0; i < skins.length; i++) {
             if (skins[i].tokenId == tokenId) {
@@ -135,18 +146,17 @@ contract SkinLockRegistry is Ownable, IERC721Receiver {
             }
         }
 
-        // Transfer the NFT back to the original owner.
-        IERC721(allowedNFT).safeTransferFrom(address(this), originalOwner, tokenId);
+        IERC721(origin).safeTransferFrom(address(this), originalOwner, tokenId);
 
-        emit TokenUnlocked(tokenId, originalOwner, allowedNFT, block.timestamp);
+        emit TokenUnlocked(tokenId, originalOwner, origin, block.timestamp);
     }
 
     /**
-     * @notice Withdraws any Ether held in the contract to the owner's address.
+     * @notice Withdraw any Ether if it ever accumulates here.
      */
     function withdraw() external onlyOwner {
         uint256 balance = address(this).balance;
-        require(balance > 0, "No Ether available for withdrawal");
+        require(balance > 0, "No Ether to withdraw");
         payable(owner()).transfer(balance);
     }
 }

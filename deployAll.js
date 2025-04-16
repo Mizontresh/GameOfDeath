@@ -32,9 +32,7 @@ async function main() {
   console.log("GameOfDeathBetting deployed at:", betting.target);
 
   // 4. Deploy ChestMinter
-  // Use the deployed Mizons address for the Mizon token.
   const mizonTokenAddress = mizons.target;
-  // Base URI for ChestMinter metadata stored on IPFS (must end with a slash)
   const chestMinterBaseURI = "ipfs://bafybeibt3pnsfi47jarhjyd7f2q67o35wjaibpjhaaganbhdapcmbn47qm/";
   const ChestMinter = await ethers.getContractFactory("ChestMinter");
   const chestMinter = await ChestMinter.deploy(mizonTokenAddress, chestMinterBaseURI);
@@ -42,32 +40,48 @@ async function main() {
   console.log("ChestMinter deployed at:", chestMinter.target);
 
   // 5. Deploy ChestOpener
-  // Use the deployed ChestMinter address and set the base URI for item metadata.
   const chestMinterAddress = chestMinter.target;
-  const itemBaseURI = "ipfs://bafybeih4hewzsynt25ornpwgjlhr2dp4y4l2tyq4qirb4fptxggw47jfv4/";
+  const itemBaseURI = "ipfs://bafybeih3u3jnucrmt4lwlbpe2uecnaybwm7g5mtnnarek7252wcpyydxga/";
   const ChestOpener = await ethers.getContractFactory("ChestOpener");
   const chestOpener = await ChestOpener.deploy(chestMinterAddress, itemBaseURI);
   await chestOpener.waitForDeployment();
   console.log("ChestOpener deployed at:", chestOpener.target);
 
   // 6. Deploy SkinLockRegistry
-  // Allowed NFT is the ChestOpener contract (the new address after deployment).
-  const allowedNFT = chestOpener.target;
+  // Provide TWO arguments: the initial allowed NFT, plus the "owner" address for Ownable.
+  const allowedNFT = chestOpener.target; // or ethers.ZeroAddress if you want none
   const SkinLockRegistry = await ethers.getContractFactory("SkinLockRegistry");
-  const skinLockRegistry = await SkinLockRegistry.deploy(allowedNFT);
+  const skinLockRegistry = await SkinLockRegistry.deploy(allowedNFT, deployerAddress);
   await skinLockRegistry.waitForDeployment();
   const skinLockAddressDeployed = await skinLockRegistry.getAddress();
   console.log("SkinLockRegistry deployed at:", skinLockAddressDeployed);
 
   // 7. Set ChestOpener in ChestMinter.
-  // (Assuming ChestMinter has a function setChestOpener(address) to update its ChestOpener)
   const setTx = await chestMinter.setChestOpener(chestOpener.target);
   console.log("Setting ChestOpener on ChestMinter. Waiting for confirmation...");
   await setTx.wait();
   console.log("ChestOpener set on ChestMinter:", chestOpener.target);
 
-  // 8. Create/update the backend .env file with deployed addresses.
-  // This file will be used by your backend server.
+  // 8. Deploy Mizontresh
+  const mizontreshBaseURI = "ipfs://bafybeih3u3jnucrmt4lwlbpe2uecnaybwm7g5mtnnarek7252wcpyydxga/";
+  const Mizontresh = await ethers.getContractFactory("Mizontresh");
+  // pass the baseURI and the fundsRecipient you want:
+  const fundsRecipient = "0x1219819360136A93AC14E4df0A90125cf9927616";
+  const mizontresh = await Mizontresh.deploy(mizontreshBaseURI, fundsRecipient);
+  await mizontresh.waitForDeployment();
+  console.log("Mizontresh deployed at:", mizontresh.target);
+
+  // 8a. Add Mizontresh to the SkinLockRegistry's allowed NFT list.
+  try {
+    const addTx = await skinLockRegistry.addAllowedNFT(mizontresh.target);
+    console.log("Adding Mizontresh to allowed tokens. Waiting for confirmation...");
+    await addTx.wait();
+    console.log("Mizontresh added to SkinLockRegistry allowed tokens:", mizontresh.target);
+  } catch (err) {
+    console.error("Error adding Mizontresh to allowed tokens:", err);
+  }
+
+  // 9. Create/update .env files
   const envData = `
 PRIVATE_KEY=${process.env.PRIVATE_KEY}
 GAMEOFDEATH_ADDRESS=${gameOfDeath.target}
@@ -76,22 +90,21 @@ MIZONS_ADDRESS=${mizons.target}
 CHEST_MINTER_ADDRESS=${chestMinter.target}
 CHEST_OPENER_ADDRESS=${chestOpener.target}
 SKIN_LOCK_ADDRESS=${skinLockAddressDeployed}
+MIZONTRESH_ADDRESS=${mizontresh.target}
 REACT_APP_GAMEOFDEATH_ADDRESS=${gameOfDeath.target}
 REACT_APP_BETTING_ADDRESS=${betting.target}
 REACT_APP_MIZONS_ADDRESS=${mizons.target}
 REACT_APP_CHEST_MINTER_ADDRESS=${chestMinter.target}
 REACT_APP_CHEST_OPENER_ADDRESS=${chestOpener.target}
 REACT_APP_SKIN_LOCK_ADDRESS=${skinLockAddressDeployed}
+REACT_APP_MIZONTRESH_ADDRESS=${mizontresh.target}
 REACT_APP_BACKEND_URL=${process.env.REACT_APP_BACKEND_URL || "http://localhost:3000"}
   `.trim();
 
   fs.writeFileSync(".env", envData);
   console.log("Backend .env file created/updated.");
 
-  // 9. Create/update the frontend .env file.
-  // For the frontend, we add a PORT setting (PORT=3001) in addition to all the other variables.
   const frontendEnvData = envData + "\nPORT=3001\n";
-  // Adjust the path below if your frontend directory is named differently.
   fs.writeFileSync("frontend/.env", frontendEnvData);
   console.log("Frontend .env file created/updated with PORT=3001.");
 }

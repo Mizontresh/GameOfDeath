@@ -67,7 +67,7 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: 10000;
   animation: neonPulse 2s infinite alternate;
 }
 .winner-text {
@@ -681,7 +681,7 @@ input[type="range"]::-moz-range-thumb {
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 2000;  /* High z-index so that it sits on top of everything */
+  z-index: 12000;  /* High z-index so that it sits on top of everything */
   background: rgba(0, 0, 0, 0.85);
   display: flex;
   justify-content: center;
@@ -695,7 +695,7 @@ input[type="range"]::-moz-range-thumb {
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 2100;  /* Slightly higher than most UI elements */
+  z-index: 12100;  /* Slightly higher than most UI elements */
   background: rgba(0, 0, 0, 0.8);
   display: flex;
   justify-content: center;
@@ -710,7 +710,7 @@ input[type="range"]::-moz-range-thumb {
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 2200;  /* Set even higher so that the modal is clearly on top */
+  z-index: 12200;  /* Set even higher so that the modal is clearly on top */
   background: rgba(0, 0, 0, 0.9);
   display: flex;
   justify-content: center;
@@ -737,7 +737,7 @@ input[type="range"]::-moz-range-thumb {
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 2300;
+  z-index: 2700;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -750,7 +750,7 @@ input[type="range"]::-moz-range-thumb {
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 2000; /* Ensures this overlay is on top of everything */
+  z-index: 12000; /* Ensures this overlay is on top of everything */
   background: rgba(0, 0, 0, 0.85);
   display: flex;
   justify-content: center;
@@ -828,7 +828,7 @@ input[type="range"]::-moz-range-thumb {
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 2200;
+  z-index: 12200;
   background: rgba(0, 0, 0, 0.9);
   display: flex;
   justify-content: center;
@@ -866,7 +866,7 @@ input[type="range"]::-moz-range-thumb {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1200;
+  z-index: 11200;
 }
 
 .chest-animation-content {
@@ -899,7 +899,7 @@ input[type="range"]::-moz-range-thumb {
   width: 100vw;
   height: 100vh;
   background: rgba(0, 0, 0, 0.8);
-  z-index: 1300;
+  z-index: 11300;
 }
 
 /* Additional styling as needed... */
@@ -1058,4 +1058,171 @@ html, body, #root {
   text-align: center;
   /* Let it scroll if content overflows the viewport */
   overflow-y: auto;
+}
+/* Neon-style Music Button */
+.music-button {
+  background: none;
+  border: 2px solid #ff00e2;
+  color: #ff00e2;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+
+.music-button:hover {
+  background: #ff00e2;
+  color: #000;
+  box-shadow: 0 0 10px #ff00e2;
+}
+
+/* Age Verification Modal */
+.age-verification-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0,0,0,0.9);
+  z-index: 20000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.age-verification-modal {
+  background: #111;
+  border: 2px solid #ff00e2;
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;
+  max-width: 90vw;
+}
+.age-verification-modal h2 {
+  margin-top: 0;
+  color: #ff00e2;
+}
+.age-verification-buttons button {
+  background: none;
+  border: 2px solid #ff00e2;
+  color: #ff00e2;
+  padding: 8px 16px;
+  margin: 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background 0.2s, color 0.2s;
+}
+.age-verification-buttons button:hover {
+  background: #ff00e2;
+  color: #000;
+}
+/* Neon-style Music Button */
+.music-button {
+  background: none;
+  border: 2px solid #ff00e2;
+  color: #ff00e2;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.music-button:hover {
+  background: #ff00e2;
+  color: #000;
+  box-shadow: 0 0 10px #ff00e2;
+}
+
+/* Info Panel Overlay */
+.info-panel-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 25000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Info Panel Content */
+.info-panel-content {
+  background: #111;
+  border: 2px solid #ff00e2;
+  border-radius: 8px;
+  padding: 20px;
+  max-width: 600px;
+  color: #fff;
+  text-shadow: 0 0 6px #ff00e2;
+  box-shadow: 0 0 12px #ff00e2;
+}
+.info-panel-content h2 {
+  color: #ff00e2;
+  margin-bottom: 1rem;
+}
+.info-panel-content ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem 1rem;
+}
+.info-panel-content li::before {
+  content: "• ";
+}
+.info-panel-content button {
+  background: none;
+  color: #ff00e2;
+  border: 2px solid #ff00e2;
+  padding: 8px 16px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.info-panel-content button:hover {
+  background: #ff00e2;
+  color: #000;
+  box-shadow: 0 0 8px #ff00e2;
+}
+
+/* Age Verification Modal */
+.age-verification-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0,0,0,0.9);
+  z-index: 20000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.age-verification-modal {
+  background: #111;
+  border: 2px solid #ff00e2;
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;
+  max-width: 90vw;
+}
+.age-verification-modal h2 {
+  margin-top: 0;
+  color: #ff00e2;
+}
+.age-verification-buttons button {
+  background: none;
+  border: 2px solid #ff00e2;
+  color: #ff00e2;
+  padding: 8px 16px;
+  margin: 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background 0.2s, color 0.2s;
+}
+.age-verification-buttons button:hover {
+  background: #ff00e2;
+  color: #000;
 }
