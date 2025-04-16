@@ -1,5 +1,4 @@
 // App.js
-
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { io } from "socket.io-client";
 import { ethers } from "ethers";
@@ -32,7 +31,8 @@ const chestMinterABI = [
   "function tokenChestType(uint256 tokenId) external view returns (uint8)",
   "function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)",
   "function balanceOf(address owner) external view returns (uint256)",
-  "function tokenURI(uint256 tokenId) external view returns (string)"
+  "function tokenURI(uint256 tokenId) external view returns (string)",
+  "function setChestOpener(address opener) external"
 ];
 const chestOpenerABI = [
   "function openChest(uint256 chestId) external payable",
@@ -45,7 +45,8 @@ const chestOpenerABI = [
 ];
 const skinLockABI = [
   "function getLockedSkins(address owner) external view returns (tuple(uint256 tokenId, uint256 bakedId)[])",
-  "function lockedTokens(uint256 tokenId) external view returns (address)"
+  "function lockedTokens(uint256 tokenId) external view returns (address)",
+  "function unlockNFT(uint256 tokenId) external"
 ];
 const mizontreshABI = [
   "function balanceOf(address owner) external view returns (uint256)",
@@ -75,11 +76,9 @@ function toGatewayUrl(url) {
   }
   return url;
 }
-
 function convertToAugmentedBoard(numericalBoard) {
   return numericalBoard.map(val => ({ value: val }));
 }
-
 function formatMizons(balance) {
   const bal = Number(ethers.formatUnits(balance, 18));
   if (bal === 0) return "0";
@@ -173,7 +172,142 @@ function MusicPlayer({ backendUrl }) {
   );
 }
 
-// -------------------- MizontreshOverlay Component --------------------
+// -------------------- LockedSkinSlots Component (with Unlock) --------------------
+function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLockedSkins }) {
+  const [lockedSkins, setLockedSkins] = useState([]);
+  const [selectedLockedSkin, setSelectedLockedSkin] = useState(null);
+  const MAX_SLOTS = 3;
+
+  const fetchLockedSkins = useCallback(async () => {
+    if (!skinLockContract || !userAddress) return;
+    try {
+      const result = await skinLockContract.getLockedSkins(userAddress);
+      const parsed = result.map((item) => ({
+        tokenId: Number(item.tokenId),
+        bakedId: Number(item.bakedId),
+      }));
+      setLockedSkins(parsed.slice(0, MAX_SLOTS));
+    } catch (err) {
+      console.error("Error fetching locked skins:", err);
+    }
+  }, [skinLockContract, userAddress]);
+
+  useEffect(() => {
+    fetchLockedSkins();
+    const interval = setInterval(fetchLockedSkins, 5000);
+    return () => clearInterval(interval);
+  }, [fetchLockedSkins]);
+
+  const handleSlotClick = (item) => {
+    if (item) {
+      setSelectedLockedSkin(item);
+    }
+  };
+
+  const confirmUnlock = async () => {
+    if (!selectedLockedSkin) return;
+    try {
+      const { tokenId, bakedId } = selectedLockedSkin;
+      const tx = await skinLockContract.unlockNFT(tokenId);
+      await tx.wait();
+      alert(`Unlocked Skin #${bakedId} (tokenId ${tokenId})!`);
+      fetchLockedSkins();
+      if (refreshLockedSkins) refreshLockedSkins();
+    } catch (err) {
+      console.error("Error unlocking skin:", err);
+      alert("Error unlocking skin: " + err.message);
+    } finally {
+      setSelectedLockedSkin(null);
+    }
+  };
+
+  const handleCloseUnlockModal = () => {
+    setSelectedLockedSkin(null);
+  };
+
+  return (
+    <div style={{ position: "relative" }}>
+      <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+        {Array.from({ length: MAX_SLOTS }, (_, i) => {
+          const item = lockedSkins[i];
+          return (
+            <div
+              key={i}
+              style={{
+                width: "50px",
+                height: "50px",
+                border: "1px solid #ff00e2",
+                borderRadius: "4px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: item ? "pointer" : "default",
+                background: item ? "#222" : "transparent",
+              }}
+              onClick={() => handleSlotClick(item)}
+              title={item ? `Locked Skin #${item.bakedId}` : "Empty slot"}
+            >
+              {item ? (
+                <img
+                  src={`${backendUrl}/skins/icons/${item.bakedId}.png`}
+                  alt={`Locked Skin #${item.bakedId}`}
+                  style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                />
+              ) : (
+                <span style={{ color: "#ff00e2", fontSize: "0.8rem" }}>Empty</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {selectedLockedSkin && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1200,
+          }}
+          onClick={handleCloseUnlockModal}
+        >
+          <div
+            style={{
+              background: "#333",
+              color: "#fff",
+              padding: "20px",
+              borderRadius: "5px",
+              minWidth: "300px"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3>Unlock Skin #{selectedLockedSkin.bakedId}</h3>
+            <img
+              src={`${backendUrl}/skins/icons/${selectedLockedSkin.bakedId}.png`}
+              alt={`Locked Skin #${selectedLockedSkin.bakedId}`}
+              style={{
+                width: "120px",
+                height: "120px",
+                objectFit: "contain",
+                display: "block",
+                margin: "10px auto"
+              }}
+            />
+            <p>Unlock token #{selectedLockedSkin.tokenId} (baked ID {selectedLockedSkin.bakedId})?</p>
+            <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+              <button onClick={confirmUnlock}>Yes, Unlock</button>
+              <button onClick={handleCloseUnlockModal}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// -------------------- MizontreshOverlay (unchanged, shows buy + lock) --------------------
 function MizontreshOverlay({
   onClose,
   mizontreshContract,
@@ -186,7 +320,6 @@ function MizontreshOverlay({
   const [buying, setBuying] = useState(false);
   const [error, setError] = useState("");
 
-  // Fetch the current user's Mizontresh tokens.
   useEffect(() => {
     async function fetchInventory() {
       if (!mizontreshContract || !userAddress) return;
@@ -222,17 +355,15 @@ function MizontreshOverlay({
     }
   }
 
-  // Lock a token (no UI for unlocking in this design)
   async function lockToken(tokenId) {
     if (!skinLockContract || !mizontreshContract || !userAddress || !skinLockAddress) return;
     try {
-      // Make sure the user has approved the token for skinLockAddress
+      // Approve the skinLockAddress if not already.
       const currentApproved = await mizontreshContract.getApproved(tokenId);
       if (currentApproved.toLowerCase() !== skinLockAddress.toLowerCase()) {
         const approveTx = await mizontreshContract.approve(skinLockAddress, tokenId);
         await approveTx.wait();
       }
-
       // Transfer to lock
       const data = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1024]);
       const tx = await mizontreshContract["safeTransferFrom(address,address,uint256,bytes)"](
@@ -277,9 +408,7 @@ function MizontreshOverlay({
         }}
       >
         <h2>Mizontresh Shop</h2>
-        <p style={{ color: "red" }}>
-          Warning: You are wasting your money, this is useless!
-        </p>
+        <p style={{ color: "red" }}>Warning: You are wasting your money, this is useless!</p>
         <button
           onClick={handleBuy}
           disabled={buying}
@@ -396,14 +525,7 @@ function InfoPanel({ onClose }) {
 // -------------------- Inventory Component --------------------
 function Inventory({ inventory, backendUrl, onOpenChest }) {
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(4, 1fr)",
-        gap: "4px",
-        justifyItems: "center"
-      }}
-    >
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "4px", justifyItems: "center" }}>
       {inventory.length === 0 ? (
         <p>No chests found.</p>
       ) : (
@@ -484,9 +606,7 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
       ) : (
         <ul className="game-records-list">
           {records.map((rec, index) => {
-            const dateString = rec.timestamp
-              ? new Date(rec.timestamp).toLocaleString()
-              : "N/A";
+            const dateString = rec.timestamp ? new Date(rec.timestamp).toLocaleString() : "N/A";
             return (
               <li
                 key={`${rec.gameId}-${index}`}
@@ -518,183 +638,6 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
       ) : (
         <p style={{ textAlign: "center" }}>No more records to load.</p>
       )}
-    </div>
-  );
-}
-
-// -------------------- LockedSkinSlots Component --------------------
-// NOTE: We now only SHOW locked skins. No "unlock" button or modal.
-function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLockedSkins }) {
-  const [lockedSkins, setLockedSkins] = useState([]);
-  const MAX_SLOTS = 3;
-
-  const fetchLockedSkins = useCallback(async () => {
-    if (!skinLockContract || !userAddress) return;
-    try {
-      const result = await skinLockContract.getLockedSkins(userAddress);
-      const parsed = result.map((item) => ({
-        tokenId: Number(item.tokenId),
-        bakedId: Number(item.bakedId),
-      }));
-      setLockedSkins(parsed.slice(0, MAX_SLOTS));
-    } catch (err) {
-      console.error("Error fetching locked skins:", err);
-    }
-  }, [skinLockContract, userAddress]);
-
-  useEffect(() => {
-    fetchLockedSkins();
-    const interval = setInterval(fetchLockedSkins, 5000);
-    return () => clearInterval(interval);
-  }, [fetchLockedSkins]);
-
-  // Just display them, no click to unlock
-  return (
-    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-      {Array.from({ length: MAX_SLOTS }, (_, i) => {
-        const item = lockedSkins[i];
-        return (
-          <div
-            key={i}
-            style={{
-              width: "50px",
-              height: "50px",
-              border: "1px solid #ff00e2",
-              borderRadius: "4px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: item ? "#222" : "transparent",
-            }}
-            title={item ? `Locked Skin #${item.bakedId}` : "Empty slot"}
-          >
-            {item ? (
-              <img
-                src={`${backendUrl}/skins/icons/${item.bakedId}.png`}
-                alt={`Locked Skin #${item.bakedId}`}
-                style={{ width: "100%", height: "100%", objectFit: "contain" }}
-              />
-            ) : (
-              <span style={{ color: "#ff00e2", fontSize: "0.8rem" }}>Empty</span>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// -------------------- WholeSkinsPanel Component --------------------
-function WholeSkinsPanel({
-  onClose,
-  chestOpenerContract,
-  skinLockAddress,
-  userAddress,
-  ownedSkins,
-  fetchOwnedSkins,
-  skinLockContract,
-}) {
-  const bakedIdList = ownedSkins.map((item) => item.bakedId);
-  const GRID_COLUMNS = 32;
-  const CELL_SIZE = 18;
-  const TOTAL_SKINS = 1024;
-  const scale = 70 / (GRID_COLUMNS * CELL_SIZE);
-
-  async function getUserLockedCount() {
-    if (!skinLockContract || !userAddress) return 0;
-    try {
-      const locked = await skinLockContract.getLockedSkins(userAddress);
-      return locked.length;
-    } catch (err) {
-      console.error("Error in getUserLockedCount:", err);
-      return 0;
-    }
-  }
-
-  // Lock from chest
-  async function lockSkin(bakedId) {
-    if (!chestOpenerContract || !userAddress || !skinLockAddress) return;
-    const matching = ownedSkins.filter((item) => item.bakedId === bakedId);
-    if (!matching.length) {
-      alert("No token found for this skin. Make sure you own it.");
-      return;
-    }
-    const tokenId = matching[0].tokenId;
-    try {
-      const userLocked = await getUserLockedCount();
-      if (userLocked >= 3) {
-        alert("You already have 3 locked skins. Cannot lock more!");
-        return;
-      }
-      const data = new ethers.AbiCoder().encode(["uint256"], [bakedId]);
-      const tx = await chestOpenerContract["safeTransferFrom(address,address,uint256,bytes)"](
-        userAddress,
-        skinLockAddress,
-        tokenId,
-        data
-      );
-      await tx.wait();
-      alert(`Locked Skin #${bakedId} successfully!`);
-      fetchOwnedSkins();
-    } catch (err) {
-      console.error("Error locking skin:", err);
-      alert("Error locking skin: " + err.message);
-    }
-  }
-
-  function getSkinCoords(skinId) {
-    return {
-      x: (skinId % GRID_COLUMNS) * CELL_SIZE,
-      y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE
-    };
-  }
-
-  return (
-    <div className="whole-skins-overlay" onClick={onClose} style={{ cursor: "auto" }}>
-      <div
-        style={{
-          position: "relative",
-          width: "70vmin",
-          height: "70vmin",
-          margin: "0 auto",
-          overflow: "hidden"
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <img
-          src={`${backendUrl}/skins/whole.png`}
-          alt="All Skins"
-          style={{ width: "100%", height: "100%", objectFit: "contain" }}
-        />
-        {Array.from({ length: TOTAL_SKINS }, (_, i) => {
-          const { x, y } = getSkinCoords(i);
-          const isOwned = bakedIdList.includes(i);
-          return (
-            <div
-              key={i}
-              style={{
-                position: "absolute",
-                left: `${x * scale}vmin`,
-                top: `${y * scale}vmin`,
-                width: `${CELL_SIZE * scale}vmin`,
-                height: `${CELL_SIZE * scale}vmin`,
-                backgroundColor: isOwned ? "transparent" : "rgba(128,128,128,0.5)",
-                cursor: isOwned ? "pointer" : "not-allowed"
-              }}
-              onClick={() => {
-                if (isOwned) lockSkin(i);
-              }}
-            />
-          );
-        })}
-      </div>
-      <button
-        className="close-whole-skins-btn"
-        onClick={onClose}
-        style={{ position: "absolute", top: "20px", right: "20px" }}
-      >
-        Close
-      </button>
     </div>
   );
 }
@@ -853,6 +796,117 @@ function LorePanel({ onClose, ownedSkins }) {
   );
 }
 
+// -------------------- WholeSkinsPanel Component (Lock from chest) --------------------
+function WholeSkinsPanel({
+  onClose,
+  chestOpenerContract,
+  skinLockAddress,
+  userAddress,
+  ownedSkins,
+  fetchOwnedSkins,
+  skinLockContract,
+}) {
+  const bakedIdList = ownedSkins.map((item) => item.bakedId);
+  const GRID_COLUMNS = 32;
+  const CELL_SIZE = 18;
+  const TOTAL_SKINS = 1024;
+  const scale = 70 / (GRID_COLUMNS * CELL_SIZE);
+
+  async function getUserLockedCount() {
+    if (!skinLockContract || !userAddress) return 0;
+    try {
+      const locked = await skinLockContract.getLockedSkins(userAddress);
+      return locked.length;
+    } catch (err) {
+      console.error("Error in getUserLockedCount:", err);
+      return 0;
+    }
+  }
+
+  async function lockSkin(bakedId) {
+    if (!chestOpenerContract || !userAddress || !skinLockAddress) return;
+    const matching = ownedSkins.filter((item) => item.bakedId === bakedId);
+    if (!matching.length) {
+      alert("No token found for this skin. Make sure you own it.");
+      return;
+    }
+    const tokenId = matching[0].tokenId;
+    try {
+      const userLocked = await getUserLockedCount();
+      if (userLocked >= 3) {
+        alert("You already have 3 locked skins. Cannot lock more!");
+        return;
+      }
+      const data = new ethers.AbiCoder().encode(["uint256"], [bakedId]);
+      const tx = await chestOpenerContract["safeTransferFrom(address,address,uint256,bytes)"](
+        userAddress,
+        skinLockAddress,
+        tokenId,
+        data
+      );
+      await tx.wait();
+      alert(`Locked Skin #${bakedId} successfully!`);
+      fetchOwnedSkins();
+    } catch (err) {
+      console.error("Error locking skin:", err);
+      alert("Error locking skin: " + err.message);
+    }
+  }
+
+  function getSkinCoords(skinId) {
+    return { x: (skinId % GRID_COLUMNS) * CELL_SIZE, y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE };
+  }
+
+  return (
+    <div className="whole-skins-overlay" onClick={onClose} style={{ cursor: "auto" }}>
+      <div
+        style={{
+          position: "relative",
+          width: "70vmin",
+          height: "70vmin",
+          margin: "0 auto",
+          overflow: "hidden"
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <img
+          src={`${backendUrl}/skins/whole.png`}
+          alt="All Skins"
+          style={{ width: "100%", height: "100%", objectFit: "contain" }}
+        />
+        {Array.from({ length: TOTAL_SKINS }, (_, i) => {
+          const { x, y } = getSkinCoords(i);
+          const isOwned = bakedIdList.includes(i);
+          return (
+            <div
+              key={i}
+              style={{
+                position: "absolute",
+                left: `${x * scale}vmin`,
+                top: `${y * scale}vmin`,
+                width: `${CELL_SIZE * scale}vmin`,
+                height: `${CELL_SIZE * scale}vmin`,
+                backgroundColor: isOwned ? "transparent" : "rgba(128,128,128,0.5)",
+                cursor: isOwned ? "pointer" : "not-allowed"
+              }}
+              onClick={() => {
+                if (isOwned) lockSkin(i);
+              }}
+            />
+          );
+        })}
+      </div>
+      <button
+        className="close-whole-skins-btn"
+        onClick={onClose}
+        style={{ position: "absolute", top: "20px", right: "20px" }}
+      >
+        Close
+      </button>
+    </div>
+  );
+}
+
 // -------------------- Main App Component --------------------
 function App() {
   const LEFT_PANEL_WIDTH = 300;
@@ -869,7 +923,7 @@ function App() {
   // Mizontresh overlay
   const [showMizontreshOverlay, setShowMizontreshOverlay] = useState(false);
 
-  // Contracts and addresses
+  // Contracts
   const [boardSize, setBoardSize] = useState(MIN_BOARD_SIZE);
   const [userAddress, setUserAddress] = useState("");
   const [gameContract, setGameContract] = useState(null);
@@ -879,7 +933,7 @@ function App() {
   const [skinLockContract, setSkinLockContract] = useState(null);
   const [mizontreshContract, setMizontreshContract] = useState(null);
 
-  // General
+  // General state
   const [mizonsBalance, setMizonsBalance] = useState("0");
   const [phaseData, setPhaseData] = useState({ phase: "picking", timeLeft: 30, gameId: 1 });
   const [teamCounts, setTeamCounts] = useState({ red: 0, blue: 0 });
@@ -908,6 +962,8 @@ function App() {
 
   // Chests
   const [inventory, setInventory] = useState([]);
+
+  // The big chest opening animation
   const [chestAnimation, setChestAnimation] = useState({
     active: false,
     step: null,
@@ -920,11 +976,13 @@ function App() {
   const [ownedSkins, setOwnedSkins] = useState([]);
   const [showWholeSkins, setShowWholeSkins] = useState(false);
   const [showLorePanel, setShowLorePanel] = useState(false);
+
+  // Skin overlay
   const [skinOverlay, setSkinOverlay] = useState(Array(4096).fill(0));
 
   const socketRef = useRef(null);
 
-  // Fetch the skin overlay
+  // Poll skin overlay
   useEffect(() => {
     async function fetchSkinOverlay() {
       try {
@@ -940,7 +998,7 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Responsive sizing
+  // Handle board sizing
   useEffect(() => {
     function handleResize() {
       const availableWidth = window.innerWidth - (LEFT_PANEL_WIDTH + RIGHT_PANEL_WIDTH + 50);
@@ -952,13 +1010,13 @@ function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Force full height
+  // Force the body to 100% height
   useEffect(() => {
     document.documentElement.style.height = "100%";
     document.body.style.height = "100%";
   }, []);
 
-  // Connect wallet
+  // Connect/disconnect wallet
   async function connectWallet() {
     if (!window.ethereum) {
       setErrorMsg("No MetaMask found!");
@@ -997,7 +1055,7 @@ function App() {
     }
   }, []);
 
-  // Socket
+  // Socket setup
   useEffect(() => {
     socketRef.current = io(backendUrl, { transports: ["websocket"] });
     socketRef.current.on("connect", () => console.log("Socket connected:", socketRef.current.id));
@@ -1014,7 +1072,7 @@ function App() {
     return () => socketRef.current.disconnect();
   }, [liveReplayIndex, selectedHistory]);
 
-  // Fallback poll for phase
+  // Periodically fetch phaseData
   useEffect(() => {
     const interval = setInterval(() => {
       fetch(`${backendUrl}/api/state`)
@@ -1025,7 +1083,7 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Setup contracts
+  // Setup contracts when wallet is connected
   useEffect(() => {
     if (!window.ethereum || !userAddress) return;
     if (
@@ -1039,7 +1097,7 @@ function App() {
       setErrorMsg("Missing contract addresses in env variables.");
       return;
     }
-    async function setupContracts() {
+    async function setup() {
       try {
         const provider = new ethers.BrowserProvider(window.ethereum);
         const signer = await provider.getSigner();
@@ -1061,7 +1119,6 @@ function App() {
           const lockC = new ethers.Contract(skinLockAddress, skinLockABI, signer);
           setSkinLockContract(lockC);
         }
-
         const mizontreshC = new ethers.Contract(mizontreshAddress, mizontreshABI, signer);
         setMizontreshContract(mizontreshC);
       } catch (err) {
@@ -1069,10 +1126,10 @@ function App() {
         setErrorMsg("Error setting up contracts: " + err.message);
       }
     }
-    setupContracts();
+    setup();
   }, [userAddress]);
 
-  // Fetch bets
+  // Periodically fetch bets for current game
   useEffect(() => {
     if (!phaseData.gameId) return;
     async function fetchBets() {
@@ -1080,12 +1137,8 @@ function App() {
         const res = await fetch(`${backendUrl}/api/bets/${phaseData.gameId}`);
         const data = await res.json();
         if (data && data.bets) {
-          const red = data.bets
-            .filter((b) => b.team === 1)
-            .reduce((sum, b) => sum + Number(b.tickets), 0);
-          const blue = data.bets
-            .filter((b) => b.team === 2)
-            .reduce((sum, b) => sum + Number(b.tickets), 0);
+          const red = data.bets.filter(b => b.team === 1).reduce((sum, b) => sum + Number(b.tickets), 0);
+          const blue = data.bets.filter(b => b.team === 2).reduce((sum, b) => sum + Number(b.tickets), 0);
           setLiveRedBets(red);
           setLiveBlueBets(blue);
         }
@@ -1098,7 +1151,7 @@ function App() {
     return () => clearInterval(interval);
   }, [phaseData.gameId]);
 
-  // Fetch board history
+  // Periodically fetch board history
   useEffect(() => {
     const interval = setInterval(() => {
       fetch(`${backendUrl}/api/history`)
@@ -1109,7 +1162,7 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Poll live board if placing
+  // Poll the live board if in "placing" and not replaying
   useEffect(() => {
     if (phaseData.phase !== "placing") return;
     if (selectedHistory || liveReplayIndex >= 0) return;
@@ -1124,11 +1177,11 @@ function App() {
     return () => clearInterval(interval);
   }, [phaseData.phase, selectedHistory, liveReplayIndex]);
 
-  // Live auto replay
+  // Live board auto replay
   useEffect(() => {
     if (!liveAutoReplay || boardHistory.length === 0) return;
     const autoInterval = setInterval(() => {
-      setLiveReplayIndex((prev) => {
+      setLiveReplayIndex(prev => {
         const newIndex = prev < 0 ? 0 : prev + 1;
         if (newIndex >= boardHistory.length) {
           setLiveAutoReplay(false);
@@ -1144,7 +1197,7 @@ function App() {
   useEffect(() => {
     if (!selectedAutoReplay || !selectedHistory || selectedHistory.length === 0) return;
     const autoInterval = setInterval(() => {
-      setSelectedReplayIndex((prev) => {
+      setSelectedReplayIndex(prev => {
         const newIndex = prev < 0 ? 0 : prev + 1;
         if (newIndex >= selectedHistory.length) {
           setSelectedAutoReplay(false);
@@ -1177,7 +1230,7 @@ function App() {
     return () => clearInterval(interval);
   }, [gameContract, userAddress, selectedHistory, liveReplayIndex, phaseData.gameId]);
 
-  // Poll MIZ
+  // Poll MIZ balance
   useEffect(() => {
     if (!userAddress) return;
     const provider = new ethers.BrowserProvider(window.ethereum);
@@ -1185,8 +1238,8 @@ function App() {
     const interval = setInterval(() => {
       mizonsContract
         .balanceOf(userAddress)
-        .then((bal) => setMizonsBalance(bal.toString()))
-        .catch((err) => console.error("Error fetching MIZ balance:", err));
+        .then(bal => setMizonsBalance(bal.toString()))
+        .catch(err => console.error("Error fetching MIZ balance:", err));
     }, 1000);
     return () => clearInterval(interval);
   }, [userAddress]);
@@ -1215,7 +1268,7 @@ function App() {
     refreshInventory();
   }, [refreshInventory, status]);
 
-  // Fetch owned skins from chestOpener
+  // Fetch Owned Skins from chestOpener
   async function fetchOwnedSkinsFromOpener() {
     if (!chestOpenerContract || !userAddress) return;
     try {
@@ -1252,7 +1305,7 @@ function App() {
     }
   }
 
-  // Join team
+  // Join a team
   async function joinTeam(teamId) {
     if (!gameContract) {
       setErrorMsg("No contract connected.");
@@ -1299,145 +1352,6 @@ function App() {
     } catch (err) {
       console.error("placeSquare error:", err);
       setErrorMsg("placeSquare error: " + err.message);
-    }
-  }
-
-  // Mint chest
-  async function handleMintChest() {
-    if (!userAddress) {
-      alert("Connect your wallet first!");
-      return;
-    }
-    if (!chestMinterContract) {
-      alert("ChestMinter contract not connected.");
-      return;
-    }
-    try {
-      // Step 1: Brain animation
-      setChestAnimation({
-        active: true,
-        step: "brain",
-        chestType: null,
-        frame: 0,
-        data: { image: `${backendUrl}/chests/brain.png` }
-      });
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      // Step 2: Stir
-      setChestAnimation({
-        active: true,
-        step: "stir",
-        chestType: null,
-        frame: 0,
-        data: { image: `${backendUrl}/chests/brain.png` }
-      });
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      // Mint
-      const tx = await chestMinterContract.mintRandomChest({ gasLimit: 400000 });
-      await tx.wait();
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      refreshInventory();
-      fetchOwnedSkinsFromOpener();
-
-      // Find new chest
-      const balanceBN = await chestMinterContract.balanceOf(userAddress);
-      const balance = Number(balanceBN);
-      const tokenIdBN = await chestMinterContract.tokenOfOwnerByIndex(userAddress, balance - 1);
-      const tokenId = Number(tokenIdBN);
-      const chestTypeBN = await chestMinterContract.tokenChestType(tokenId);
-      const chestType = Number(chestTypeBN);
-
-      // Metadata
-      const metadataUrl = `${backendUrl}/chests/var/${chestType}.json`;
-      const imageUrl = `${backendUrl}/chests/icons/chest${chestType}/frame1.png`;
-      const response = await fetch(metadataUrl);
-      if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-      const metadata = await response.json();
-      metadata.image = imageUrl;
-
-      // Reveal
-      setChestAnimation({
-        active: true,
-        step: "revealed",
-        data: metadata,
-        chestType,
-        frame: 0
-      });
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-    } catch (err) {
-      console.error("Error minting chest:", err);
-      alert("Chest minting failed: " + err.message);
-    } finally {
-      setChestAnimation({
-        active: false,
-        step: null,
-        data: null,
-        chestType: null,
-        frame: 0
-      });
-    }
-  }
-
-  // Open chest
-  async function handleOpenChest(tokenId) {
-    const chest = inventory.find((c) => c.tokenId === tokenId);
-    if (!chest) {
-      alert("Chest not found in inventory.");
-      return;
-    }
-    setChestAnimation({
-      active: true,
-      step: "opening",
-      chestType: chest.type,
-      frame: 1,
-      data: null
-    });
-
-    // Animate frames
-    for (let i = 1; i <= 5; i++) {
-      setChestAnimation((prev) => ({ ...prev, frame: i }));
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-    try {
-      const tx = await chestOpenerContract.openChest(tokenId, {
-        value: ethers.parseEther("0.001")
-      });
-      await tx.wait();
-      const newItemIdBN = await chestOpenerContract.itemCounter();
-      const newItemId = Number(newItemIdBN) - 1;
-      const awardedItemBN = await chestOpenerContract.tokenAwardedItem(newItemId);
-      const awardedItem = Number(awardedItemBN);
-
-      // Fetch item metadata
-      const imageUrl = `${backendUrl}/skins/icons/${awardedItem}.png`;
-      const metadataUrl = `${backendUrl}/skins/text1/${awardedItem}.json`;
-      const response = await fetch(metadataUrl);
-      if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-      const metadata = await response.json();
-      metadata.image = imageUrl;
-
-      setChestAnimation({
-        active: true,
-        step: "revealed",
-        data: metadata,
-        chestType: chest.type,
-        frame: 0
-      });
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-    } catch (err) {
-      console.error("Error opening chest:", err);
-      alert("Failed to open chest: " + err.message);
-    } finally {
-      setChestAnimation({
-        active: false,
-        step: null,
-        data: null,
-        chestType: null,
-        frame: 0
-      });
-      refreshInventory();
-      fetchOwnedSkinsFromOpener();
     }
   }
 
@@ -1488,12 +1402,158 @@ function App() {
     }
   }
 
-  // Decide which board to display (live or record)
+  // Mint chest (with big brain & stir animation)
+  async function handleMintChest() {
+    if (!userAddress) {
+      alert("Connect your wallet first!");
+      return;
+    }
+    if (!chestMinterContract) {
+      alert("ChestMinter contract not connected.");
+      return;
+    }
+    try {
+      // Step 1: "brain"
+      setChestAnimation({
+        active: true,
+        step: "brain",
+        chestType: null,
+        frame: 0,
+        data: { image: `${backendUrl}/chests/brain.png` }
+      });
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // Step 2: "stir"
+      setChestAnimation({
+        active: true,
+        step: "stir",
+        chestType: null,
+        frame: 0,
+        data: { image: `${backendUrl}/chests/brain.png` }
+      });
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // Actual mint
+      const tx = await chestMinterContract.mintRandomChest({ gasLimit: 400000 });
+      await tx.wait();
+      await new Promise(resolve => setTimeout(resolve, 800));
+      refreshInventory();
+      fetchOwnedSkinsFromOpener();
+
+      // Find newly minted chest
+      const balanceBN = await chestMinterContract.balanceOf(userAddress);
+      const balance = Number(balanceBN);
+      const tokenIdBN = await chestMinterContract.tokenOfOwnerByIndex(userAddress, balance - 1);
+      const tokenId = Number(tokenIdBN);
+      const chestTypeBN = await chestMinterContract.tokenChestType(tokenId);
+      const chestType = Number(chestTypeBN);
+
+      // fetch metadata for reveal
+      const metadataUrl = `${backendUrl}/chests/var/${chestType}.json`;
+      const imageUrl = `${backendUrl}/chests/icons/chest${chestType}/frame1.png`;
+      const response = await fetch(metadataUrl);
+      if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+      const metadata = await response.json();
+      metadata.image = imageUrl;
+
+      // "revealed"
+      setChestAnimation({
+        active: true,
+        step: "revealed",
+        data: metadata,
+        chestType,
+        frame: 0
+      });
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    } catch (err) {
+      console.error("Error minting chest:", err);
+      alert("Chest minting failed: " + err.message);
+    } finally {
+      setChestAnimation({
+        active: false,
+        step: null,
+        data: null,
+        chestType: null,
+        frame: 0
+      });
+    }
+  }
+
+  // Open a chest (frames 1..5, then reveal item)
+  async function handleOpenChest(tokenId) {
+    const chest = inventory.find((c) => c.tokenId === tokenId);
+    if (!chest) {
+      alert("Chest not found in inventory.");
+      return;
+    }
+    setChestAnimation({
+      active: true,
+      step: "opening",
+      chestType: chest.type,
+      frame: 1,
+      data: null
+    });
+
+    // Animate frames
+    for (let i = 1; i <= 5; i++) {
+      setChestAnimation(prev => ({ ...prev, frame: i }));
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    try {
+      const tx = await chestOpenerContract.openChest(tokenId, {
+        value: ethers.parseEther("0.001")
+      });
+      await tx.wait();
+      const newItemIdBN = await chestOpenerContract.itemCounter();
+      const newItemId = Number(newItemIdBN) - 1;
+      const awardedItemBN = await chestOpenerContract.tokenAwardedItem(newItemId);
+      const awardedItem = Number(awardedItemBN);
+
+      // fetch item metadata
+      const imageUrl = `${backendUrl}/skins/icons/${awardedItem}.png`;
+      const metadataUrl = `${backendUrl}/skins/text1/${awardedItem}.json`;
+      const response = await fetch(metadataUrl);
+      if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+      const metadata = await response.json();
+      metadata.image = imageUrl;
+
+      setChestAnimation({
+        active: true,
+        step: "revealed",
+        data: metadata,
+        chestType: chest.type,
+        frame: 0
+      });
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    } catch (err) {
+      console.error("Error opening chest:", err);
+      alert("Failed to open chest: " + err.message);
+    } finally {
+      setChestAnimation({
+        active: false,
+        step: null,
+        data: null,
+        chestType: null,
+        frame: 0
+      });
+      refreshInventory();
+      fetchOwnedSkinsFromOpener();
+    }
+  }
+
+  // For returning to live after viewing a record
+  function recordGoBackToLive() {
+    setSelectedRecord(null);
+    setSelectedHistory(null);
+    setSelectedReplayIndex(-1);
+    setSelectedAutoReplay(false);
+  }
+
+  // Which board to show (live or record)
   let displayBoard;
   if (selectedHistory) {
-    const replayIndex = selectedReplayIndex < 0
-      ? selectedHistory.length - 1
-      : selectedReplayIndex;
+    const replayIndex =
+      selectedReplayIndex < 0 ? selectedHistory.length - 1 : selectedReplayIndex;
     displayBoard = convertToAugmentedBoard(selectedHistory[replayIndex]);
   } else if (liveReplayIndex >= 0 && boardHistory.length > 0) {
     const idx = Math.min(liveReplayIndex, boardHistory.length - 1);
@@ -1502,7 +1562,7 @@ function App() {
     displayBoard = liveBoard;
   }
 
-  // Which skin overlay to show?
+  // Which skin grid?
   const currentSkinGrid =
     selectedRecord && selectedRecord.skinHistory && selectedHistory
       ? selectedReplayIndex >= 0
@@ -1510,7 +1570,7 @@ function App() {
         : selectedRecord.skinHistory[selectedRecord.skinHistory.length - 1]
       : skinOverlay;
 
-  // Counting squares across the center
+  // Opposing stats
   function computeOpposingStats(board) {
     let redOnBlue = 0;
     let blueOnRed = 0;
@@ -1529,6 +1589,7 @@ function App() {
   const redPercent = totalOpposing > 0 ? (redOnBlue / totalOpposing) * 100 : 50;
   const bluePercent = totalOpposing > 0 ? (blueOnRed / totalOpposing) * 100 : 50;
 
+  // If in placing phase, veil the opposite side
   const showVeil = phaseData.phase === "placing" && !selectedHistory && liveReplayIndex < 0;
 
   if (!isVerified) {
@@ -1542,17 +1603,9 @@ function App() {
     );
   }
 
-  function recordGoBackToLive() {
-    setSelectedRecord(null);
-    setSelectedHistory(null);
-    setSelectedReplayIndex(-1);
-    setSelectedAutoReplay(false);
-  }
-
   return (
     <div className="app-container" style={{ margin: 0, padding: 0, height: "100vh" }}>
       <MusicPlayer backendUrl={backendUrl} />
-
       {showInfoPanel && <InfoPanel onClose={() => setShowInfoPanel(false)} />}
       {showMizontreshOverlay && mizontreshContract && (
         <MizontreshOverlay
@@ -1565,55 +1618,96 @@ function App() {
         />
       )}
 
+      {/* Chest Animation Overlay */}
+      {chestAnimation.active && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.8)",
+            zIndex: 9999,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center"
+          }}
+          onClick={() => {
+            // if we are in "revealed" step, click to close
+            if (chestAnimation.step === "revealed") {
+              setChestAnimation({ active: false, step: null, data: null, chestType: null, frame: 0 });
+            }
+          }}
+        >
+          <div style={{ textAlign: "center", color: "#fff" }}>
+            {chestAnimation.step === "brain" && (
+              <div>
+                <h2>Gathering Brain Matter...</h2>
+                <img src={chestAnimation.data.image} alt="Brain" style={{ width: "200px" }} />
+              </div>
+            )}
+            {chestAnimation.step === "stir" && (
+              <div>
+                <h2>Stirring Brain Soup...</h2>
+                <img src={chestAnimation.data.image} alt="Brain" style={{ width: "200px" }} />
+              </div>
+            )}
+            {chestAnimation.step === "opening" && (
+              <div>
+                <h2>Opening Chest (Frame {chestAnimation.frame} of 5)</h2>
+                <img
+                  src={`${backendUrl}/chests/icons/chest${chestAnimation.chestType}/frame${chestAnimation.frame}.png`}
+                  alt="Opening Chest"
+                  style={{ width: "200px" }}
+                />
+              </div>
+            )}
+            {chestAnimation.step === "revealed" && (
+              <div>
+                <h2>Revealed!</h2>
+                {chestAnimation.data?.image && (
+                  <img
+                    src={chestAnimation.data.image}
+                    alt="Chest Reveal"
+                    style={{ width: "200px" }}
+                  />
+                )}
+                {chestAnimation.data?.title && <h3>{chestAnimation.data.title}</h3>}
+                <p style={{ maxWidth: "300px", margin: "10px auto" }}>
+                  (Click anywhere to close)
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="title-bar" style={{ textAlign: "center", marginBottom: "2px" }}>
         <h1 style={{ margin: 0, fontSize: "3rem" }}>Game of Death</h1>
       </div>
+
       <div className="scoreboard-bar-container" style={{ marginBottom: "4px" }}>
         <div className="score-bar">
           <div className="score-bar-red" style={{ width: `${redPercent}%` }} />
           <div className="score-bar-blue" style={{ width: `${bluePercent}%` }} />
         </div>
       </div>
+
       <div className="wallet-corner">
         {userAddress ? (
           <>
             <p className="tiny-wallet">
               {userAddress.slice(0, 6)}...{userAddress.slice(-4)}
             </p>
-            <button className="corner-btn" onClick={disconnectWallet}>
-              Disconnect
-            </button>
+            <button className="corner-btn" onClick={disconnectWallet}>Disconnect</button>
           </>
         ) : (
-          <button className="corner-btn" onClick={connectWallet}>
-            Connect Wallet
-          </button>
+          <button className="corner-btn" onClick={connectWallet}>Connect Wallet</button>
         )}
       </div>
 
       <div className="main-content">
         {/* LEFT PANEL */}
-        <div
-          className="left-panel"
-          style={{
-            width: "300px",
-            padding: "5px",
-            boxSizing: "border-box",
-            minHeight: "600px",
-            overflowY: "auto"
-          }}
-        >
-          <div
-            className="red-panel"
-            style={{
-              width: "270px",
-              padding: "10px",
-              boxSizing: "border-box",
-              minHeight: "80px",
-              marginTop: "6px",
-              height: "220px"
-            }}
-          >
+        <div className="left-panel" style={{ width: "300px", padding: "5px", boxSizing: "border-box", minHeight: "600px", overflowY: "auto" }}>
+          <div className="red-panel" style={{ width: "270px", padding: "10px", boxSizing: "border-box", minHeight: "80px", marginTop: "6px", height: "220px" }}>
             <h2 className="section-title">Your MIZ</h2>
             <div className="miz-balance-container">
               <img src={logo} alt="MIZ Logo" className="miz-logo" />
@@ -1632,10 +1726,7 @@ function App() {
             )}
           </div>
 
-          <div
-            className="chest-roll-section"
-            style={{ width: "270px", position: "relative", marginTop: "10px" }}
-          >
+          <div className="chest-roll-section" style={{ width: "270px", position: "relative", marginTop: "10px" }}>
             <div
               style={{ position: "relative", width: "100px", margin: "0 auto", cursor: "pointer" }}
               onClick={handleMintChest}
@@ -1704,15 +1795,8 @@ function App() {
                 Mint Chest
               </button>
             </div>
-            <div
-              className="inventory"
-              style={{ marginTop: "6px", width: "255px", height: "64px", overflowY: "auto" }}
-            >
-              <h3
-                style={{ fontSize: "1rem", textAlign: "center", margin: "0 0 4px 0" }}
-              >
-                Your Inventory
-              </h3>
+            <div className="inventory" style={{ marginTop: "6px", width: "255px", height: "64px", overflowY: "auto" }}>
+              <h3 style={{ fontSize: "1rem", textAlign: "center", margin: "0 0 4px 0" }}>Your Inventory</h3>
               <Inventory
                 inventory={inventory}
                 backendUrl={backendUrl}
@@ -1724,9 +1808,7 @@ function App() {
           <div style={{ marginTop: "10px", width: "100%" }}>
             <div className="phase-info-card" style={{ marginBottom: "8px" }}>
               <p style={{ margin: 0 }}>Phase: {phaseData.phase}</p>
-              <p style={{ margin: 0 }}>
-                Time Left: {phaseData.timeLeft > 0 ? phaseData.timeLeft : 0}s
-              </p>
+              <p style={{ margin: 0 }}>Time Left: {phaseData.timeLeft > 0 ? phaseData.timeLeft : 0}s</p>
               <p style={{ margin: 0 }}>Game ID: {phaseData.gameId}</p>
             </div>
             <p style={{ margin: "4px 0" }}>
@@ -1782,15 +1864,7 @@ function App() {
 
         {/* CENTER BOARD */}
         <div className="center-board" style={{ position: "relative" }}>
-          <div
-            className="board-container"
-            style={{
-              width: boardSize,
-              height: boardSize,
-              marginBottom: "6px",
-              position: "relative"
-            }}
-          >
+          <div className="board-container" style={{ width: boardSize, height: boardSize, marginBottom: "6px", position: "relative" }}>
             <div className="board-border" style={{ position: "relative" }}>
               {showVeil && userTeam === 1 && (
                 <div
@@ -1846,7 +1920,6 @@ function App() {
                   );
                 })}
               </div>
-
               {/* Skin Overlay */}
               <div
                 style={{
@@ -1871,10 +1944,7 @@ function App() {
                       style={{ width: "100%", height: "100%", objectFit: "contain" }}
                     />
                   ) : (
-                    <div
-                      key={i}
-                      style={{ width: "100%", height: "100%" }}
-                    />
+                    <div key={i} style={{ width: "100%", height: "100%" }} />
                   )
                 )}
               </div>
@@ -1890,19 +1960,12 @@ function App() {
         {/* RIGHT PANEL */}
         <div className="right-panel" style={{ width: "300px" }}>
           <h2 style={{ margin: "0 0 8px 0" }}>Game Records</h2>
-          <div
-            style={{
-              display: "flex",
-              gap: "8px",
-              justifyContent: "center",
-              marginBottom: "8px"
-            }}
-          >
+          <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginBottom: "8px" }}>
             <button
               className="toggle-btn"
               onClick={() => {
                 setShowMyGames(false);
-                setRefreshKey((prev) => prev + 1);
+                setRefreshKey(prev => prev + 1);
               }}
             >
               All Games
@@ -1911,7 +1974,7 @@ function App() {
               className="toggle-btn"
               onClick={() => {
                 setShowMyGames(true);
-                setRefreshKey((prev) => prev + 1);
+                setRefreshKey(prev => prev + 1);
               }}
               disabled={!userAddress}
             >
@@ -1925,8 +1988,6 @@ function App() {
             onSelectRecord={selectRecord}
             refreshKey={refreshKey}
           />
-
-          {/* Selected record details */}
           {selectedRecord && selectedHistory && (
             <div style={{ marginTop: "10px" }}>
               <h3>Game #{selectedRecord.gameId} Details</h3>
@@ -1961,7 +2022,7 @@ function App() {
               <div className="replay-container" style={{ justifyContent: "center" }}>
                 <button
                   onClick={() => {
-                    setSelectedReplayIndex((prev) => {
+                    setSelectedReplayIndex(prev => {
                       if (selectedHistory.length === 0) return -1;
                       if (prev < 0) return selectedHistory.length - 1;
                       return Math.max(0, prev - 1);
@@ -1973,7 +2034,7 @@ function App() {
                 <button onClick={recordGoBackToLive}>Exit</button>
                 <button
                   onClick={() => {
-                    setSelectedReplayIndex((prev) => {
+                    setSelectedReplayIndex(prev => {
                       if (selectedHistory.length === 0) return -1;
                       if (prev < 0) return 0;
                       return Math.min(selectedHistory.length - 1, prev + 1);
@@ -1986,15 +2047,14 @@ function App() {
               {selectedReplayIndex < 0 ? (
                 <p>Viewing final snapshot</p>
               ) : (
-                <p>
-                  Viewing Board {selectedReplayIndex + 1}/{selectedHistory.length}
-                </p>
+                <p>Viewing Board {selectedReplayIndex + 1}/{selectedHistory.length}</p>
               )}
             </div>
           )}
         </div>
       </div>
 
+      {/* Whole Skins / Lore Panels */}
       {showWholeSkins && chestOpenerContract && (
         <WholeSkinsPanel
           onClose={() => setShowWholeSkins(false)}
