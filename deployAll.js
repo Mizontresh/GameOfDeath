@@ -2,112 +2,109 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
+const dotenv = require("dotenv");
 const { ethers } = require("hardhat");
 
+// Generic deploy helper using Ethers v6
+async function deploy(name, ...args) {
+  console.log(`🔨 Deploying ${name}…`);
+  const Factory = await ethers.getContractFactory(name);
+  const contract = await Factory.deploy(...args);
+  await contract.waitForDeployment();
+  console.log(`✅  ${name} deployed to:`, contract.target);
+  return contract;
+}
+
 async function main() {
-  // Retrieve the deployer's account.
+  // Deployer setup
   const [deployer] = await ethers.getSigners();
-  console.log("Deploying contracts with:", deployer.address);
-
-  // Deployer balance
+  console.log(`\n👤 Deploying contracts with account: ${deployer.address}\n`);
   const balance = await ethers.provider.getBalance(deployer.address);
-  console.log("Deploy balance:", balance.toString());
+  console.log(`💰 Deploy balance: ${ethers.formatEther(balance)} ETH\n`);
 
-  // 1. Deploy GameOfDeath
-  const GameOfDeath = await ethers.getContractFactory("GameOfDeath");
-  const gameOfDeath = await GameOfDeath.deploy();
-  await gameOfDeath.waitForDeployment();
-  console.log("GameOfDeath deployed at:", gameOfDeath.target);
+  // 1. Deploy core contracts
+  const game          = await deploy("GameOfDeath");
+  const mizons        = await deploy("Mizons", deployer.address);
+  const betting       = await deploy("GameOfDeathBetting", deployer.address);
 
-  // 2. Deploy Mizons
-  const Mizons = await ethers.getContractFactory("Mizons");
-  const mizons = await Mizons.deploy(deployer.address);
-  await mizons.waitForDeployment();
-  console.log("Mizons deployed at:", mizons.target);
-
-  // 3. Deploy GameOfDeathBetting
-  const Betting = await ethers.getContractFactory("GameOfDeathBetting");
-  const betting = await Betting.deploy(deployer.address);
-  await betting.waitForDeployment();
-  console.log("GameOfDeathBetting deployed at:", betting.target);
-
-  // 4. Deploy ChestMinter
-  const ChestMinter = await ethers.getContractFactory("ChestMinter");
-  const chestMinter = await ChestMinter.deploy(
+  // 2. Deploy Chest contracts
+  const chestMinter   = await deploy(
+    "ChestMinter",
     mizons.target,
     "ipfs://bafybeibt3pnsfi47jarhjyd7f2q67o35wjaibpjhaaganbhdapcmbn47qm/"
   );
-  await chestMinter.waitForDeployment();
-  console.log("ChestMinter deployed at:", chestMinter.target);
-
-  // 5. Deploy ChestOpener
-  const ChestOpener = await ethers.getContractFactory("ChestOpener");
-  const chestOpener = await ChestOpener.deploy(
+  const chestOpener   = await deploy(
+    "ChestOpener",
     chestMinter.target,
     "ipfs://bafybeih3u3jnucrmt4lwlbpe2uecnaybwm7g5mtnnarek7252wcpyydxga/"
   );
-  await chestOpener.waitForDeployment();
-  console.log("ChestOpener deployed at:", chestOpener.target);
 
-  // 6. Deploy SkinLockRegistry
-  const SkinLockRegistry = await ethers.getContractFactory("SkinLockRegistry");
-  const skinLockRegistry = await SkinLockRegistry.deploy(
+  // 3. Deploy SkinLockRegistry
+  const skinLock      = await deploy(
+    "SkinLockRegistry",
     chestOpener.target,
     deployer.address
   );
-  await skinLockRegistry.waitForDeployment();
-  console.log("SkinLockRegistry deployed at:", skinLockRegistry.target);
 
-  // 7. Link ChestOpener ➔ ChestMinter
-  const tx = await chestMinter.setChestOpener(chestOpener.target);
-  await tx.wait();
-  console.log("Linked ChestOpener on ChestMinter");
+  // Link ChestOpener to ChestMinter
+  console.log(`🔗 Linking ChestOpener on ChestMinter…`);
+  const linkTx = await chestMinter.setChestOpener(chestOpener.target);
+  await linkTx.wait();
+  console.log(`✅  ChestOpener linked\n`);
 
-  // 8. Deploy Mizontresh
-  const Mizontresh = await ethers.getContractFactory("Mizontresh");
-  const mizontresh = await Mizontresh.deploy(
+  // 4. Deploy Mizontresh and whitelist
+  const mizontresh    = await deploy(
+    "Mizontresh",
     "ipfs://bafybeih3u3jnucrmt4lwlbpe2uecnaybwm7g5mtnnarek7252wcpyydxga/",
-    "0x1219819360136A93AC14E4df0A90125cf9927616"
+    deployer.address
   );
-  await mizontresh.waitForDeployment();
-  console.log("Mizontresh deployed at:", mizontresh.target);
+  console.log(`🔗 Whitelisting Mizontresh in SkinLockRegistry…`);
+  const whitelistTx = await skinLock.addAllowedNFT(mizontresh.target);
+  await whitelistTx.wait();
+  console.log(`✅  Mizontresh whitelisted\n`);
 
-  // 8a. Whitelist Mizontresh in SkinLockRegistry
-  const addTx = await skinLockRegistry.addAllowedNFT(mizontresh.target);
-  await addTx.wait();
-  console.log("Mizontresh whitelisted in SkinLockRegistry");
+  // 5. Update .env files without overwriting existing keys
+  console.log(`📦 Updating .env files…`);
 
-  // 9. Write .env files
-  const env = {
-    PRIVATE_KEY: process.env.PRIVATE_KEY,
-    GAMEOFDEATH_ADDRESS: gameOfDeath.target,
+  // Root .env
+  const rootEnvPath = path.join(__dirname, ".env");
+  const existingEnv = dotenv.config({ path: rootEnvPath }).parsed || {};
+  const updatedRoot = {
+    ...existingEnv,
+    GAMEOFDEATH_ADDRESS:        game.target,
     GAMEOFDEATH_BETTING_ADDRESS: betting.target,
-    MIZONS_ADDRESS: mizons.target,
-    CHEST_MINTER_ADDRESS: chestMinter.target,
-    CHEST_OPENER_ADDRESS: chestOpener.target,
-    SKIN_LOCK_ADDRESS: skinLockRegistry.target,
-    MIZONTRESH_ADDRESS: mizontresh.target,
-    REACT_APP_GAMEOFDEATH_ADDRESS: gameOfDeath.target,
-    REACT_APP_BETTING_ADDRESS: betting.target,
-    REACT_APP_MIZONS_ADDRESS: mizons.target,
+    MIZONS_ADDRESS:             mizons.target,
+    CHEST_MINTER_ADDRESS:       chestMinter.target,
+    CHEST_OPENER_ADDRESS:       chestOpener.target,
+    SKIN_LOCK_ADDRESS:          skinLock.target,
+    MIZONTRESH_ADDRESS:         mizontresh.target,
+  };
+  const rootLines = Object.entries(updatedRoot).map(([k, v]) => `${k}=${v}`);
+  fs.writeFileSync(rootEnvPath, rootLines.join("\n"), "utf8");
+  console.log(`✅  Root .env updated at ${rootEnvPath}`);
+
+  // Frontend .env
+  const frontEnvPath = path.join(__dirname, "frontend/.env");
+  const frontendEnv = {
+    REACT_APP_BACKEND_URL:         process.env.REACT_APP_BACKEND_URL || "http://localhost:3001",
+    REACT_APP_GAMEOFDEATH_ADDRESS: game.target,
+    REACT_APP_BETTING_ADDRESS:     betting.target,
+    REACT_APP_MIZONS_ADDRESS:      mizons.target,
     REACT_APP_CHEST_MINTER_ADDRESS: chestMinter.target,
     REACT_APP_CHEST_OPENER_ADDRESS: chestOpener.target,
-    REACT_APP_SKIN_LOCK_ADDRESS: skinLockRegistry.target,
-    REACT_APP_MIZONTRESH_ADDRESS: mizontresh.target,
-    REACT_APP_BACKEND_URL: process.env.REACT_APP_BACKEND_URL || "http://localhost:3000",
+    REACT_APP_SKIN_LOCK_ADDRESS:    skinLock.target,
+    REACT_APP_MIZONTRESH_ADDRESS:   mizontresh.target,
   };
-  const lines = Object.entries(env).map(([k, v]) => `${k}=${v}`);
-  fs.writeFileSync(path.join(__dirname, ".env"), lines.join("\n"));
-  fs.writeFileSync(
-    path.join(__dirname, "frontend/.env"),
-    lines.concat("PORT=3001").join("\n")
-  );
-  console.log(".env files created/updated.");
+  const frontLines = Object.entries(frontendEnv).map(([k, v]) => `${k}=${v}`);
+  fs.writeFileSync(frontEnvPath, frontLines.join("\n"), "utf8");
+  console.log(`✅  Frontend .env updated at ${frontEnvPath}\n`);
+
+  console.log(`🏁 Deployment complete!`);
 }
 
 main()
   .then(() => process.exit(0))
-  .catch((e) => {
-    console.error("Deployment error:", e);
+  .catch((err) => {
+    console.error("Deployment error:", err);
     process.exit(1);
   });

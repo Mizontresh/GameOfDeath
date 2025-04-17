@@ -63,11 +63,11 @@ let liveSkinOverlay    = Array(4096).fill(0);
 let boardSquareOwners  = Array(4096).fill(null);
 
 // timing constants
-const PICKING_TIME     = 30;
-const PLACING_TIME     = 30;
+const PICKING_TIME     = 120;
+const PLACING_TIME     = 150;
 const FINAL_COUNTDOWN  = 30;
 const CONWAY_STEPS     = 10;
-const MAX_CYCLES       = 2;
+const MAX_CYCLES       = 5;
 const STEP_DELAY       = 1000;
 const FINAL_STEP_DELAY = 2000;
 
