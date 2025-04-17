@@ -61,7 +61,9 @@ const io         = new Server(serverHttp, { cors:{ origin:"*" } });
 
 // ─── On‑chain Setup & State ─────────────────────────────────────────────────
 const provider = new ethers.JsonRpcProvider(RPC_URL);
+// keep the connection alive
 setInterval(() => provider.send("net_version", []).catch(()=>{}), 10_000);
+
 const wallet   = new ethers.Wallet(PRIVATE_KEY, provider);
 
 const gameABI    = require("./artifacts/contracts/GameOfDeath.sol/GameOfDeath.json").abi;
@@ -88,7 +90,7 @@ let skinHistory         = [];
 let liveSkinOverlay     = Array(4096).fill(0);
 let boardSquareOwners   = Array(4096).fill(null);
 
-// <<< --- CHANGE: initialize to null, not 0 --- >>>
+// <<< — NEW: track two pointers to avoid missing events — >>>
 let lastPollBlock     = null;
 let lastJoinPollBlock = null;
 
@@ -140,7 +142,6 @@ async function getOnChainBoard() {
   }
   return cells;
 }
-
 function packBoard(cells) {
   const per = 161, chunks = 26;
   const arr = Array(chunks).fill(0n);
@@ -230,7 +231,7 @@ async function distributeWinnings(gameId, winningTeam) {
 async function resetGame() {
   console.log("🔄 resetGame()");
   txQueue = Promise.resolve();
-  cycleCount = 0; // reset cycles
+  cycleCount = 0;
 
   const newId = currentGameId + 1;
   await enqueueTx(n=>bettingContract.clearBets(currentGameId,{nonce:n}));
@@ -246,7 +247,7 @@ async function resetGame() {
   liveSkinOverlay   = Array(4096).fill(0);
   boardSquareOwners = Array(4096).fill(null);
 
-  // <<< --- CHANGE: reset to right‐after‐now --- >>>
+  // <<< — RESET the poll pointers to the new tip + 1 — >>>
   const block = await provider.getBlockNumber();
   lastPollBlock     = block + 1;
   lastJoinPollBlock = block + 1;
@@ -413,12 +414,12 @@ setInterval(()=>{
   }
 },1000);
 
-// 3s polling: only if lastPollBlock is set, never from 0
+// 3s polling: only if lastPollBlock is set, never from zero
 setInterval(async ()=>{
   try {
     const currentBlock = await provider.getBlockNumber();
 
-    // SquarePlaced
+    // SquarePlaced logs
     if (lastPollBlock !== null && lastPollBlock <= currentBlock) {
       const logs = await gameContract.queryFilter(
         gameContract.filters.SquarePlaced(currentGameId),
@@ -436,7 +437,7 @@ setInterval(async ()=>{
     }
     lastPollBlock = currentBlock + 1;
 
-    // TeamJoined
+    // TeamJoined logs
     if (lastJoinPollBlock !== null && lastJoinPollBlock <= currentBlock) {
       const jlogs = await gameContract.queryFilter(
         gameContract.filters.TeamJoined(currentGameId),
@@ -531,7 +532,7 @@ app.post("/admin/reset-to-game1", async (_,res) => {
     const onChainPhase = Number(await gameContract.currentPhase());
     currentGameId      = onChainId;
 
-    // initialize poll blocks to tip+1
+    // initialize pointers to tip + 1
     const block = await provider.getBlockNumber();
     lastPollBlock     = block + 1;
     lastJoinPollBlock = block + 1;
