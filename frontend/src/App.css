@@ -1306,3 +1306,37 @@ html, body, #root {
   color:yellow;
   font-size:1.2rem;
 }
+/* Victory Overlay Background */
+.victory-overlay {
+  position: fixed;
+  inset: 0;                        /* shorthand for top/right/bottom/left: 0 */
+  background: rgba(0, 0, 0, 0.75); /* dark translucent backdrop */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;            /* lets clicks pass through except on the message */
+  z-index: 10000;
+}
+
+/* Victory Message */
+.victory-message {
+  color: #ffea00;                  /* bright gold/yellow */
+  font-size: 4rem;                 /* large text */
+  font-weight: 800;
+  text-shadow:
+    0 0 10px rgba(255, 234, 0, 0.7),
+    0 0 20px rgba(255, 234, 0, 0.5);
+}
+
+/* Fade in the backdrop */
+@keyframes fadeInBackdrop {
+  from { background: rgba(0, 0, 0, 0); }
+  to   { background: rgba(0, 0, 0, 0.75); }
+}
+
+/* Pop‑in effect for the message */
+@keyframes popIn {
+  0%   { transform: scale(0.8); opacity: 0; }
+  60%  { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); }
+}

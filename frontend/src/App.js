@@ -72,6 +72,9 @@ const chestOpenerAddress = process.env.REACT_APP_CHEST_OPENER_ADDRESS;
 const skinLockAddress = process.env.REACT_APP_SKIN_LOCK_ADDRESS;
 const mizontreshAddress = process.env.REACT_APP_MIZONTRESH_ADDRESS;
 const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:3000";
+  // Win overlay
+
+
 
 /* -------------------- Utility Functions -------------------- */
 function toGatewayUrl(url) {
@@ -1196,6 +1199,8 @@ function App() {
     chestType: null,
     frame: 1,
   });
+  const [lastWinnerMsg, setLastWinnerMsg] = useState("");
+  const [showWinOverlay, setShowWinOverlay] = useState(false);
 
   // Skins
   const [ownedSkins, setOwnedSkins] = useState([]); // each has { tokenId, bakedId }
@@ -1291,8 +1296,25 @@ function App() {
         setLiveBoard(augmentedBoard);
       }
     });
-    socketRef.current.on("newGameRecord", () => {
+    socketRef.current.on("newGameRecord", async () => {
       setRefreshKey((prev) => prev + 1);
+    
+      try {
+        // grab the latest record
+        const res = await fetch(`${backendUrl}/api/allRecords?skip=0&limit=1`);
+        const json = await res.json();
+        const rec = json.records?.[0];
+        let msg = "Nobody Won";
+        if (rec?.winner === "Red")   msg = "Red Won";
+        else if (rec?.winner === "Blue") msg = "Blue Won";
+    
+        setLastWinnerMsg(msg);
+        setShowWinOverlay(true);
+        // auto‑hide after 5s
+        setTimeout(() => setShowWinOverlay(false), 5000);
+      } catch (err) {
+        console.error("Failed to fetch last winner:", err);
+      }
     });
     socketRef.current.on("disconnect", () => console.log("Socket disconnected"));
     return () => socketRef.current.disconnect();
@@ -1530,7 +1552,27 @@ function App() {
       setSelectedReplayIndex(-1);
     }
   }
-
+  function WinOverlay({ message }) {
+    return (
+      <div className="victory-overlay"
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.7)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          pointerEvents: "none",
+          zIndex: 1000,           // lower than your menus/controls
+        }}
+      >
+        <div className="victory-message"><h1 style={{ color: "#fff", fontSize: "4rem", textAlign: "center" }}>
+          {message}
+        </h1></div>
+      </div>
+    );
+  }
+  
   // Join a team
   async function joinTeam(teamId) {
     if (!gameContract) {
@@ -1868,6 +1910,7 @@ for (let i = 0; i < betAmount; i++) {
   return (
     <div className="app-container" style={{ margin: 0, padding: 0, height: "100vh" }}>
       <MusicPlayer backendUrl={backendUrl} />
+      {showWinOverlay && <WinOverlay message={lastWinnerMsg} />}
 
       {showInfoPanel && <InfoPanel onClose={() => setShowInfoPanel(false)} />}
       {showMizontreshOverlay && mizontreshContract && (
