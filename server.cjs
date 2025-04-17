@@ -12,9 +12,18 @@ const mongoose   = require("mongoose");
 const conway     = require("./conway");
 
 // --------------------
+// Environment
+// --------------------
+const RPC_URL   = process.env.RPC_URL;
+const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/gameofdeath";
+const BASE_URL  = process.env.BASE_URL || "http://localhost:3000";
+const PRIVATE_KEY = process.env.PRIVATE_KEY;
+if (!RPC_URL) throw new Error("RPC_URL must be set in .env");
+if (!PRIVATE_KEY) throw new Error("PRIVATE_KEY must be set in .env");
+
+// --------------------
 // MongoDB Setup
 // --------------------
-const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/gameofdeath";
 mongoose.connect(MONGO_URI);
 mongoose.connection
   .once("open", () => console.log("📦 MongoDB:", MONGO_URI))
@@ -71,21 +80,19 @@ const MAX_CYCLES       = 5;
 const STEP_DELAY       = 1000;
 const FINAL_STEP_DELAY = 2000;
 
-// Base URL for thumbnails
-const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
-
 // --------------------
 // Ethereum Setup
 // --------------------
-function setupWebSocketProvider() {
-  const provider = new ethers.WebSocketProvider(
-    process.env.WS_PROVIDER || "ws://127.0.0.1:8545"
-  );
+function setupProvider() {
+  const provider = RPC_URL.startsWith("ws")
+    ? new ethers.WebSocketProvider(RPC_URL)
+    : new ethers.JsonRpcProvider(RPC_URL);
+
   if (provider.socket) {
     provider.socket.on("open",  () => console.log("🔌 WS connected"));
     provider.socket.on("close", code => {
       console.log("🔌 WS closed, reconnecting…", code);
-      reconnectWebSocketProvider();
+      reconnectProvider();
     });
     provider.socket.on("error", err => {
       console.error("🔌 WS error:", err);
@@ -94,16 +101,17 @@ function setupWebSocketProvider() {
   } else {
     console.log("⚠️  No socket, will ping HTTP");
   }
+
   return provider;
 }
 
-function reconnectWebSocketProvider() {
+function reconnectProvider() {
   setTimeout(() => {
-    wsProvider = setupWebSocketProvider();
-    wallet.provider = wsProvider;
+    provider = setupProvider();
+    wallet.provider = provider;
     gameContract    = new ethers.Contract(gameAddress,    gameArtifact.abi,    wallet);
     bettingContract = new ethers.Contract(bettingAddress, bettingArtifact.abi, wallet);
-    mizons          = new ethers.Contract(mizonsAddress,  mizonsArtifact.abi, wallet);
+    mizons          = new ethers.Contract(mizonsAddress,  mizonsArtifact.abi,  wallet);
     if (skinLockAddress) {
       skinLockContract = new ethers.Contract(skinLockAddress, skinLockArtifact.abi, wallet);
       subscribeSkinLockEvents();
@@ -112,13 +120,13 @@ function reconnectWebSocketProvider() {
   }, 3000);
 }
 
-let wsProvider = setupWebSocketProvider();
+let provider = setupProvider();
 setInterval(async () => {
-  try { await wsProvider.send("net_version", []); }
+  try { await provider.send("net_version", []); }
   catch {}
 }, 10000);
 
-const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, wsProvider);
+const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 
 const gameArtifact      = require("./artifacts/contracts/GameOfDeath.sol/GameOfDeath.json");
 const bettingArtifact   = require("./artifacts/contracts/GameOfDeathBetting.sol/GameOfDeathBetting.json");
@@ -138,7 +146,7 @@ if (skinLockAddress) console.log(" • SkinLock:  ", skinLockAddress);
 
 let gameContract    = new ethers.Contract(gameAddress,    gameArtifact.abi,    wallet);
 let bettingContract = new ethers.Contract(bettingAddress, bettingArtifact.abi, wallet);
-let mizons          = new ethers.Contract(mizonsAddress,  mizonsArtifact.abi, wallet);
+let mizons          = new ethers.Contract(mizonsAddress,  mizonsArtifact.abi,  wallet);
 let skinLockContract;
 if (skinLockAddress) {
   skinLockContract = new ethers.Contract(skinLockAddress, skinLockArtifact.abi, wallet);
@@ -150,14 +158,9 @@ if (skinLockAddress) {
 // --------------------
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-/**
- * Call cb() (which must return a promise for a mined receipt),
- * retrying every second on any failure until it succeeds.
- */
 async function attemptTransaction(cb) {
   while (true) {
     try {
-      // small back-off
       await sleep(200);
       const receipt = await cb();
       return receipt;
@@ -168,24 +171,17 @@ async function attemptTransaction(cb) {
   }
 }
 
-/**
- * Promise‑queue: ensures each transaction is fully mined before
- * starting the next one.
- */
 let transactionQueue = Promise.resolve();
 function queueTransaction(cb) {
   transactionQueue = transactionQueue.then(() => attemptTransaction(cb));
   return transactionQueue;
 }
 
-/**
- * Wait for a tx to be mined, or throw after timeout.
- */
 async function waitForTxConfirmation(tx, timeout = 90_000, interval = 3_000) {
   console.log(`🔃 waiting for ${tx.hash}`);
   const start = Date.now();
   while (Date.now() - start < timeout) {
-    const rcpt = await wsProvider.getTransactionReceipt(tx.hash);
+    const rcpt = await provider.getTransactionReceipt(tx.hash);
     if (rcpt) return rcpt;
     await sleep(interval);
   }
@@ -207,6 +203,7 @@ async function determineSpawnedSkinForUser(user) {
     return 0;
   }
 }
+
 function runSkinStep(oldGrid) {
   const newGrid = Array(4096).fill(0);
   for (let y = 0; y < 64; y++) {
@@ -243,6 +240,7 @@ function subscribeGameEvents() {
     activePlayers.add(user.toLowerCase());
   });
 }
+
 function subscribeSkinLockEvents() {
   skinLockContract.removeAllListeners("TokenLocked");
   skinLockContract.removeAllListeners("TokenUnlocked");
@@ -253,6 +251,7 @@ function subscribeSkinLockEvents() {
     console.log(`🔓 Skin unlocked to ${to}`);
   });
 }
+
 setInterval(() => {
   subscribeGameEvents();
   if (skinLockContract) subscribeSkinLockEvents();
@@ -273,9 +272,11 @@ async function getOnChainBoard() {
   }
   return cells;
 }
+
 function convertToAugmentedBoard(board) {
   return board.map(v => ({ value: v }));
 }
+
 function packBoard(cells) {
   const per = 161, chunks = 26, arr = Array(chunks).fill(0n);
   cells.forEach((c, i) => {
@@ -342,24 +343,20 @@ async function distributeWinnings(gameId, winningTeam) {
 // --------------------
 async function resetGame() {
   console.log("🔄 resetGame()");
-  // **flush the transaction queue so old nonces don’t linger**
   transactionQueue = Promise.resolve();
 
   const newId = currentGameId + 1;
   try {
-    // 1) clear bets
     await queueTransaction(async (nonce) => {
       const tx = await bettingContract.clearBets(currentGameId, { nonce });
       console.log("clearBets tx:", tx.hash);
       return waitForTxConfirmation(tx);
     });
-    // 2) bump game
     await queueTransaction(async (nonce) => {
       const tx = await gameContract.newGame(newId, { nonce });
       console.log("newGame tx:", tx.hash);
       return waitForTxConfirmation(tx);
     });
-    // 3) open betting
     await queueTransaction(async (nonce) => {
       const tx = await bettingContract.openBetting(newId, { nonce });
       console.log("openBetting tx:", tx.hash);
@@ -369,7 +366,6 @@ async function resetGame() {
     console.error("resetGame transaction error:", e);
   }
 
-  // local state
   currentGameId      = newId;
   phase              = "picking";
   phaseTimeLeft      = PICKING_TIME;
@@ -441,10 +437,10 @@ async function runFinalCycle() {
 async function recordGame(winner) {
   console.log("📚 recordGame()");
   try {
-    const [rBig, bBig]  = await gameContract.getTeamCounts(currentGameId);
-    const redCount      = Number(rBig);
-    const blueCount     = Number(bBig);
-    const bets          = await bettingContract.getBets();
+    const [rBig, bBig] = await gameContract.getTeamCounts(currentGameId);
+    const redCount     = Number(rBig);
+    const blueCount    = Number(bBig);
+    const bets         = await bettingContract.getBets();
     bets.forEach(b => activePlayers.add(b.user.toLowerCase()));
 
     let thumbnail = "";
@@ -527,7 +523,7 @@ async function transitionPhase() {
         await closeBettingForCurrentGame();
         await setContractPhase("placing");
         phase = "placing"; phaseTimeLeft = PLACING_TIME;
-        gameStartBlock = await wsProvider.getBlockNumber();
+        gameStartBlock = await provider.getBlockNumber();
         break;
       case "placing":
         await setContractPhase("conway");
