@@ -34,7 +34,7 @@ const httpProvider = new ethers.JsonRpcProvider(RPC_URL);
 // keep HTTP alive
 setInterval(() => httpProvider.send("net_version", []).catch(()=>{}), 10_000);
 
-// WS provider only for event subscriptions (avoids JSON‐RPC polling/filter issues)
+// WS provider only for event subscriptions (avoids JSON‑RPC polling/filter issues)
 const subscriptionProvider = WS_RPC_URL
   ? new ethers.WebSocketProvider(WS_RPC_URL)
   : httpProvider;
@@ -84,7 +84,7 @@ const skinLockContract    = SKIN_LOCK_ADDRESS
   ? new ethers.Contract(SKIN_LOCK_ADDRESS, skinLockABI, walletHttp)
   : null;
 
-// subscription‐only contract for “TeamJoined” events
+// subscription‑only contract for “TeamJoined” events
 const gameContractSub = new ethers.Contract(GAMEOFDEATH_ADDRESS, gameABI, walletSub);
 
 // ─── Game Loop State ─────────────────────────────────────────────────────────
@@ -120,7 +120,6 @@ function toNumber(bn) {
 // TX Queue (no manual nonces!)
 let txQueue = Promise.resolve();
 function enqueueTx(fn) {
-  // fn should return a Promise<TransactionResponse>
   txQueue = txQueue.then(() => fn().catch(e=>{ throw e; }));
   return txQueue;
 }
@@ -160,7 +159,7 @@ function packBoard(cells){
   return arr.map(n=>n.toString());
 }
 
-// Conway‐style skin
+// Conway‑style skin
 function runSkinStep(oldGrid){
   const newGrid=Array(4096).fill(0);
   for(let y=0;y<64;y++)for(let x=0;x<64;x++){
@@ -215,7 +214,7 @@ async function generateThumbnail(board, gameId){
   return `${BASE_URL}/images/game_${gameId}.png`;
 }
 
-// broadcast
+// broadcast current state
 function broadcastState(){
   io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
 }
@@ -287,7 +286,7 @@ async function runConwaySteps(steps,delay=STEP_DELAY){
     console.log(`Conway step ${i}/${steps}`);
     await sleep(delay);
   }
-  // push final board on-chain
+  // push final board on‑chain
   await enqueueTx(()=> 
     gameContractHttp.serverOverwriteBoard(packBoard(b))
       .then(tx=>waitForTxConfirmation(tx))
@@ -450,13 +449,12 @@ setInterval(async()=>{
   }
 },3000);
 
+// subscription
 subscribeTeamJoined();
 
-// ─── Socket.io initial state ────────────────────────────────────────────────
+// client connections
 io.on("connection", socket => {
-  // send current phase+gameId immediately
   socket.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
-  // optionally send latest board too
   if(boardHistory.length){
     const last=boardHistory[boardHistory.length-1].map(v=>({value:v}));
     socket.emit("boardUpdated", last);
@@ -530,13 +528,11 @@ app.post("/admin/reset-to-game1", async(_,res)=>{
 // ─── Startup ─────────────────────────────────────────────────────────────────
 (async function startup(){
   try{
-    // initialize currentGameId & phase from on-chain
-    const onChainId = toNumber(await gameContractHttp.currentGameId());
+    const onChainId    = toNumber(await gameContractHttp.currentGameId());
     const onChainPhase = Number(await gameContractHttp.currentPhase());
     currentGameId = onChainId;
 
     if(onChainPhase===3){
-      // if contract was in final, spin up newGame right away
       await resetGame();
     } else {
       phase="picking";
