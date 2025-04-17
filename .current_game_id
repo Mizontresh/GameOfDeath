@@ -412,7 +412,7 @@ async function runFinalCycle() {
 //-------------------------------------
 async function recordGame(winner) {
   try {
-    const counts = await gameContract.getTeamCounts(currentGameId);
+    const [redBig, blueBig] = await gameContract.getTeamCounts(currentGameId);
     const bets = await bettingContract.getBets(currentGameId);
     bets.forEach(b => activePlayers.add(b.user.toLowerCase()));
     let thumbnail = "";

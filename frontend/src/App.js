@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { io } from "socket.io-client";
 import { ethers } from "ethers";
-import "./App.css";
+import "./App.css"; // <-- your big CSS file with all the styling
 import logo from "./logo.png";
 
 /* -------------------- Minimal ABIs -------------------- */
@@ -15,12 +15,15 @@ const gameABI = [
   "function currentGameId() external view returns (uint256)"
 ];
 const bettingABI = [
-  "function placeBet(uint256 gameId, uint8 team, uint256 tickets) external payable",
-  "function getBets(uint256 gameId) external view returns (tuple(address user, uint8 team, uint256 tickets)[])",
-  "function openBetting(uint256 gameId) external",
-  "function closeBetting(uint256 gameId) external",
-  "function clearBet(uint256 gameId) external"
+  "function placeBet(uint8 team, uint256 tickets) external payable",
+  "function getBets() external view returns (tuple(address user,uint8 team,uint256 tickets)[])",
+  "function openBetting() external",
+  "function closeBetting() external",
+  "function clearBet() external"
 ];
+
+
+
 const mizonsABI = [
   "function balanceOf(address owner) external view returns (uint256)",
   "function mint(address to, uint256 amount) external",
@@ -28,11 +31,13 @@ const mizonsABI = [
 ];
 const chestMinterABI = [
   "function mintRandomChest() external returns (uint256)",
-  "function tokenChestType(uint256 tokenId) external view returns (uint8)",
+  "function tokenFrame(uint256 tokenId) external view returns (uint8)",
   "function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)",
   "function balanceOf(address owner) external view returns (uint256)",
   "function tokenURI(uint256 tokenId) external view returns (string)",
-  "function setChestOpener(address opener) external"
+  "function setChestOpener(address opener) external",
+   "function approve(address to, uint256 tokenId) external",
+  "function safeTransferFrom(address from, address to, uint256 tokenId, bytes data) external"
 ];
 const chestOpenerABI = [
   "function openChest(uint256 chestId) external payable",
@@ -76,9 +81,11 @@ function toGatewayUrl(url) {
   }
   return url;
 }
+
 function convertToAugmentedBoard(numericalBoard) {
   return numericalBoard.map((val) => ({ value: val }));
 }
+
 function formatMizons(balance) {
   const bal = Number(ethers.formatUnits(balance, 18));
   if (bal === 0) return "0";
@@ -153,7 +160,7 @@ function MusicPlayer({ backendUrl }) {
         zIndex: 15000,
         background: "rgba(0,0,0,0.5)",
         padding: "6px 10px",
-        borderRadius: "5px"
+        borderRadius: "5px",
       }}
     >
       <button className="music-button" onClick={() => setMuted((prev) => !prev)}>
@@ -308,11 +315,9 @@ function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLoc
 }
 
 /* 
-  --------------------
   LoreSlidesOverlay: 
   For each lore #, loads 0.png / 0.txt, 1.png / 1.txt, etc.
   Then tries end.txt
-  --------------------
 */
 function LoreSlidesOverlay({ loreIndex, onClose }) {
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -322,7 +327,6 @@ function LoreSlidesOverlay({ loreIndex, onClose }) {
 
   async function fetchSlideData(index) {
     try {
-      // Attempt to fetch e.g. /slides/loreIndex/0.png, /slides/loreIndex/0.txt
       const imageUrl = `${backendUrl}/slides/${loreIndex}/${index}.png`;
       const textUrl = `${backendUrl}/slides/${loreIndex}/${index}.txt`;
 
@@ -331,7 +335,6 @@ function LoreSlidesOverlay({ loreIndex, onClose }) {
 
       let foundSomething = false;
 
-      // If imageResponse is OK, set currentImageUrl
       if (imageResponse.ok) {
         setCurrentImageUrl(imageUrl);
         foundSomething = true;
@@ -339,7 +342,6 @@ function LoreSlidesOverlay({ loreIndex, onClose }) {
         setCurrentImageUrl("");
       }
 
-      // If textResponse is OK, set currentText
       if (textResponse.ok) {
         const textContent = await textResponse.text();
         setCurrentText(textContent);
@@ -349,8 +351,8 @@ function LoreSlidesOverlay({ loreIndex, onClose }) {
       }
 
       if (!foundSomething) {
-        // Attempt to fetch end
-        const endUrl = `${backendUrl}/slides/${loreIndex}/end.txt`;
+        // Attempt "end.txt"
+        const endUrl = `${backendUrl}/slides/end.txt`;
         const endResp = await fetch(endUrl);
         if (endResp.ok) {
           const endText = await endResp.text();
@@ -358,7 +360,6 @@ function LoreSlidesOverlay({ loreIndex, onClose }) {
           setCurrentImageUrl("");
           setIsEnd(true);
         } else {
-          // end.txt not found => close
           onClose();
         }
       }
@@ -456,10 +457,8 @@ function LoreSlidesOverlay({ loreIndex, onClose }) {
 }
 
 /* 
-  --------------------
   MizontreshOverlay 
-  (with Lore slides)
-  --------------------
+  with gating logic: [0, 8, 16, 24, 32, 40, 48, 56, 64]
 */
 function MizontreshOverlay({
   onClose,
@@ -468,14 +467,16 @@ function MizontreshOverlay({
   skinLockContract,
   userAddress,
   refreshInventory,
+  numUniqueSkins, // we'll pass in ownedSkins.length
 }) {
   const [inventory, setInventory] = useState([]);
   const [buying, setBuying] = useState(false);
   const [error, setError] = useState("");
 
-  // Lore overlay:
   const [showLoreSlides, setShowLoreSlides] = useState(false);
   const [activeLoreIndex, setActiveLoreIndex] = useState(null);
+
+  const loreRequirements = [0, 8, 16, 24, 32, 40, 48, 56, 64];
 
   useEffect(() => {
     async function fetchInventory() {
@@ -537,6 +538,13 @@ function MizontreshOverlay({
   }
 
   function handleLoreClick(index) {
+    const requiredSkins = loreRequirements[index];
+    if (numUniqueSkins < requiredSkins) {
+      alert(
+        `You need at least ${requiredSkins} unique skins to read Lore #${index + 1}. Currently you have ${numUniqueSkins}.`
+      );
+      return;
+    }
     setActiveLoreIndex(index);
     setShowLoreSlides(true);
   }
@@ -892,6 +900,7 @@ function LorePanel({ onClose, ownedSkins }) {
         }}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* This is the "big" 1024-skin image: */}
         <img
           src={`${backendUrl}/skins/whole.png`}
           alt="All Skins"
@@ -1189,7 +1198,7 @@ function App() {
   });
 
   // Skins
-  const [ownedSkins, setOwnedSkins] = useState([]);
+  const [ownedSkins, setOwnedSkins] = useState([]); // each has { tokenId, bakedId }
   const [showWholeSkins, setShowWholeSkins] = useState(false);
   const [showLorePanel, setShowLorePanel] = useState(false);
 
@@ -1471,7 +1480,7 @@ function App() {
       for (let i = 0; i < balance; i++) {
         const tokenIdBN = await chestMinterContract.tokenOfOwnerByIndex(userAddress, i);
         const tokenId = Number(tokenIdBN);
-        const chestTypeBN = await chestMinterContract.tokenChestType(tokenId);
+        const chestTypeBN = await chestMinterContract.tokenFrame(tokenId);
         const chestType = Number(chestTypeBN);
         chestList.push({ tokenId, type: chestType });
       }
@@ -1562,7 +1571,9 @@ function App() {
     }
     try {
       setStatus(`Placing square at (${x}, ${y})...`);
-      const tx = await gameContract.placeSquare(x, y);
+      const tx = await gameContract.placeSquare(x, y, {
+           value: ethers.parseEther("0.00001")   // match your PLACE_FEE in the contract
+         });
       await tx.wait();
       setStatus("Square placed!");
       setErrorMsg("");
@@ -1605,12 +1616,16 @@ function App() {
     }
     try {
       setStatus(`Placing ${betAmount} bet(s) on ${teamId === 1 ? "Red" : "Blue"}...`);
-      for (let i = 0; i < betAmount; i++) {
-        const tx = await bettingContract.placeBet(phaseData.gameId, teamId, 1, {
-          value: ethers.parseEther("0.00005"),
-        });
-        await tx.wait();
-      }
+      // after
+for (let i = 0; i < betAmount; i++) {
+  const tx = await bettingContract.placeBet(
+    teamId,                // ← first argument is now team
+    1,                     // tickets
+    { value: ethers.parseEther("0.00005") }
+  );
+  await tx.wait();
+}
+
       setStatus(`${betAmount} bet(s) placed on ${teamId === 1 ? "Red" : "Blue"}!`);
       setErrorMsg("");
     } catch (err) {
@@ -1630,7 +1645,7 @@ function App() {
       return;
     }
     try {
-      // Step 1: "brain"
+      // Step 1: "brain"
       setChestAnimation({
         active: true,
         step: "brain",
@@ -1639,8 +1654,8 @@ function App() {
         data: { image: `${backendUrl}/chests/brain.png` },
       });
       await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      // Step 2: "stir"
+  
+      // Step 2: "stir"
       setChestAnimation({
         active: true,
         step: "stir",
@@ -1649,30 +1664,36 @@ function App() {
         data: { image: `${backendUrl}/chests/brain.png` },
       });
       await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      // Actual mint
-      const tx = await chestMinterContract.mintRandomChest({ gasLimit: 400000 });
+  
+      // Actual mint — now sending 0.0001 ETH!
+      const mintPrice = ethers.parseEther("0.0001");
+      const tx = await chestMinterContract.mintRandomChest({
+        value: mintPrice,
+        gasLimit: 400_000
+      });
       await tx.wait();
       await new Promise((resolve) => setTimeout(resolve, 800));
+  
+      // Refresh inventories
       refreshInventory();
       fetchOwnedSkinsFromOpener();
-
+  
       // Find newly minted chest
-      const balanceBN = await chestMinterContract.balanceOf(userAddress);
-      const balance = Number(balanceBN);
-      const tokenIdBN = await chestMinterContract.tokenOfOwnerByIndex(userAddress, balance - 1);
-      const tokenId = Number(tokenIdBN);
-      const chestTypeBN = await chestMinterContract.tokenChestType(tokenId);
-      const chestType = Number(chestTypeBN);
-
-      // fetch metadata for reveal
+      const balanceBN   = await chestMinterContract.balanceOf(userAddress);
+      const balance     = Number(balanceBN);
+      const tokenIdBN   = await chestMinterContract.tokenOfOwnerByIndex(userAddress, balance - 1);
+      const tokenId     = Number(tokenIdBN);
+      const chestTypeBN = await chestMinterContract.tokenFrame(tokenId);
+      const chestType   = Number(chestTypeBN);
+  
+      // Fetch metadata for reveal
       const metadataUrl = `${backendUrl}/chests/var/${chestType}.json`;
-      const imageUrl = `${backendUrl}/chests/icons/chest${chestType}/frame1.png`;
-      const response = await fetch(metadataUrl);
-      if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-      const metadata = await response.json();
-      metadata.image = imageUrl;
-
+      const imageUrl    = `${backendUrl}/chests/icons/chest${chestType}/frame1.png`;
+      const response    = await fetch(metadataUrl);
+      if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+      const metadata    = await response.json();
+      metadata.image    = imageUrl;
+  
       // "revealed"
       setChestAnimation({
         active: true,
@@ -1682,27 +1703,34 @@ function App() {
         frame: 0,
       });
       await new Promise((resolve) => setTimeout(resolve, 1500));
+  
     } catch (err) {
-      console.error("Error minting chest:", err);
-      alert("Chest minting failed: " + err.message);
+      // try to unwrap nested JSON‑RPC revert reason
+      const rpc = err.data ?? err.error?.data;
+      const reason = rpc?.message || err.message;
+      console.error("Error minting chest:", reason, rpc);
+      alert("Chest minting failed: " + reason);
+  
     } finally {
       setChestAnimation({
         active: false,
-        step: null,
-        data: null,
+        step:    null,
+        data:    null,
         chestType: null,
-        frame: 0,
+        frame:   0,
       });
     }
   }
+  
 
-  // Open chest
   async function handleOpenChest(tokenId) {
     const chest = inventory.find((c) => c.tokenId === tokenId);
     if (!chest) {
       alert("Chest not found in inventory.");
       return;
     }
+  
+    // start the 5‑frame “opening” animation
     setChestAnimation({
       active: true,
       step: "opening",
@@ -1710,31 +1738,46 @@ function App() {
       frame: 1,
       data: null,
     });
-
-    // Animate frames
     for (let i = 1; i <= 5; i++) {
       setChestAnimation((prev) => ({ ...prev, frame: i }));
-      // small delay
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
+  
     try {
-      const tx = await chestOpenerContract.openChest(tokenId, {
+      // 1) allow the opener contract to pull your chest NFT
+      const approveTx = await chestMinterContract.approve(chestOpenerAddress, tokenId);
+      await approveTx.wait();
+  
+      // 2) actually transfer the chest into the opener (fires your burn hook)
+      const transferTx = await chestMinterContract["safeTransferFrom(address,address,uint256,bytes)"](
+        userAddress,
+        chestOpenerAddress,
+        tokenId,
+        "0x"
+      );
+      await transferTx.wait();
+  
+      // 3) pay the ETH fee and mint the new item
+      const openTx = await chestOpenerContract.openChest(tokenId, {
         value: ethers.parseEther("0.001"),
       });
-      await tx.wait();
+      await openTx.wait();
+  
+      // now load the newly minted item
       const newItemIdBN = await chestOpenerContract.itemCounter();
       const newItemId = Number(newItemIdBN) - 1;
       const awardedItemBN = await chestOpenerContract.tokenAwardedItem(newItemId);
       const awardedItem = Number(awardedItemBN);
-
-      // fetch item metadata
+  
+      // fetch its metadata
       const imageUrl = `${backendUrl}/skins/icons/${awardedItem}.png`;
       const metadataUrl = `${backendUrl}/skins/text1/${awardedItem}.json`;
       const response = await fetch(metadataUrl);
       if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
       const metadata = await response.json();
       metadata.image = imageUrl;
-
+  
+      // show the reveal
       setChestAnimation({
         active: true,
         step: "revealed",
@@ -1747,6 +1790,7 @@ function App() {
       console.error("Error opening chest:", err);
       alert("Failed to open chest: " + err.message);
     } finally {
+      // tear down animation and refresh state
       setChestAnimation({
         active: false,
         step: null,
@@ -1758,8 +1802,7 @@ function App() {
       fetchOwnedSkinsFromOpener();
     }
   }
-
-  // Return to live from record
+  
   function recordGoBackToLive() {
     setSelectedRecord(null);
     setSelectedHistory(null);
@@ -1819,6 +1862,9 @@ function App() {
 
   const showVeil = phaseData.phase === "placing" && !selectedHistory && liveReplayIndex < 0;
 
+  // For Mizontresh lore gating
+  const uniqueSkinsCount = ownedSkins.length;
+
   return (
     <div className="app-container" style={{ margin: 0, padding: 0, height: "100vh" }}>
       <MusicPlayer backendUrl={backendUrl} />
@@ -1832,6 +1878,7 @@ function App() {
           skinLockContract={skinLockContract}
           userAddress={userAddress}
           refreshInventory={refreshInventory}
+          numUniqueSkins={uniqueSkinsCount}
         />
       )}
 
@@ -1953,7 +2000,7 @@ function App() {
               height: "220px",
             }}
           >
-            <h2 className="section-title">Your MIZ</h2>
+            <div className="miz"><h2 className="section-title">Your MIZ</h2></div>
             <div className="miz-balance-container">
               <img src={logo} alt="MIZ Logo" className="miz-logo" />
               <p>{formatMizons(mizonsBalance)} MIZ</p>
@@ -2038,7 +2085,7 @@ function App() {
               </button>
             </div>
             <div style={{ textAlign: "center", marginTop: "10px" }}>
-              <button onClick={approveTokens}>Approve Tokens</button>
+              <button onClick={approveTokens}>Approve</button>
               <button onClick={handleMintChest} style={{ display: "block", margin: "6px auto" }}>
                 Mint Chest
               </button>
@@ -2062,9 +2109,9 @@ function App() {
               </p>
               <p style={{ margin: 0 }}>Game ID: {phaseData.gameId}</p>
             </div>
-            <p style={{ margin: "4px 0" }}>
+            <div className="yourteam"><p style={{ margin: "4px 0" }}>
               Your Team: {userTeam === 1 ? "Red" : userTeam === 2 ? "Blue" : "None"}
-            </p>
+            </p></div>
             <div className="join-team-buttons" style={{ marginBottom: "6px" }}>
               <button
                 className="join-red"
@@ -2081,12 +2128,12 @@ function App() {
                 Join Blue
               </button>
             </div>
-            <p style={{ margin: 0 }}>Team Red: {teamCounts.red}</p>
-            <p style={{ margin: 0 }}>Team Blue: {teamCounts.blue}</p>
-            <h3 style={{ margin: "8px 0 4px 0" }}>Bet Panel</h3>
-            <p style={{ margin: 0 }}>Red Bets: {liveRedBets}</p>
-            <p style={{ margin: 0 }}>Blue Bets: {liveBlueBets}</p>
-            <p style={{ margin: 0 }}>Tickets: {betAmount}</p>
+            <div className="teamred" ><p style={{ margin: 0 }}>Team Red: {teamCounts.red}</p></div>
+            <div className="teamblue" ><p style={{ margin: 0 }}>Team Blue: {teamCounts.blue}</p></div>
+            <div className="betpanel" ><h3 style={{ margin: "8px 0 4px 0" }}>Bet Panel</h3></div>
+            <div className="redbets" ><p style={{ margin: 0 }}>Red Bets: {liveRedBets}</p></div>
+            <div className="bluebets" ><p style={{ margin: 0 }}>Blue Bets: {liveBlueBets}</p></div>
+            <div className="tickets" ><p style={{ margin: 0 }}>Tickets: {betAmount}</p></div>
             <input
               type="range"
               min="1"
@@ -2125,6 +2172,7 @@ function App() {
             }}
           >
             <div className="board-border" style={{ position: "relative" }}>
+              {/* Veil the opposite side if needed */}
               {showVeil && userTeam === 1 && (
                 <div
                   style={{
@@ -2153,6 +2201,8 @@ function App() {
                   }}
                 />
               )}
+
+              {/* Base Board (Red/Blue) */}
               <div className="board-grid">
                 {displayBoard.map((cell, i) => {
                   const x = i % 64;
@@ -2179,8 +2229,9 @@ function App() {
                   );
                 })}
               </div>
-              {/* Skin Overlay */}
-              <div
+
+              {/* Skin Overlay (same 64×64 grid, absolutely placed) */}
+              <div className="skinz"
                 style={{
                   position: "absolute",
                   top: 0,
@@ -2249,14 +2300,14 @@ function App() {
           />
           {selectedRecord && selectedHistory && (
             <div style={{ marginTop: "10px" }}>
-              <h3>Game #{selectedRecord.gameId} Details</h3>
+              <div className="gamedetails" ><h3>Game #{selectedRecord.gameId} Details</h3></div>
               <p>
                 Played at:{" "}
                 {selectedRecord.timestamp
                   ? new Date(selectedRecord.timestamp).toLocaleString()
                   : "N/A"}
               </p>
-              <p>Winner: {selectedRecord.winner}</p>
+              <div className="winner" ><p>Winner: {selectedRecord.winner}</p></div>
               <p>
                 Team Red: {selectedRecord.teamRedCount} | Team Blue: {selectedRecord.teamBlueCount}
               </p>
@@ -2307,7 +2358,7 @@ function App() {
                 <p>Viewing final snapshot</p>
               ) : (
                 <p>
-                  Viewing Board {selectedReplayIndex + 1}/{selectedHistory.length}
+                  Turn {selectedReplayIndex + 1}/{selectedHistory.length}
                 </p>
               )}
             </div>
@@ -2337,40 +2388,6 @@ function App() {
           </button>
         </div>
       )}
-
-      {/* Mobile overrides */}
-      <style>{`
-        @media (max-width: 768px) {
-          .main-content {
-            flex-direction: column;
-            align-items: center;
-            height: auto;
-          }
-          .left-panel, .right-panel {
-            width: 100%;
-            max-width: 500px;
-            margin: 10px 0;
-          }
-          .center-board {
-            margin: 0 auto 20px auto;
-            overflow: auto;
-          }
-          .board-container {
-            width: 100vw !important;
-            height: 100vw !important;
-            transform: none !important;
-            transform-origin: top left !important;
-          }
-          .whole-skins-overlay > div {
-            width: 100% !important;
-            height: 100% !important;
-          }
-          .whole-skins-overlay button.close-whole-skins-btn {
-            top: 10px !important;
-            right: 10px !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }

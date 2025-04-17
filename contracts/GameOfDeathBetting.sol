@@ -4,66 +4,73 @@ pragma solidity ^0.8.28;
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract GameOfDeathBetting is Ownable {
-    event BetPlaced(address indexed user, uint256 gameId, uint8 team, uint256 tickets);
+    event BetPlaced(address indexed user, uint256 indexed gameId, uint8 team, uint256 tickets);
 
-    struct Bet {
-        address user;
-        uint8 team;
-        uint256 tickets;
-    }
+    struct Bet { address user; uint8 team; uint256 tickets; }
 
-    mapping(uint256 => Bet[]) public gameBets;
-    mapping(uint256 => bool) public bettingOpen;
+    uint256 public lastGameId;
+    Bet[]  public lastGameBets;
+    bool   public bettingOpen;
 
-    address public feeRecipient = 0x1219819360136A93AC14E4df0A90125cf9927616;
-    uint256 public betFee = 0.000005 ether;
+    address public constant feeRecipient = 0x1219819360136A93AC14E4df0A90125cf9927616;
+    uint256 public constant betFee       = 0.000005 ether;
 
     constructor(address initialOwner) Ownable(initialOwner) {}
 
-    modifier onlyWhenBettingOpen(uint256 _gameId) {
-        require(bettingOpen[_gameId] == true, "Betting is closed for this game");
+    modifier onlyWhenOpen() {
+        require(bettingOpen, "Betting is closed");
         _;
     }
 
-    function openBetting(uint256 _gameId) external onlyOwner {
-        bettingOpen[_gameId] = true;
+    /// @notice Open betting for a new game, but keep existing bets intact until you explicitly clear them
+    function openBetting(uint256 gid) external onlyOwner {
+        lastGameId  = gid;
+        bettingOpen = true;
     }
 
-    function closeBetting(uint256 _gameId) external onlyOwner {
-        bettingOpen[_gameId] = false;
+    /// @notice Temporarily close betting (bets stay in storage)
+    function closeBetting() external onlyOwner {
+        bettingOpen = false;
     }
 
-    function placeBet(uint256 _gameId, uint8 _team, uint256 _tickets) external payable onlyWhenBettingOpen(_gameId) {
-        require(_team == 1 || _team == 2, "Invalid team selected.");
-        require(_tickets == 1, "Only one ticket per transaction is allowed.");
-        require(msg.value >= betFee, "Insufficient fee provided");
+    /// @notice Permanently clear all bets for the just‑ended game
+    function clearBets(uint256 gid) external onlyOwner {
+        require(lastGameId == gid, "Game ID mismatch");
+        delete lastGameBets;
+    }
 
-        (bool sent, ) = feeRecipient.call{value: betFee}("");
+    /// @notice Place exactly 1 ticket on team 1 or 2
+    function placeBet(uint8 team, uint256 tickets) external payable onlyWhenOpen {
+        require(team == 1 || team == 2, "Invalid team");
+        require(tickets == 1, "Tickets must be 1");
+        require(msg.value >= betFee, "Insufficient fee");
+
+        // forward fee
+        (bool sent, ) = feeRecipient.call{ value: betFee }("");
         require(sent, "Fee transfer failed");
 
-        if (msg.value > betFee) {
-            (bool refundSent, ) = msg.sender.call{value: msg.value - betFee}("");
-            require(refundSent, "Refund failed");
+        // refund any excess
+        uint256 excess = msg.value - betFee;
+        if (excess > 0) {
+            (bool r, ) = payable(msg.sender).call{ value: excess }("");
+            require(r, "Refund failed");
         }
 
-        gameBets[_gameId].push(Bet(msg.sender, _team, _tickets));
-        emit BetPlaced(msg.sender, _gameId, _team, _tickets);
+        lastGameBets.push(Bet(msg.sender, team, tickets));
+        emit BetPlaced(msg.sender, lastGameId, team, tickets);
     }
 
-    function getBets(uint256 _gameId) external view returns (Bet[] memory) {
-        return gameBets[_gameId];
+    /// @notice Get all bets for the current game
+    function getBets() external view returns (Bet[] memory) {
+        return lastGameBets;
     }
 
-    function clearBet(uint256 _gameId) external onlyOwner {
-        delete gameBets[_gameId];
-        bettingOpen[_gameId] = false;
+    function withdrawEther(address payable to) external onlyOwner {
+        uint256 bal = address(this).balance;
+        (bool ok, ) = to.call{ value: bal }("");
+        require(ok, "Withdraw failed");
     }
 
-    /// @notice Withdraws any Ether stored in this contract.
-    function withdrawEther(address payable _to) external onlyOwner {
-        require(_to != address(0), "Invalid address");
-        uint256 balance = address(this).balance;
-        (bool success, ) = _to.call{value: balance}("");
-        require(success, "Withdraw failed");
-    }
+    receive() external payable {}
+    fallback() external payable {}
 }

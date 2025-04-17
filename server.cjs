@@ -1,28 +1,25 @@
-// --------------------
-// Environment & Dependencies
-// --------------------
+// server.cjs
 require("dotenv").config();
-const fs = require("fs");
-const path = require("path");
+const fs      = require("fs");
+const path    = require("path");
 const express = require("express");
-const cors = require("cors");
-const http = require("http");
+const cors    = require("cors");
+const http    = require("http");
 const { Server } = require("socket.io");
 const { ethers } = require("ethers");
 const { createCanvas } = require("canvas");
 const mongoose = require("mongoose");
-const conway = require("./conway"); // your Conway simulation logic
+const conway   = require("./conway");
 
 // --------------------
-// Mongoose Setup
+// MongoDB Setup
 // --------------------
 const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/gameofdeath";
 mongoose.connect(MONGO_URI);
 mongoose.connection
-  .once("open", () => console.log("Connected to MongoDB:", MONGO_URI))
-  .on("error", err => console.error("MongoDB error:", err));
+  .once("open", () => console.log("📦 MongoDB:", MONGO_URI))
+  .on("error", err => console.error("❌ MongoDB error:", err));
 
-// GameRecord schema (for game history)
 const gameRecordSchema = new mongoose.Schema({
   gameId: Number,
   winner: String,
@@ -30,14 +27,14 @@ const gameRecordSchema = new mongoose.Schema({
   teamRedCount: Number,
   teamBlueCount: Number,
   boardHistory: { type: [[Number]], default: [] },
-  skinHistory: { type: [[Number]], default: [] },
+  skinHistory:  { type: [[Number]], default: [] },
   players: [String],
   thumbnail: String,
 });
 const GameRecord = mongoose.model("GameRecord", gameRecordSchema);
 
 // --------------------
-// Express & Socket.io Setup
+// Express & Socket.io
 // --------------------
 const app = express();
 app.use(cors());
@@ -46,70 +43,67 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use("/skins", express.static(path.join(__dirname, "skins")));
 app.use("/chests", express.static(path.join(__dirname, "chests")));
 app.use("/songs", express.static(path.join(__dirname, "songs")));
+app.use("/slides", express.static(path.join(__dirname, "slides")));
 const serverHttp = http.createServer(app);
 const io = new Server(serverHttp, { cors: { origin: "*" } });
 
 // --------------------
-// Global In-Memory State & Constants
+// Game State
 // --------------------
 let phase = "picking";
 let phaseTimeLeft = 30;
-let boardHistory = [];     // Array of full board states
-let skinHistory = [];      // Array of skin overlay snapshots
+let boardHistory = [];
+let skinHistory  = [];
 let transitionInProgress = false;
-let currentGameId = 1;     // Updated on startup/reset from chain
-let cycleCount = 0;
-let conwayActive = false;
-let activePlayers = new Set();
+let currentGameId = 1;
+let cycleCount    = 0;
+const activePlayers = new Set();
 
-// The live skin overlay array (each cell 0 = no skin, or holds a baked skin ID)
 let liveSkinOverlay = Array(4096).fill(0);
-
-// An array to track who placed each square (by board cell index)
 let boardSquareOwners = Array(4096).fill(null);
 
-// Timing constants:
-const PICKING_TIME = 150;
-const PLACING_TIME = 300;
-const FINAL_COUNTDOWN = 30;
-const CONWAY_STEPS = 10;
-const MAX_CYCLES = 5;
-const STEP_DELAY = 1000;             // Delay between Conway steps (in ms)
-const FINAL_CYCLE_STEP_DELAY = 2000;   // Delay for final cycle steps (in ms)
+// timing constants
+const PICKING_TIME     = 30;
+const PLACING_TIME     = 30;
+const FINAL_COUNTDOWN  = 30;
+const CONWAY_STEPS     = 10;
+const MAX_CYCLES       = 2;
+const STEP_DELAY       = 1000;
+const FINAL_STEP_DELAY = 2000;
 
-// Base URL (used to generate image URLs)
+// Base URL for thumbnails
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 
 // --------------------
-// Ethereum Provider, Wallet & Contracts Setup
+// Ethereum Setup
 // --------------------
 function setupWebSocketProvider() {
-  const provider = new ethers.WebSocketProvider(process.env.WS_PROVIDER || "ws://127.0.0.1:8545");
+  const provider = new ethers.WebSocketProvider(
+    process.env.WS_PROVIDER || "ws://127.0.0.1:8545"
+  );
   if (provider.socket) {
-    provider.socket.on("open", () => console.log("WebSocket connected."));
-    provider.socket.on("close", (code) => {
-      console.log("WebSocket closed with code", code, ". Reconnecting...");
+    provider.socket.on("open",  () => console.log("🔌 WS connected"));
+    provider.socket.on("close", code => {
+      console.log("🔌 WS closed, reconnecting…", code);
       reconnectWebSocketProvider();
     });
-    provider.socket.on("error", (err) => {
-      console.error("WebSocket error:", err, ". Closing socket.");
+    provider.socket.on("error", err => {
+      console.error("🔌 WS error:", err);
       provider.socket.close();
     });
   } else {
-    console.log("Provider has no socket property.");
+    console.log("⚠️  No socket, will ping HTTP");
   }
   return provider;
 }
 
 function reconnectWebSocketProvider() {
-  console.log("Reconnecting WebSocket in 3000 ms...");
   setTimeout(() => {
     wsProvider = setupWebSocketProvider();
     wallet.provider = wsProvider;
-    // Reinitialize contracts with new provider:
-    gameContract = new ethers.Contract(gameAddress, gameArtifact.abi, wallet);
+    gameContract    = new ethers.Contract(gameAddress,    gameArtifact.abi,    wallet);
     bettingContract = new ethers.Contract(bettingAddress, bettingArtifact.abi, wallet);
-    mizons = new ethers.Contract(mizonsAddress, mizonsArtifact.abi, wallet);
+    mizons          = new ethers.Contract(mizonsAddress,  mizonsArtifact.abi, wallet);
     if (skinLockAddress) {
       skinLockContract = new ethers.Contract(skinLockAddress, skinLockArtifact.abi, wallet);
       subscribeSkinLockEvents();
@@ -119,690 +113,539 @@ function reconnectWebSocketProvider() {
 }
 
 let wsProvider = setupWebSocketProvider();
-if (wsProvider._websocket && typeof wsProvider._websocket.ping === "function") {
-  setInterval(() => {
-    try {
-      wsProvider._websocket.ping();
-      console.log("Ping sent to keep connection alive.");
-    } catch (err) {
-      console.error("Ping error:", err);
-    }
-  }, 10000);
-} else {
-  setInterval(async () => {
-    try {
-      await wsProvider.send("net_version", []);
-      console.log("Dummy net_version call sent.");
-    } catch (err) {
-      console.error("Dummy ping error:", err);
-    }
-  }, 10000);
-}
+setInterval(async () => {
+  try { await wsProvider.send("net_version", []); }
+  catch {}
+}, 10000);
 
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, wsProvider);
 
-// Load contract artifacts
-const gameArtifact = require("./artifacts/contracts/GameOfDeath.sol/GameOfDeath.json");
-const bettingArtifact = require("./artifacts/contracts/GameOfDeathBetting.sol/GameOfDeathBetting.json");
-const mizonsArtifact = require("./artifacts/contracts/Mizons.sol/Mizons.json");
-const skinLockArtifact = require("./artifacts/contracts/SkinLockRegistry.sol/SkinLockRegistry.json");
+const gameArtifact      = require("./artifacts/contracts/GameOfDeath.sol/GameOfDeath.json");
+const bettingArtifact   = require("./artifacts/contracts/GameOfDeathBetting.sol/GameOfDeathBetting.json");
+const mizonsArtifact    = require("./artifacts/contracts/Mizons.sol/Mizons.json");
+const skinLockArtifact  = require("./artifacts/contracts/SkinLockRegistry.sol/SkinLockRegistry.json");
 
-const gameAddress = process.env.GAMEOFDEATH_ADDRESS;
-const bettingAddress = process.env.GAMEOFDEATH_BETTING_ADDRESS;
-const mizonsAddress = process.env.MIZONS_ADDRESS;
-const skinLockAddress = process.env.SKIN_LOCK_ADDRESS;
+const gameAddress      = process.env.GAMEOFDEATH_ADDRESS;
+const bettingAddress   = process.env.GAMEOFDEATH_BETTING_ADDRESS;
+const mizonsAddress    = process.env.MIZONS_ADDRESS;
+const skinLockAddress  = process.env.SKIN_LOCK_ADDRESS;
 
-console.log("Connecting to contracts...");
-console.log("Game Address:", gameAddress);
-console.log("Betting Address:", bettingAddress);
-console.log("Mizons Address:", mizonsAddress);
-if (skinLockAddress) console.log("SkinLockRegistry Address:", skinLockAddress);
+console.log("📡 Connecting to contracts…");
+console.log(" • GameOfDeath:", gameAddress);
+console.log(" • Betting:   ", bettingAddress);
+console.log(" • Mizons:    ", mizonsAddress);
+if (skinLockAddress) console.log(" • SkinLock:  ", skinLockAddress);
 
-let gameContract = new ethers.Contract(gameAddress, gameArtifact.abi, wallet);
+let gameContract    = new ethers.Contract(gameAddress,    gameArtifact.abi,    wallet);
 let bettingContract = new ethers.Contract(bettingAddress, bettingArtifact.abi, wallet);
-let mizons = new ethers.Contract(mizonsAddress, mizonsArtifact.abi, wallet);
+let mizons          = new ethers.Contract(mizonsAddress,  mizonsArtifact.abi, wallet);
 let skinLockContract;
 if (skinLockAddress) {
   skinLockContract = new ethers.Contract(skinLockAddress, skinLockArtifact.abi, wallet);
-  console.log("SkinLockRegistry contract connected at:", skinLockAddress);
   subscribeSkinLockEvents();
 }
 
 // --------------------
-// Helper: determineSpawnedSkinForUser
+// Helpers: sleep & queue (WITH NONCE)
 // --------------------
-async function determineSpawnedSkinForUser(user) {
-  if (!skinLockContract) return 0;
-  try {
-    const lockedSkins = await skinLockContract.getLockedSkins(user);
-    if (lockedSkins.length === 0) {
-      console.log(`User ${user} has no locked skins; returning default 0.`);
-      return 0;
-    }
-    const index = Math.floor(Math.random() * lockedSkins.length);
-    const chosen = lockedSkins[index];
-    const bakedId = Number(chosen.bakedId);
-    console.log(`Spawning skin for ${user}: bakedId ${bakedId}`);
-    return bakedId;
-  } catch (error) {
-    console.error("Error fetching locked skins for", user, error);
-    return 0;
-  }
-}
-
-// --------------------
-// Helper: runSkinStep (Conway evolution for skin overlay)
-// --------------------
-function runSkinStep(oldSkinGrid) {
-  let newSkinGrid = new Array(4096).fill(0);
-  for (let y = 0; y < 64; y++) {
-    for (let x = 0; x < 64; x++) {
-      const i = y * 64 + x;
-      let liveNeighbors = [];
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (dx === 0 && dy === 0) continue;
-          const nx = x + dx, ny = y + dy;
-          if (nx >= 0 && nx < 64 && ny >= 0 && ny < 64) {
-            const j = ny * 64 + nx;
-            if (oldSkinGrid[j] !== 0) liveNeighbors.push(oldSkinGrid[j]);
-          }
-        }
-      }
-      if (oldSkinGrid[i] !== 0) {
-        newSkinGrid[i] = (liveNeighbors.length === 2 || liveNeighbors.length === 3)
-          ? oldSkinGrid[i]
-          : 0;
-      } else {
-        newSkinGrid[i] = (liveNeighbors.length === 3)
-          ? liveNeighbors[Math.floor(Math.random() * liveNeighbors.length)]
-          : 0;
-      }
-    }
-  }
-  return newSkinGrid;
-}
-
-// --------------------
-// Contract Event Listeners (TeamJoined only)
-// --------------------
-function subscribeGameEvents() {
-  gameContract.removeAllListeners("TeamJoined");
-  gameContract.on("TeamJoined", (gameId, user, teamId) => {
-    console.log("TeamJoined:", gameId.toString(), user, "team:", teamId.toString());
-    activePlayers.add(user.toLowerCase());
-  });
-}
-
-// --------------------
-// Subscribe to SkinLock Events (for logging)
-// --------------------
-function subscribeSkinLockEvents() {
-  if (!skinLockContract) return;
-  skinLockContract.removeAllListeners("TokenLocked");
-  skinLockContract.removeAllListeners("TokenUnlocked");
-  skinLockContract.on("TokenLocked", async (tokenId, originalOwner, nftContract, bakedId, timestamp) => {
-    console.log(`TokenLocked: ${originalOwner.toLowerCase()} locked token ${tokenId} (bakedId ${bakedId})`);
-  });
-  skinLockContract.on("TokenUnlocked", async (tokenId, returnedTo, nftContract, timestamp) => {
-    console.log(`TokenUnlocked: ${returnedTo.toLowerCase()} unlocked token ${tokenId}`);
-  });
-}
-
-// Re‑subscribe to contract events every minute.
-setInterval(() => {
-  console.log("Resubscribing to contract events.");
-  subscribeGameEvents();
-  if (skinLockContract) subscribeSkinLockEvents();
-}, 60000);
-
-// --------------------
-// Helper Functions: Sleep & Transaction Queue
-// --------------------
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 let transactionQueue = Promise.resolve();
-function queueTransaction(callback) {
+
+async function queueTransaction(cb) {
   transactionQueue = transactionQueue.then(async () => {
     await sleep(200);
-    let nonce = await wsProvider.getTransactionCount(wallet.address, "pending");
-    try {
-      return await callback(nonce);
-    } catch (err) {
-      if (err.message && err.message.includes("Nonce too low")) {
-        console.log("Nonce too low, retrying...");
-        await sleep(200);
-        nonce = await wsProvider.getTransactionCount(wallet.address, "pending");
-        return await callback(nonce);
-      }
-      throw err;
-    }
+    const nonce = await wsProvider.getTransactionCount(wallet.address, "pending");
+    return cb(nonce);
   });
   return transactionQueue;
 }
 
-async function waitForTxConfirmation(tx, timeout = 90000, pollInterval = 3000) {
-  console.log(`Waiting for tx ${tx.hash} confirmation...`);
+async function waitForTxConfirmation(tx, timeout=90_000, interval=3_000) {
+  console.log(`🔃 waiting for ${tx.hash}`);
   const start = Date.now();
-  while (true) {
-    const receipt = await wsProvider.getTransactionReceipt(tx.hash);
-    if (receipt) return receipt;
-    if (Date.now() - start > timeout) throw new Error("Tx confirmation timeout");
-    await sleep(pollInterval);
+  while (Date.now() - start < timeout) {
+    const rcpt = await wsProvider.getTransactionReceipt(tx.hash);
+    if (rcpt) return rcpt;
+    await sleep(interval);
   }
+  throw new Error("⏱️  tx confirmation timeout");
 }
 
 // --------------------
-// Board Helpers
+// Skin + Conway Helpers
+// --------------------
+async function determineSpawnedSkinForUser(user) {
+  if (!skinLockContract) return 0;
+  try {
+    const locked = await skinLockContract.getLockedSkins(user);
+    if (!locked.length) return 0;
+    const pick = locked[Math.floor(Math.random() * locked.length)];
+    return Number(pick.bakedId);
+  } catch (e) {
+    console.error("Skin fetch error:", e);
+    return 0;
+  }
+}
+function runSkinStep(oldGrid) {
+  const newGrid = Array(4096).fill(0);
+  for (let y=0; y<64; y++) {
+    for (let x=0; x<64; x++) {
+      const i = y*64 + x;
+      const neighbors = [];
+      for (let dy=-1; dy<=1; dy++) {
+        for (let dx=-1; dx<=1; dx++) {
+          if (!dx && !dy) continue;
+          const nx = x+dx, ny = y+dy;
+          if (nx>=0 && nx<64 && ny>=0 && ny<64) {
+            const j=ny*64+nx;
+            if (oldGrid[j]) neighbors.push(oldGrid[j]);
+          }
+        }
+      }
+      if (oldGrid[i]) {
+        newGrid[i] = (neighbors.length===2||neighbors.length===3) ? oldGrid[i] : 0;
+      } else {
+        newGrid[i] = (neighbors.length===3)
+          ? neighbors[Math.floor(Math.random()*neighbors.length)]
+          : 0;
+      }
+    }
+  }
+  return newGrid;
+}
+
+// --------------------
+// Contract Event Listeners
+// --------------------
+function subscribeGameEvents() {
+  gameContract.removeAllListeners("TeamJoined");
+  gameContract.on("TeamJoined", (gid,user,team) => {
+    activePlayers.add(user.toLowerCase());
+  });
+}
+function subscribeSkinLockEvents() {
+  skinLockContract.removeAllListeners("TokenLocked");
+  skinLockContract.removeAllListeners("TokenUnlocked");
+  skinLockContract.on("TokenLocked", (tid,owner,nft,bakedId) => {
+    console.log(`🔒 Skin ${bakedId} locked by ${owner}`);
+  });
+  skinLockContract.on("TokenUnlocked", (tid,to) => {
+    console.log(`🔓 Skin unlocked to ${to}`);
+  });
+}
+setInterval(() => {
+  subscribeGameEvents();
+  if (skinLockContract) subscribeSkinLockEvents();
+}, 60_000);
+
+// --------------------
+// Board Packing / Unpacking
 // --------------------
 async function getOnChainBoard() {
   const packed = await gameContract.getBoard();
-  const CELLS_PER_CHUNK = 161;
-  const totalCells = 4096;
-  let cells = [];
-  for (let i = 0; i < packed.length; i++) {
-    let chunk = BigInt(packed[i].toString());
-    for (let j = 0; j < CELLS_PER_CHUNK; j++) {
-      if (cells.length >= totalCells) break;
-      cells.push(Number(chunk % 3n));
-      chunk /= 3n;
+  const cells = [];
+  const total=4096, per=161;
+  for (let chunk of packed) {
+    let n = BigInt(chunk.toString());
+    for (let i=0; i<per && cells.length<total; i++) {
+      cells.push(Number(n % 3n));
+      n /= 3n;
     }
   }
   return cells;
 }
-
-function convertToAugmentedBoard(numericalBoard) {
-  return numericalBoard.map(val => ({ value: val }));
+function convertToAugmentedBoard(board) {
+  return board.map(v => ({ value: v }));
 }
-
 function packBoard(cells) {
-  const CELLS_PER_CHUNK = 161;
-  const NUM_CHUNKS = 26;
-  let packed = Array(NUM_CHUNKS).fill(0n);
-  for (let i = 0; i < cells.length; i++) {
-    const chunkIndex = Math.floor(i / CELLS_PER_CHUNK);
-    const pos = i % CELLS_PER_CHUNK;
-    packed[chunkIndex] += BigInt(cells[i]) * (3n ** BigInt(pos));
-  }
-  return packed.map(n => n.toString());
+  const per=161, chunks=26;
+  const arr = Array(chunks).fill(0n);
+  cells.forEach((c,i) => {
+    const ci=Math.floor(i/per), pos=i%per;
+    arr[ci] += BigInt(c) * (3n**BigInt(pos));
+  });
+  return arr.map(n=>n.toString());
 }
 
 // --------------------
 // Thumbnail Generation
 // --------------------
 async function generateThumbnail(board, gameId) {
-  const width = 64, height = 64;
-  const canvas = createCanvas(width, height);
-  const ctx = canvas.getContext("2d");
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = y * width + x;
-      const cell = board[idx];
-      ctx.fillStyle = cell === 1 ? "#ff0050" : cell === 2 ? "#00bbff" : "#000000";
-      ctx.fillRect(x, y, 1, 1);
-    }
-  }
-  const scale = 8;
-  const scaledCanvas = createCanvas(width * scale, height * scale);
-  const scaledCtx = scaledCanvas.getContext("2d");
-  scaledCtx.imageSmoothingEnabled = false;
-  scaledCtx.drawImage(canvas, 0, 0, width * scale, height * scale);
-  const imageDir = path.join(__dirname, "public", "images");
-  if (!fs.existsSync(imageDir)) fs.mkdirSync(imageDir, { recursive: true });
-  const imagePath = path.join(imageDir, `game_${gameId}.png`);
-  fs.writeFileSync(imagePath, scaledCanvas.toBuffer("image/png"));
-  console.log(`Thumbnail saved as ${imagePath}`);
+  const size=64, scale=8;
+  const canvas = createCanvas(size,size);
+  const ctx    = canvas.getContext("2d");
+  board.forEach((cell,i) => {
+    const x=i%size, y=Math.floor(i/size);
+    ctx.fillStyle = cell===1?"#ff0050":cell===2?"#00bbff":"#000";
+    ctx.fillRect(x,y,1,1);
+  });
+  const big = createCanvas(size*scale,size*scale);
+  const bctx=big.getContext("2d");
+  bctx.imageSmoothingEnabled = false;
+  bctx.drawImage(canvas,0,0,size*scale,size*scale);
+
+  const dir = path.join(__dirname,"public","images");
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir,{recursive:true});
+  const file = path.join(dir,`game_${gameId}.png`);
+  fs.writeFileSync(file, big.toBuffer());
   return `${BASE_URL}/images/game_${gameId}.png`;
 }
 
 // --------------------
-// MIZ Distribution
+// Distribute Winnings
 // --------------------
 async function distributeWinnings(gameId, winningTeam) {
-  console.log("Distributing winnings for game", gameId, "winnerTeam", winningTeam);
-  const bets = await bettingContract.getBets(gameId);
-  let winningBets = [];
-  let losingBets = [];
-  for (let b of bets) {
-    const user = b.user;
-    const team = Number(b.team);
-    const tickets = Number(b.tickets);
-    if (team === winningTeam) winningBets.push({ user, tickets });
-    else losingBets.push({ user, tickets });
-  }
-  const totalWinningTickets = winningBets.reduce((acc, b) => acc + b.tickets, 0);
-  const totalLosingTickets = losingBets.reduce((acc, b) => acc + b.tickets, 0);
-  if (totalWinningTickets === 0) {
-    console.log("No winning bets; no payout.");
-    return;
-  }
-  const MINT_MULTIPLIER = 1e6;
-  const mintPromises = winningBets.map(w => {
-    const share = Math.floor((w.tickets * totalLosingTickets * MINT_MULTIPLIER) / totalWinningTickets);
-    if (share > 0) {
-      return queueTransaction(async (nonce) => {
-        const tx = await mizons.mint(w.user, share, { nonce });
-        console.log(`Minted ${share} MIZ to ${w.user} (tx ${tx.hash})`);
-        return waitForTxConfirmation(tx);
-      });
-    }
-    return Promise.resolve();
+  console.log("💰 distributeWinnings for",gameId,winningTeam);
+  const bets = await bettingContract.getBets();
+  const winners=[], losers=[];
+  bets.forEach(b => {
+    const t=Number(b.team), tk=Number(b.tickets);
+    if (t===winningTeam) winners.push({user:b.user,tickets:tk});
+    else losers.push({user:b.user,tickets:tk});
   });
-  await Promise.all(mintPromises);
-  console.log("Winnings distribution complete.");
+  const winSum = winners.reduce((a,b)=>a+b.tickets,0);
+  const loseSum= losers.reduce((a,b)=>a+b.tickets,0);
+  if (!winSum) return console.log("No winners, skip payout");
+
+  const MULT=1e6;
+  await Promise.all(winners.map(w=>{
+    const share = Math.floor((w.tickets*loseSum*MULT)/winSum);
+    if (!share) return;
+    return queueTransaction(async(nonce)=>{
+      const tx = await mizons.mint(w.user,share,{ nonce });
+      console.log(`Minted ${share} to ${w.user}`);
+      return waitForTxConfirmation(tx);
+    });
+  }));
+  console.log("💸 Payouts done");
 }
 
 // --------------------
-// Game Reset
+// resetGame
 // --------------------
 async function resetGame() {
-  try {
-    await queueTransaction(async (nonce) => {
-      const tx = await bettingContract.clearBet(currentGameId, { nonce });
-      console.log(`Cleared bets for gameId ${currentGameId} (tx ${tx.hash})`);
-      await waitForTxConfirmation(tx);
-    });
-  } catch (err) {
-    console.error("Error clearing bets:", err.message);
-  }
+  console.log("🔄 resetGame()");
+  // reset the promise queue so old nonces don't linger
+  transactionQueue = Promise.resolve();
+
   const newId = currentGameId + 1;
+
   try {
+    // 1) clear on‑chain bets for old game
+    await queueTransaction(async (nonce) => {
+      const tx = await bettingContract.clearBets(currentGameId, { nonce });
+      console.log("clearBets tx:", tx.hash);
+      return waitForTxConfirmation(tx);
+    });
+
+    // 2) bump game
     await queueTransaction(async (nonce) => {
       const tx = await gameContract.newGame(newId, { nonce });
       console.log("newGame tx:", tx.hash);
-      await waitForTxConfirmation(tx);
-      console.log("Game reset on-chain to new gameId:", newId);
+      return waitForTxConfirmation(tx);
     });
-  } catch (err) {
-    console.error("Error in newGame:", err);
+
+    // 3) open betting on new game
+    await queueTransaction(async (nonce) => {
+      const tx = await bettingContract.openBetting(newId, { nonce });
+      console.log("openBetting tx:", tx.hash);
+      return waitForTxConfirmation(tx);
+    });
+
+  } catch (e) {
+    console.error("resetGame transaction error:", e);
   }
-  try {
-    const onChainGameId = await gameContract.currentGameId();
-    currentGameId = Number(onChainGameId);
-    console.log("Updated currentGameId:", currentGameId);
-  } catch (err) {
-    console.error("Error fetching currentGameId:", err);
-    currentGameId = newId;
-  }
-  phase = "picking";
-  phaseTimeLeft = PICKING_TIME;
-  boardHistory = [];
-  skinHistory = [];
-  cycleCount = 0;
+
+  // 4) local reset (no on‑chain interaction)
+  currentGameId   = newId;
+  phase           = "picking";
+  phaseTimeLeft   = PICKING_TIME;
+  boardHistory    = [];
+  skinHistory     = [];
+  cycleCount      = 0;
   activePlayers.clear();
-  liveSkinOverlay = Array(4096).fill(0);
+  liveSkinOverlay   = Array(4096).fill(0);
   boardSquareOwners = Array(4096).fill(null);
-  console.log("Local state reset; new gameId:", currentGameId);
+
   io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
-  await openBettingForCurrentGame();
+  console.log("▶️  New gameId:", currentGameId);
 }
 
 // --------------------
-// Off-Chain Conway Steps (Evolving Board & Skin Overlay)
+// runConwaySteps  ←  FIXED!
 // --------------------
-async function runConwaySteps(steps, delay = STEP_DELAY) {
-  conwayActive = true;
-  console.log(`Running Conway steps: ${steps} steps`);
-  let currentBoard = await getOnChainBoard();
-  for (let turn = 1; turn <= steps; turn++) {
-    currentBoard = conway.runOneStep(currentBoard);
-    boardHistory.push([...currentBoard]);
-    // Evolve the skin overlay using the helper function.
+async function runConwaySteps(steps, delay=STEP_DELAY) {
+  console.log(`🔀 runConwaySteps(${steps})`);
+  // grab the on‑chain board ONCE:
+  let b = await getOnChainBoard();
+
+  for (let i = 1; i <= steps; i++) {
+    // evolve from the last state, not reloading
+    b = conway.runOneStep(b);
+    boardHistory.push([...b]);
     liveSkinOverlay = runSkinStep(liveSkinOverlay);
     skinHistory.push([...liveSkinOverlay]);
-    io.emit("boardUpdated", convertToAugmentedBoard(currentBoard));
-    console.log(`Conway step ${turn} completed.`);
+    io.emit("boardUpdated", convertToAugmentedBoard(b));
+    console.log(`Conway step ${i}/${steps}`);
     await sleep(delay);
   }
-  conwayActive = false;
-  await queueTransaction(async (nonce) => {
-    const packed = packBoard(currentBoard);
-    const tx = await gameContract.serverOverwriteBoard(packed, { nonce });
-    console.log(`On-chain update after ${steps} steps, tx: ${tx.hash}`);
-    await waitForTxConfirmation(tx);
+
+  // only THEN overwrite on‑chain once
+  await queueTransaction(async(nonce)=>{
+    const packed = packBoard(b);
+    const tx = await gameContract.serverOverwriteBoard(packed,{ nonce });
+    console.log("overwriteBoard tx:",tx.hash);
+    return waitForTxConfirmation(tx);
   });
 }
 
 // --------------------
-// Final Cycle
+// runFinalCycle & recordGame
 // --------------------
 async function runFinalCycle() {
-  console.log("Running final conway cycle...");
-  const snapshot = await getOnChainBoard();
-  boardHistory.push([...snapshot]);
+  console.log("🔚 runFinalCycle()");
+  const snap = await getOnChainBoard();
+  boardHistory.push([...snap]);
   skinHistory.push([...liveSkinOverlay]);
-  await runConwaySteps(CONWAY_STEPS, FINAL_CYCLE_STEP_DELAY);
-  let redOnBlue = 0, blueOnRed = 0;
-  const board = await getOnChainBoard();
-  for (let y = 0; y < 64; y++) {
-    for (let x = 0; x < 64; x++) {
-      const idx = y * 64 + x;
-      const cell = board[idx];
-      if (cell === 1 && y >= 32) redOnBlue++;
-      if (cell === 2 && y < 32) blueOnRed++;
+
+  await runConwaySteps(CONWAY_STEPS, FINAL_STEP_DELAY);
+
+  const finalBoard = await getOnChainBoard();
+  let redOnBlue=0, blueOnRed=0;
+  for (let y=0; y<64; y++){
+    for (let x=0; x<64; x++){
+      const c = finalBoard[y*64+x];
+      if (c===1 && y>=32) redOnBlue++;
+      if (c===2 && y<32)  blueOnRed++;
     }
   }
-  let winner = "Tie";
-  if (redOnBlue !== blueOnRed) {
-    winner = redOnBlue > blueOnRed ? "Red" : "Blue";
-  }
-  console.log("Winner:", winner);
-  io.emit("winner", { winner });
+  const winner = redOnBlue===blueOnRed ? "Tie" : (redOnBlue>blueOnRed ? "Red":"Blue");
+  io.emit("winner",{winner});
   await recordGame(winner);
-  await setContractPhase("final");
+
   phase = "final";
   phaseTimeLeft = FINAL_COUNTDOWN;
-  io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
+  io.emit("phaseUpdated",{phase,timeLeft:phaseTimeLeft,gameId:currentGameId});
 }
 
-// --------------------
-// Record Game
-// --------------------
 async function recordGame(winner) {
+  console.log("📚 recordGame()");
   try {
-    const counts = await gameContract.getTeamCounts(currentGameId);
-    const bets = await bettingContract.getBets(currentGameId);
-    bets.forEach(b => activePlayers.add(b.user.toLowerCase()));
+    const [rBig,bBig] = await gameContract.getTeamCounts(currentGameId);
+    const redCount  = Number(rBig);
+    const blueCount = Number(bBig);
+
+    // collect bettors
+    const bets = await bettingContract.getBets();
+    bets.forEach(b=> activePlayers.add(b.user.toLowerCase()));
+
     let thumbnail = "";
-    if (boardHistory.length > 0) {
-      thumbnail = await generateThumbnail(boardHistory[boardHistory.length - 1], currentGameId);
+    if (boardHistory.length) {
+      thumbnail = await generateThumbnail(boardHistory[boardHistory.length-1], currentGameId);
     }
-    const record = {
+
+    const rec = {
       gameId: currentGameId,
       winner,
       timestamp: new Date(),
-      teamRedCount: Number(counts.redCount),
-      teamBlueCount: Number(counts.blueCount),
+      teamRedCount: redCount,
+      teamBlueCount: blueCount,
       boardHistory,
       skinHistory,
       players: Array.from(activePlayers),
       thumbnail,
     };
-    await new GameRecord(record).save();
-    console.log("Game record saved:", record);
-    io.emit("newGameRecord", record);
-    if (winner === "Red") {
-      await distributeWinnings(currentGameId, 1);
-    } else if (winner === "Blue") {
-      await distributeWinnings(currentGameId, 2);
-    } else {
-      console.log("Tie: no payouts.");
-    }
+    await new GameRecord(rec).save();
+    io.emit("newGameRecord", rec);
+
+    if (winner==="Red")   await distributeWinnings(currentGameId,1);
+    if (winner==="Blue")  await distributeWinnings(currentGameId,2);
+
     activePlayers.clear();
-  } catch (err) {
-    console.error("Error recording game:", err);
+  } catch(e) {
+    console.error("recordGame error:",e);
   }
 }
 
 // --------------------
-// BETTING Functions
+// Betting Helpers
 // --------------------
 async function openBettingForCurrentGame() {
-  console.log(`Opening betting for gameId ${currentGameId}`);
-  await queueTransaction(async (nonce) => {
-    const tx = await bettingContract.openBetting(currentGameId, { nonce });
-    console.log(`Betting opened for gameId ${currentGameId}, tx: ${tx.hash}`);
+  console.log("▶️  openBetting for",currentGameId);
+  await queueTransaction(async(nonce)=>{
+    const tx = await bettingContract.openBetting(currentGameId,{ nonce });
+    console.log("openBetting tx:",tx.hash);
     return waitForTxConfirmation(tx);
   });
 }
-
 async function closeBettingForCurrentGame() {
-  console.log(`Closing betting for gameId ${currentGameId}`);
-  await queueTransaction(async (nonce) => {
-    const tx = await bettingContract.closeBetting(currentGameId, { nonce });
-    console.log(`Betting closed for gameId ${currentGameId}, tx: ${tx.hash}`);
+  console.log("✋ closeBetting for",currentGameId);
+  await queueTransaction(async(nonce)=>{
+    const tx = await bettingContract.closeBetting({ nonce });
+    console.log("closeBetting tx:",tx.hash);
     return waitForTxConfirmation(tx);
   });
 }
 
 // --------------------
-// setContractPhase
+// Phase Transition Logic
 // --------------------
-async function setContractPhase(newPhase, attempt = 1) {
-  const PHASE_MAP = { picking: 0, placing: 1, conway: 2, final: 3 };
-  const phaseEnum = PHASE_MAP[newPhase];
-  if (phaseEnum === undefined) throw new Error("Unknown phase: " + newPhase);
-  console.log(`Setting phase to ${newPhase} (enum ${phaseEnum}), attempt ${attempt}`);
+async function setContractPhase(newPhase, attempt=1) {
+  const MAP = { picking:0, placing:1, conway:2, final:3 };
+  const pe = MAP[newPhase];
+  if (pe==null) throw new Error("Unknown phase");
   try {
-    await queueTransaction(async (nonce) => {
-      const tx = await gameContract.setPhase(phaseEnum, { nonce });
-      console.log("setPhase tx:", tx.hash);
-      await waitForTxConfirmation(tx);
-      console.log(`Phase set confirmed to ${newPhase}`);
+    await queueTransaction(async(nonce)=>{
+      const tx = await gameContract.setPhase(pe,{ nonce });
+      console.log("setPhase tx:",tx.hash);
+      return waitForTxConfirmation(tx);
     });
-  } catch (err) {
-    console.error("Error in setContractPhase:", err);
-    if (attempt < 3) {
-      console.log("Retrying setContractPhase...");
-      return await setContractPhase(newPhase, attempt + 1);
-    }
-    console.error("Max attempts reached; resetting game.");
+    phase = newPhase;
+    io.emit("phaseUpdated",{phase,timeLeft:phaseTimeLeft,gameId:currentGameId});
+  } catch(e) {
+    console.error("setContractPhase error:",e);
+    if (attempt<3) return setContractPhase(newPhase,attempt+1);
+    console.log("🛑 Max retries, resetting");
     await resetGame();
-    return;
   }
-  phase = newPhase;
-  io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
 }
 
-// --------------------
-// transitionPhase
-// --------------------
 async function transitionPhase() {
-  console.log("transitionPhase() called in phase:", phase);
-  if (phase === "picking") {
-    console.log("Transitioning from picking to placing");
-    await closeBettingForCurrentGame();
-    await setContractPhase("placing");
-    phase = "placing";
-    phaseTimeLeft = PLACING_TIME;
-    // Record the block number at which placing started.
-    wsProvider.getBlockNumber().then((bnum) => {
-      gameStartBlock = bnum;
-      console.log("Recorded gameStartBlock:", gameStartBlock);
-    });
-  } else if (phase === "placing") {
-    console.log("Placing ended. Transitioning to conway");
-    await setContractPhase("conway");
-    await runConwaySteps(CONWAY_STEPS);
-    cycleCount++;
-    if (cycleCount < MAX_CYCLES) {
-      console.log("Intermediate conway cycle done. Transitioning to picking...");
-      await setContractPhase("picking");
-      phase = "picking";
-      phaseTimeLeft = PICKING_TIME;
-      await openBettingForCurrentGame();
-    } else {
-      console.log("Max cycles reached; running final conway cycle.");
-      await runFinalCycle();
-      return;
+  if (transitionInProgress) return;
+  transitionInProgress = true;
+  try {
+    switch(phase) {
+      case "picking":
+        await closeBettingForCurrentGame();
+        await setContractPhase("placing");
+        phase="placing"; phaseTimeLeft=PLACING_TIME;
+        gameStartBlock = await wsProvider.getBlockNumber();
+        break;
+      case "placing":
+        await setContractPhase("conway");
+        await runConwaySteps(CONWAY_STEPS);
+        cycleCount++;
+        if (cycleCount < MAX_CYCLES) {
+          await setContractPhase("picking");
+          phase="picking"; phaseTimeLeft=PICKING_TIME;
+          await openBettingForCurrentGame();
+        } else {
+          await runFinalCycle();
+        }
+        break;
+      case "final":
+        await resetGame();
+        break;
     }
-  } else if (phase === "final") {
-    console.log("Final phase expired; resetting game...");
-    await resetGame();
+  } catch(e) {
+    console.error("transitionPhase error:",e);
+  } finally {
+    io.emit("phaseUpdated",{phase,timeLeft:phaseTimeLeft,gameId:currentGameId});
+    transitionInProgress = false;
   }
-  io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
 }
 
 // --------------------
-// Main Loop (Phase Countdown)
+// Main Loop: countdown
 // --------------------
-setInterval(async () => {
-  try {
-    console.log(`Phase: ${phase}, timeLeft: ${phaseTimeLeft}`);
-    if (transitionInProgress) return;
-    if (phase === "picking" || phase === "placing" || phase === "final") {
-      if (phaseTimeLeft > 0) {
-        phaseTimeLeft--;
-        io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
-      } else {
-        transitionInProgress = true;
-        await transitionPhase();
-        transitionInProgress = false;
-      }
-    }
-  } catch (err) {
-    console.error("Error in main loop:", err);
+setInterval(() => {
+  if (!transitionInProgress && phaseTimeLeft > 0) {
+    phaseTimeLeft--;
+    io.emit("phaseUpdated",{phase,timeLeft:phaseTimeLeft,gameId:currentGameId});
+    if (phaseTimeLeft === 0) transitionPhase();
   }
 }, 1000);
 
 // --------------------
-// Polling for Past SquarePlaced Events to Update Skin Overlay (during placing phase)
+// Poll for Skin Updates
 // --------------------
-let gameStartBlock = 0; // Will be set when entering the placing phase.
+let gameStartBlock = 0;
 async function pollBoardForSkinUpdates() {
   if (phase !== "placing") return;
-  try {
-    const filter = gameContract.filters.SquarePlaced(currentGameId);
-    // Query from the recorded gameStartBlock until the latest block.
-    const logs = await gameContract.queryFilter(filter, gameStartBlock, "latest");
-    logs.forEach((log) => {
-      const { x, y, user } = log.args;
-      const index = Number(y) * 64 + Number(x);
-      boardSquareOwners[index] = user.toLowerCase();
-    });
-    const board = await getOnChainBoard();
-    // For each non-empty cell that lacks a skin, update the skin overlay.
-    for (let i = 0; i < 4096; i++) {
-      if (board[i] !== 0 && liveSkinOverlay[i] === 0 && boardSquareOwners[i]) {
-        const skin = await determineSpawnedSkinForUser(boardSquareOwners[i]);
-        if (skin !== 0) {
-          liveSkinOverlay[i] = skin;
-          console.log(`[Poll] Applied skin ${skin} at index ${i} for ${boardSquareOwners[i]}`);
-        }
-      }
-    }
-    io.emit("skinOverlayUpdated", liveSkinOverlay);
-  } catch (err) {
-    console.error("Error polling board for skin updates:", err);
+  const logs = await gameContract.queryFilter(
+    gameContract.filters.SquarePlaced(currentGameId),
+    gameStartBlock, "latest"
+  );
+  for (let log of logs) {
+    const x = Number(log.args.x), y = Number(log.args.y);
+    boardSquareOwners[y*64+x] = log.args.user.toLowerCase();
   }
+  const board = await getOnChainBoard();
+  for (let i=0; i<4096; i++) {
+    if (board[i] && !liveSkinOverlay[i] && boardSquareOwners[i]) {
+      const skin = await determineSpawnedSkinForUser(boardSquareOwners[i]);
+      if (skin) liveSkinOverlay[i] = skin;
+    }
+  }
+  io.emit("skinOverlayUpdated", liveSkinOverlay);
 }
-setInterval(() => {
-  if (phase === "placing") pollBoardForSkinUpdates();
-}, 1000);
+setInterval(pollBoardForSkinUpdates, 1000);
 
 // --------------------
-// API Endpoints
+// REST Endpoints
 // --------------------
-app.get("/api/board", async (req, res) => {
+app.get("/api/board",    async (r,s) => { try { const b=await getOnChainBoard(); s.json({ board: convertToAugmentedBoard(b) }); } catch(e){s.status(500).json({error:e.message});}});
+app.get("/api/state",    (r,s) => s.json({ phase, timeLeft:phaseTimeLeft, gameId:currentGameId }));
+app.get("/api/history",  (r,s) => s.json({ boardHistory, skinHistory }));
+app.get("/api/skinOverlay",(r,s)=> s.json({ skinOverlay:liveSkinOverlay }));
+app.get("/api/allRecords", async (r,s)=> {
+  const skip=+r.query.skip||0, limit=+r.query.limit||10;
+  const recs=await GameRecord.find().sort({gameId:-1}).skip(skip).limit(limit);
+  s.json({ records: recs });
+});
+app.get("/api/records/:u", async(r,s)=> {
+  const skip=+r.query.skip||0, limit=+r.query.limit||10;
+  const recs=await GameRecord.find({ players:r.params.u.toLowerCase() })
+    .sort({gameId:-1}).skip(skip).limit(limit);
+  s.json({ records: recs });
+});
+app.get("/api/recordById/:i", async(r,s)=> {
+  const rec=await GameRecord.findOne({ gameId:+r.params.i });
+  if (!rec) return s.status(404).json({error:"Not found"});
+  s.json({ record: rec });
+});
+app.get("/api/bets/:g", async(r,s)=> {
   try {
-    const board = await getOnChainBoard();
-    res.json({ board: convertToAugmentedBoard(board) });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const bets = await bettingContract.getBets();
+    s.json({ bets: bets.map(b=>({ user:b.user, team:Number(b.team), tickets:b.tickets.toString() })) });
+  } catch(e){
+    console.error("bets error:",e);
+    s.status(500).json({error:"Failed to fetch bets"});
   }
 });
-
-app.get("/api/state", (req, res) => {
-  res.json({ phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
-});
-
-app.get("/api/history", (req, res) => {
-  res.json({ boardHistory, skinHistory });
-});
-
-// Endpoint to deliver the current skin overlay for the frontend.
-app.get("/api/skinOverlay", (req, res) => {
-  res.json({ skinOverlay: liveSkinOverlay });
-});
-
-app.get("/api/allRecords", async (req, res) => {
-  try {
-    const skip = parseInt(req.query.skip) || 0;
-    const limit = parseInt(req.query.limit) || 10;
-    const records = await GameRecord.find().sort({ gameId: -1 }).skip(skip).limit(limit);
-    res.json({ records });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get("/api/records/:userAddress", async (req, res) => {
-  try {
-    const skip = parseInt(req.query.skip) || 0;
-    const limit = parseInt(req.query.limit) || 10;
-    const userAddr = req.params.userAddress.toLowerCase();
-    const records = await GameRecord.find({ players: userAddr }).sort({ gameId: -1 }).skip(skip).limit(limit);
-    res.json({ records });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get("/api/recordById/:gameId", async (req, res) => {
-  try {
-    const gId = Number(req.params.gameId);
-    const record = await GameRecord.findOne({ gameId: gId });
-    if (!record) return res.status(404).json({ error: `No record for gameId ${gId}` });
-    res.json({ record });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get("/api/bets/:gameId", async (req, res) => {
-  const gameIdParam = Number(req.params.gameId);
-  try {
-    const bets = await bettingContract.getBets(gameIdParam);
-    const formatted = bets.map(b => ({
-      user: b.user,
-      team: Number(b.team),
-      tickets: b.tickets.toString()
-    }));
-    res.json({ bets: formatted });
-  } catch (err) {
-    console.error("Error fetching bets:", err);
-    res.status(500).json({ error: "Failed to fetch bets." });
-  }
-});
-
-app.post("/admin/reset-to-game1", async (req, res) => {
-  try {
-    const imageDir = path.join(__dirname, "public", "images");
-    if (fs.existsSync(imageDir)) {
-      const files = fs.readdirSync(imageDir);
-      for (const file of files) {
-        fs.unlinkSync(path.join(imageDir, file));
-      }
-      console.log("Thumbnail images deleted.");
-    }
-    await GameRecord.deleteMany({});
-    console.log("MongoDB game records cleared.");
-    await resetGame();
-    res.json({ message: "Reset to game 1 complete." });
-  } catch (err) {
-    console.error("Error resetting game:", err);
-    res.status(500).json({ error: err.message });
-  }
+app.post("/admin/reset-to-game1", async(r,s)=> {
+  const imgDir = path.join(__dirname,"public","images");
+  if (fs.existsSync(imgDir)) fs.readdirSync(imgDir).forEach(f=>fs.unlinkSync(path.join(imgDir,f)));
+  await GameRecord.deleteMany({});
+  await resetGame();
+  s.json({ message:"Reset complete" });
 });
 
 // --------------------
-// Startup Block
+// Startup
 // --------------------
-(async () => {
+;(async()=>{
   try {
-    const onChainGameId = await gameContract.currentGameId();
-    currentGameId = Number(onChainGameId);
-    console.log("Fetched currentGameId:", currentGameId);
-    const onChainPhase = await gameContract.currentPhase();
-    if (Number(onChainPhase) === 3) {
-      console.log("Contract in final phase on startup; resetting game...");
+    const onChainId    = await gameContract.currentGameId();
+    const onChainPhase = Number(await gameContract.currentPhase());
+    currentGameId = Number(onChainId);
+
+    if (onChainPhase === 3) {
       await resetGame();
     } else {
       await setContractPhase("picking");
       phase = "picking";
       phaseTimeLeft = PICKING_TIME;
-      io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
+      io.emit("phaseUpdated", { phase, timeLeft:phaseTimeLeft, gameId:currentGameId });
       await openBettingForCurrentGame();
     }
-  } catch (err) {
-    console.error("Startup error:", err);
+    console.log("🚀 Server up, gameId =", currentGameId);
+  } catch(e) {
+    console.error("Startup error:",e);
   }
 })();
 
 const PORT = process.env.PORT || 3000;
 serverHttp.listen(PORT, () => {
-  console.log(`Server running on ${BASE_URL}, port ${PORT}`);
-  console.log("Using contracts:", { gameAddress, bettingAddress, mizonsAddress });
+  console.log(`🌐 Listening on ${BASE_URL}:${PORT}`);
 });
