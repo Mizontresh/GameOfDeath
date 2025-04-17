@@ -5,7 +5,7 @@ import { ethers } from "ethers";
 import "./App.css";
 import logo from "./logo.png";
 
-// -------------------- Minimal ABIs --------------------
+/* -------------------- Minimal ABIs -------------------- */
 const gameABI = [
   "function joinTeam(uint256 gameId, uint8 teamId) external",
   "function placeSquare(uint256 x, uint256 y) external",
@@ -58,7 +58,7 @@ const mizontreshABI = [
   "function safeTransferFrom(address from, address to, uint256 tokenId, bytes data) external"
 ];
 
-// -------------------- Environment Constants --------------------
+/* -------------------- Environment Constants -------------------- */
 const gameAddress = process.env.REACT_APP_GAMEOFDEATH_ADDRESS;
 const bettingAddress = process.env.REACT_APP_BETTING_ADDRESS;
 const mizonsAddress = process.env.REACT_APP_MIZONS_ADDRESS;
@@ -68,7 +68,7 @@ const skinLockAddress = process.env.REACT_APP_SKIN_LOCK_ADDRESS;
 const mizontreshAddress = process.env.REACT_APP_MIZONTRESH_ADDRESS;
 const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:3000";
 
-// -------------------- Utility Functions --------------------
+/* -------------------- Utility Functions -------------------- */
 function toGatewayUrl(url) {
   if (!url) return "";
   if (url.startsWith("ipfs://")) {
@@ -77,7 +77,7 @@ function toGatewayUrl(url) {
   return url;
 }
 function convertToAugmentedBoard(numericalBoard) {
-  return numericalBoard.map(val => ({ value: val }));
+  return numericalBoard.map((val) => ({ value: val }));
 }
 function formatMizons(balance) {
   const bal = Number(ethers.formatUnits(balance, 18));
@@ -86,7 +86,7 @@ function formatMizons(balance) {
   return bal.toFixed(6);
 }
 
-// -------------------- AgeVerification Component --------------------
+/* -------------------- AgeVerification Component -------------------- */
 function AgeVerification({ onVerify }) {
   return (
     <div className="age-verification-overlay">
@@ -102,7 +102,7 @@ function AgeVerification({ onVerify }) {
   );
 }
 
-// -------------------- MusicPlayer Component --------------------
+/* -------------------- MusicPlayer Component -------------------- */
 function MusicPlayer({ backendUrl }) {
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(0.5);
@@ -112,7 +112,7 @@ function MusicPlayer({ backendUrl }) {
     if (!audioRef.current) return;
     const songNumber = Math.floor(Math.random() * 256);
     audioRef.current.src = `${backendUrl}/songs/${songNumber}.mp3`;
-    audioRef.current.play().catch(err => console.error("Error playing audio:", err));
+    audioRef.current.play().catch((err) => console.error("Error playing audio:", err));
   }, [backendUrl]);
 
   useEffect(() => {
@@ -122,7 +122,7 @@ function MusicPlayer({ backendUrl }) {
       audioRef.current.volume = volume;
       audioRef.current.muted = muted;
       playRandomSong();
-      audioRef.current.play().catch(err => console.error("Autoplay error:", err));
+      audioRef.current.play().catch((err) => console.error("Autoplay error:", err));
     }
     const audio = audioRef.current;
     audio.addEventListener("ended", playRandomSong);
@@ -156,7 +156,7 @@ function MusicPlayer({ backendUrl }) {
         borderRadius: "5px"
       }}
     >
-      <button className="music-button" onClick={() => setMuted(prev => !prev)}>
+      <button className="music-button" onClick={() => setMuted((prev) => !prev)}>
         {muted ? "Unmute" : "Mute"}
       </button>
       <input
@@ -172,7 +172,7 @@ function MusicPlayer({ backendUrl }) {
   );
 }
 
-// -------------------- LockedSkinSlots --------------------
+/* -------------------- LockedSkinSlots -------------------- */
 function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLockedSkins }) {
   const [lockedSkins, setLockedSkins] = useState([]);
   const [selectedLockedSkin, setSelectedLockedSkin] = useState(null);
@@ -279,7 +279,7 @@ function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLoc
               color: "#fff",
               padding: "20px",
               borderRadius: "5px",
-              minWidth: "300px"
+              minWidth: "300px",
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -292,7 +292,7 @@ function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLoc
                 height: "120px",
                 objectFit: "contain",
                 display: "block",
-                margin: "10px auto"
+                margin: "10px auto",
               }}
             />
             <p>Unlock token #{selectedLockedSkin.tokenId} (baked ID {selectedLockedSkin.bakedId})?</p>
@@ -307,7 +307,160 @@ function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLoc
   );
 }
 
-// -------------------- MizontreshOverlay --------------------
+/* 
+  --------------------
+  LoreSlidesOverlay: 
+  For each lore #, loads 0.png / 0.txt, 1.png / 1.txt, etc.
+  Then tries end.txt
+  --------------------
+*/
+function LoreSlidesOverlay({ loreIndex, onClose }) {
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [currentImageUrl, setCurrentImageUrl] = useState("");
+  const [currentText, setCurrentText] = useState("");
+  const [isEnd, setIsEnd] = useState(false);
+
+  async function fetchSlideData(index) {
+    try {
+      // Attempt to fetch e.g. /slides/loreIndex/0.png, /slides/loreIndex/0.txt
+      const imageUrl = `${backendUrl}/slides/${loreIndex}/${index}.png`;
+      const textUrl = `${backendUrl}/slides/${loreIndex}/${index}.txt`;
+
+      const imageResponse = await fetch(imageUrl);
+      const textResponse = await fetch(textUrl);
+
+      let foundSomething = false;
+
+      // If imageResponse is OK, set currentImageUrl
+      if (imageResponse.ok) {
+        setCurrentImageUrl(imageUrl);
+        foundSomething = true;
+      } else {
+        setCurrentImageUrl("");
+      }
+
+      // If textResponse is OK, set currentText
+      if (textResponse.ok) {
+        const textContent = await textResponse.text();
+        setCurrentText(textContent);
+        foundSomething = true;
+      } else {
+        setCurrentText("");
+      }
+
+      if (!foundSomething) {
+        // Attempt to fetch end
+        const endUrl = `${backendUrl}/slides/${loreIndex}/end.txt`;
+        const endResp = await fetch(endUrl);
+        if (endResp.ok) {
+          const endText = await endResp.text();
+          setCurrentText(endText);
+          setCurrentImageUrl("");
+          setIsEnd(true);
+        } else {
+          // end.txt not found => close
+          onClose();
+        }
+      }
+    } catch (err) {
+      console.error("Error loading slides:", err);
+      onClose();
+    }
+  }
+
+  useEffect(() => {
+    fetchSlideData(currentSlide);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSlide]);
+
+  const handleNext = () => {
+    if (isEnd) {
+      onClose();
+    } else {
+      setCurrentSlide((prev) => prev + 1);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 20000,
+        background: "rgba(0,0,0,0.9)",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        padding: "20px",
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: "#222",
+          border: "2px solid #ff00e2",
+          borderRadius: "8px",
+          padding: "20px",
+          maxWidth: "90vw",
+          maxHeight: "90vh",
+          overflowY: "auto",
+          textAlign: "center",
+          position: "relative",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2>Mizontresh Lore #{loreIndex + 1}</h2>
+        {currentImageUrl && (
+          <img
+            src={currentImageUrl}
+            alt="lore"
+            style={{
+              maxWidth: "80vw",
+              maxHeight: "50vh",
+              display: "block",
+              margin: "10px auto",
+            }}
+          />
+        )}
+        {currentText && (
+          <div
+            style={{
+              color: "#fff",
+              background: "#333",
+              borderRadius: "4px",
+              padding: "10px",
+              margin: "10px auto",
+              maxWidth: "80vw",
+            }}
+          >
+            <p style={{ whiteSpace: "pre-wrap", margin: 0 }}>{currentText}</p>
+          </div>
+        )}
+        <button
+          style={{
+            marginTop: "10px",
+            padding: "8px 16px",
+            backgroundColor: "#ff00e2",
+            color: "#000",
+            border: "none",
+            borderRadius: "4px",
+            cursor: "pointer",
+          }}
+          onClick={handleNext}
+        >
+          {isEnd ? "Close" : "Next"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* 
+  --------------------
+  MizontreshOverlay 
+  (with Lore slides)
+  --------------------
+*/
 function MizontreshOverlay({
   onClose,
   mizontreshContract,
@@ -319,6 +472,10 @@ function MizontreshOverlay({
   const [inventory, setInventory] = useState([]);
   const [buying, setBuying] = useState(false);
   const [error, setError] = useState("");
+
+  // Lore overlay:
+  const [showLoreSlides, setShowLoreSlides] = useState(false);
+  const [activeLoreIndex, setActiveLoreIndex] = useState(null);
 
   useEffect(() => {
     async function fetchInventory() {
@@ -379,6 +536,11 @@ function MizontreshOverlay({
     }
   }
 
+  function handleLoreClick(index) {
+    setActiveLoreIndex(index);
+    setShowLoreSlides(true);
+  }
+
   return (
     <div
       className="overlay"
@@ -403,6 +565,7 @@ function MizontreshOverlay({
           width: "90%",
           color: "#fff",
           textAlign: "center",
+          position: "relative",
         }}
       >
         <h2>Mizontresh Shop</h2>
@@ -443,7 +606,7 @@ function MizontreshOverlay({
                       color: "#fff",
                       border: "1px solid #ff00e2",
                       borderRadius: "4px",
-                      cursor: "pointer"
+                      cursor: "pointer",
                     }}
                   >
                     Lock Token
@@ -464,18 +627,23 @@ function MizontreshOverlay({
           }}
         >
           {Array.from({ length: 9 }).map((_, idx) => (
-            <div
+            <button
               key={idx}
+              onClick={() => handleLoreClick(idx)}
               style={{
                 border: "1px solid #fff",
                 padding: "10px",
                 textAlign: "center",
+                background: "none",
+                color: "#fff",
+                cursor: "pointer",
               }}
             >
               Lore {idx + 1}
-            </div>
+            </button>
           ))}
         </div>
+
         <button
           onClick={onClose}
           style={{
@@ -484,17 +652,28 @@ function MizontreshOverlay({
             backgroundColor: "#ff00e2",
             border: "none",
             borderRadius: "4px",
-            cursor: "pointer"
+            cursor: "pointer",
           }}
         >
           Close
         </button>
+
+        {/* Lore Slides Overlay (if active) */}
+        {showLoreSlides && activeLoreIndex != null && (
+          <LoreSlidesOverlay
+            loreIndex={activeLoreIndex}
+            onClose={() => {
+              setShowLoreSlides(false);
+              setActiveLoreIndex(null);
+            }}
+          />
+        )}
       </div>
     </div>
   );
 }
 
-// -------------------- InfoPanel --------------------
+/* -------------------- InfoPanel -------------------- */
 function InfoPanel({ onClose }) {
   return (
     <div className="info-panel-overlay" onClick={onClose}>
@@ -502,15 +681,18 @@ function InfoPanel({ onClose }) {
         <h2>How to Play "Game of Death"</h2>
         <p>
           In <strong>Game of Death</strong> you must choose between two teams: Red and Blue.
-          <br /><br />
+          <br />
+          <br />
           During the <em>picking phase</em>, players join a team. Once the phase ends, the game enters
           the <em>placing phase</em> where your objective is to strategically place squares on your
           designated half of a 64×64 board.
-          <br /><br />
+          <br />
+          <br />
           In the subsequent evolution phase (inspired by Conway’s Game of Life), your squares
           interact according to survival and birth rules. The team that manages to capture more
           territory on the opponent's side wins the game.
-          <br /><br />
+          <br />
+          <br />
           <strong>Tips:</strong>
           <ul>
             <li>Plan your moves carefully; every square affects the next evolution.</li>
@@ -524,10 +706,17 @@ function InfoPanel({ onClose }) {
   );
 }
 
-// -------------------- Inventory Component --------------------
+/* -------------------- Inventory Component -------------------- */
 function Inventory({ inventory, backendUrl, onOpenChest }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "4px", justifyItems: "center" }}>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(4, 1fr)",
+        gap: "4px",
+        justifyItems: "center",
+      }}
+    >
       {inventory.length === 0 ? (
         <p>No chests found.</p>
       ) : (
@@ -549,7 +738,7 @@ function Inventory({ inventory, backendUrl, onOpenChest }) {
   );
 }
 
-// -------------------- RecordsList --------------------
+/* -------------------- RecordsList -------------------- */
 function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, refreshKey }) {
   const [records, setRecords] = useState([]);
   const [skip, setSkip] = useState(0);
@@ -644,7 +833,7 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
   );
 }
 
-// -------------------- LorePanel --------------------
+/* -------------------- LorePanel -------------------- */
 function LorePanel({ onClose, ownedSkins }) {
   const [panelSize, setPanelSize] = useState(400);
   useEffect(() => {
@@ -666,7 +855,7 @@ function LorePanel({ onClose, ownedSkins }) {
   function getSkinCoords(skinId) {
     return {
       x: (skinId % GRID_COLUMNS) * CELL_SIZE,
-      y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE
+      y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE,
     };
   }
 
@@ -699,7 +888,7 @@ function LorePanel({ onClose, ownedSkins }) {
           height: panelSize,
           margin: "0 auto",
           overflow: "hidden",
-          backgroundColor: "#000"
+          backgroundColor: "#000",
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -721,7 +910,7 @@ function LorePanel({ onClose, ownedSkins }) {
                 width: CELL_SIZE,
                 height: CELL_SIZE,
                 backgroundColor: isOwned ? "transparent" : "rgba(128,128,128,0.5)",
-                cursor: isOwned ? "pointer" : "not-allowed"
+                cursor: isOwned ? "pointer" : "not-allowed",
               }}
               onClick={() => handleClick(i)}
             />
@@ -740,7 +929,7 @@ function LorePanel({ onClose, ownedSkins }) {
           padding: "8px",
           cursor: "pointer",
           borderRadius: "4px",
-          zIndex: 6000
+          zIndex: 6000,
         }}
       >
         Close Lore
@@ -763,7 +952,7 @@ function LorePanel({ onClose, ownedSkins }) {
                 width: "250px",
                 height: "auto",
                 border: "1px solid #fff",
-                borderRadius: "8px"
+                borderRadius: "8px",
               }}
             />
             <div style={{ flex: 1 }}>
@@ -786,7 +975,7 @@ function LorePanel({ onClose, ownedSkins }) {
                   padding: "10px",
                   marginTop: "1rem",
                   maxHeight: "40vh",
-                  overflowY: "auto"
+                  overflowY: "auto",
                 }}
               >
                 {Object.entries(selectedLore).map(([key, value]) => {
@@ -809,7 +998,7 @@ function LorePanel({ onClose, ownedSkins }) {
   );
 }
 
-// -------------------- WholeSkinsPanel --------------------
+/* -------------------- WholeSkinsPanel -------------------- */
 function WholeSkinsPanel({
   onClose,
   chestOpenerContract,
@@ -879,7 +1068,7 @@ function WholeSkinsPanel({
   function getSkinCoords(skinId) {
     return {
       x: (skinId % GRID_COLUMNS) * CELL_SIZE,
-      y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE
+      y: Math.floor(skinId / GRID_COLUMNS) * CELL_SIZE,
     };
   }
 
@@ -892,7 +1081,7 @@ function WholeSkinsPanel({
           height: panelSize,
           margin: "0 auto",
           overflow: "hidden",
-          backgroundColor: "#000"
+          backgroundColor: "#000",
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -934,7 +1123,7 @@ function WholeSkinsPanel({
   );
 }
 
-// -------------------- Main App Component --------------------
+/* -------------------- Main App Component -------------------- */
 function App() {
   const LEFT_PANEL_WIDTH = 300;
   const RIGHT_PANEL_WIDTH = 300;
@@ -996,7 +1185,7 @@ function App() {
     step: null,
     data: null,
     chestType: null,
-    frame: 1
+    frame: 1,
   });
 
   // Skins
@@ -1165,8 +1354,8 @@ function App() {
         const res = await fetch(`${backendUrl}/api/bets/${phaseData.gameId}`);
         const data = await res.json();
         if (data && data.bets) {
-          const red = data.bets.filter(b => b.team === 1).reduce((sum, b) => sum + Number(b.tickets), 0);
-          const blue = data.bets.filter(b => b.team === 2).reduce((sum, b) => sum + Number(b.tickets), 0);
+          const red = data.bets.filter((b) => b.team === 1).reduce((sum, b) => sum + Number(b.tickets), 0);
+          const blue = data.bets.filter((b) => b.team === 2).reduce((sum, b) => sum + Number(b.tickets), 0);
           setLiveRedBets(red);
           setLiveBlueBets(blue);
         }
@@ -1209,7 +1398,7 @@ function App() {
   useEffect(() => {
     if (!liveAutoReplay || boardHistory.length === 0) return;
     const autoInterval = setInterval(() => {
-      setLiveReplayIndex(prev => {
+      setLiveReplayIndex((prev) => {
         const newIndex = prev < 0 ? 0 : prev + 1;
         if (newIndex >= boardHistory.length) {
           setLiveAutoReplay(false);
@@ -1225,7 +1414,7 @@ function App() {
   useEffect(() => {
     if (!selectedAutoReplay || !selectedHistory || selectedHistory.length === 0) return;
     const autoInterval = setInterval(() => {
-      setSelectedReplayIndex(prev => {
+      setSelectedReplayIndex((prev) => {
         const newIndex = prev < 0 ? 0 : prev + 1;
         if (newIndex >= selectedHistory.length) {
           setSelectedAutoReplay(false);
@@ -1266,8 +1455,8 @@ function App() {
     const interval = setInterval(() => {
       mizonsContract
         .balanceOf(userAddress)
-        .then(bal => setMizonsBalance(bal.toString()))
-        .catch(err => console.error("Error fetching MIZ balance:", err));
+        .then((bal) => setMizonsBalance(bal.toString()))
+        .catch((err) => console.error("Error fetching MIZ balance:", err));
     }, 1000);
     return () => clearInterval(interval);
   }, [userAddress]);
@@ -1394,7 +1583,7 @@ function App() {
       const signer = await provider.getSigner();
       const mizonsContract = new ethers.Contract(mizonsAddress, mizonsABI, signer);
       const tx = await mizonsContract.approve(chestMinterAddress, "1000000000000", {
-        gasLimit: 100000
+        gasLimit: 100000,
       });
       await tx.wait();
       alert("Approval successful!");
@@ -1418,7 +1607,7 @@ function App() {
       setStatus(`Placing ${betAmount} bet(s) on ${teamId === 1 ? "Red" : "Blue"}...`);
       for (let i = 0; i < betAmount; i++) {
         const tx = await bettingContract.placeBet(phaseData.gameId, teamId, 1, {
-          value: ethers.parseEther("0.00005")
+          value: ethers.parseEther("0.00005"),
         });
         await tx.wait();
       }
@@ -1447,9 +1636,9 @@ function App() {
         step: "brain",
         chestType: null,
         frame: 0,
-        data: { image: `${backendUrl}/chests/brain.png` }
+        data: { image: `${backendUrl}/chests/brain.png` },
       });
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
       // Step 2: "stir"
       setChestAnimation({
@@ -1457,14 +1646,14 @@ function App() {
         step: "stir",
         chestType: null,
         frame: 0,
-        data: { image: `${backendUrl}/chests/brain.png` }
+        data: { image: `${backendUrl}/chests/brain.png` },
       });
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
       // Actual mint
       const tx = await chestMinterContract.mintRandomChest({ gasLimit: 400000 });
       await tx.wait();
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise((resolve) => setTimeout(resolve, 800));
       refreshInventory();
       fetchOwnedSkinsFromOpener();
 
@@ -1490,9 +1679,9 @@ function App() {
         step: "revealed",
         data: metadata,
         chestType,
-        frame: 0
+        frame: 0,
       });
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     } catch (err) {
       console.error("Error minting chest:", err);
       alert("Chest minting failed: " + err.message);
@@ -1502,7 +1691,7 @@ function App() {
         step: null,
         data: null,
         chestType: null,
-        frame: 0
+        frame: 0,
       });
     }
   }
@@ -1519,17 +1708,18 @@ function App() {
       step: "opening",
       chestType: chest.type,
       frame: 1,
-      data: null
+      data: null,
     });
 
     // Animate frames
     for (let i = 1; i <= 5; i++) {
-      setChestAnimation(prev => ({ ...prev, frame: i }));
-      await new Promise(resolve => setTimeout(resolve, 200));
+      setChestAnimation((prev) => ({ ...prev, frame: i }));
+      // small delay
+      await new Promise((resolve) => setTimeout(resolve, 200));
     }
     try {
       const tx = await chestOpenerContract.openChest(tokenId, {
-        value: ethers.parseEther("0.001")
+        value: ethers.parseEther("0.001"),
       });
       await tx.wait();
       const newItemIdBN = await chestOpenerContract.itemCounter();
@@ -1550,9 +1740,9 @@ function App() {
         step: "revealed",
         data: metadata,
         chestType: chest.type,
-        frame: 0
+        frame: 0,
       });
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     } catch (err) {
       console.error("Error opening chest:", err);
       alert("Failed to open chest: " + err.message);
@@ -1562,7 +1752,7 @@ function App() {
         step: null,
         data: null,
         chestType: null,
-        frame: 0
+        frame: 0,
       });
       refreshInventory();
       fetchOwnedSkinsFromOpener();
@@ -1591,8 +1781,7 @@ function App() {
   // Decide which board to show (live vs record)
   let displayBoard;
   if (selectedHistory) {
-    const replayIndex =
-      selectedReplayIndex < 0 ? selectedHistory.length - 1 : selectedReplayIndex;
+    const replayIndex = selectedReplayIndex < 0 ? selectedHistory.length - 1 : selectedReplayIndex;
     displayBoard = convertToAugmentedBoard(selectedHistory[replayIndex]);
   } else if (liveReplayIndex >= 0 && boardHistory.length > 0) {
     const idx = Math.min(liveReplayIndex, boardHistory.length - 1);
@@ -1609,7 +1798,7 @@ function App() {
         : selectedRecord.skinHistory[selectedRecord.skinHistory.length - 1]
       : skinOverlay;
 
-  // Compute scoreboard stats
+  // scoreboard stats
   function computeOpposingStats(board) {
     let redOnBlue = 0;
     let blueOnRed = 0;
@@ -1628,7 +1817,6 @@ function App() {
   const redPercent = totalOpposing > 0 ? (redOnBlue / totalOpposing) * 100 : 50;
   const bluePercent = totalOpposing > 0 ? (blueOnRed / totalOpposing) * 100 : 50;
 
-  // If in placing phase, veil the opposite side
   const showVeil = phaseData.phase === "placing" && !selectedHistory && liveReplayIndex < 0;
 
   return (
@@ -1657,11 +1845,17 @@ function App() {
             zIndex: 9999,
             display: "flex",
             justifyContent: "center",
-            alignItems: "center"
+            alignItems: "center",
           }}
           onClick={() => {
             if (chestAnimation.step === "revealed") {
-              setChestAnimation({ active: false, step: null, data: null, chestType: null, frame: 0 });
+              setChestAnimation({
+                active: false,
+                step: null,
+                data: null,
+                chestType: null,
+                frame: 0,
+              });
             }
           }}
         >
@@ -1725,17 +1919,40 @@ function App() {
             <p className="tiny-wallet">
               {userAddress.slice(0, 6)}...{userAddress.slice(-4)}
             </p>
-            <button className="corner-btn" onClick={disconnectWallet}>Disconnect</button>
+            <button className="corner-btn" onClick={disconnectWallet}>
+              Disconnect
+            </button>
           </>
         ) : (
-          <button className="corner-btn" onClick={connectWallet}>Connect Wallet</button>
+          <button className="corner-btn" onClick={connectWallet}>
+            Connect Wallet
+          </button>
         )}
       </div>
 
       <div className="main-content">
         {/* LEFT PANEL */}
-        <div className="left-panel" style={{ width: "300px", padding: "5px", boxSizing: "border-box", minHeight: "600px", overflowY: "auto" }}>
-          <div className="red-panel" style={{ width: "270px", padding: "10px", boxSizing: "border-box", minHeight: "80px", marginTop: "6px", height: "220px" }}>
+        <div
+          className="left-panel"
+          style={{
+            width: "300px",
+            padding: "5px",
+            boxSizing: "border-box",
+            minHeight: "600px",
+            overflowY: "auto",
+          }}
+        >
+          <div
+            className="red-panel"
+            style={{
+              width: "270px",
+              padding: "10px",
+              boxSizing: "border-box",
+              minHeight: "80px",
+              marginTop: "6px",
+              height: "220px",
+            }}
+          >
             <h2 className="section-title">Your MIZ</h2>
             <div className="miz-balance-container">
               <img src={logo} alt="MIZ Logo" className="miz-logo" />
@@ -1754,7 +1971,10 @@ function App() {
             )}
           </div>
 
-          <div className="chest-roll-section" style={{ width: "270px", position: "relative", marginTop: "10px" }}>
+          <div
+            className="chest-roll-section"
+            style={{ width: "270px", position: "relative", marginTop: "10px" }}
+          >
             <div
               style={{ position: "relative", width: "100px", margin: "0 auto", cursor: "pointer" }}
               onClick={handleMintChest}
@@ -1793,7 +2013,7 @@ function App() {
                   justifyContent: "center",
                   background: "#222",
                   border: "1px solid #ff00e2",
-                  borderRadius: "4px"
+                  borderRadius: "4px",
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1823,20 +2043,23 @@ function App() {
                 Mint Chest
               </button>
             </div>
-            <div className="inventory" style={{ marginTop: "6px", width: "255px", height: "64px", overflowY: "auto" }}>
-              <h3 style={{ fontSize: "1rem", textAlign: "center", margin: "0 0 4px 0" }}>Your Inventory</h3>
-              <Inventory
-                inventory={inventory}
-                backendUrl={backendUrl}
-                onOpenChest={handleOpenChest}
-              />
+            <div
+              className="inventory"
+              style={{ marginTop: "6px", width: "255px", height: "64px", overflowY: "auto" }}
+            >
+              <h3 style={{ fontSize: "1rem", textAlign: "center", margin: "0 0 4px 0" }}>
+                Your Inventory
+              </h3>
+              <Inventory inventory={inventory} backendUrl={backendUrl} onOpenChest={handleOpenChest} />
             </div>
           </div>
 
           <div style={{ marginTop: "10px", width: "100%" }}>
             <div className="phase-info-card" style={{ marginBottom: "8px" }}>
               <p style={{ margin: 0 }}>Phase: {phaseData.phase}</p>
-              <p style={{ margin: 0 }}>Time Left: {phaseData.timeLeft > 0 ? phaseData.timeLeft : 0}s</p>
+              <p style={{ margin: 0 }}>
+                Time Left: {phaseData.timeLeft > 0 ? phaseData.timeLeft : 0}s
+              </p>
               <p style={{ margin: 0 }}>Game ID: {phaseData.gameId}</p>
             </div>
             <p style={{ margin: "4px 0" }}>
@@ -1912,7 +2135,7 @@ function App() {
                     height: "50%",
                     background: "rgba(0,0,0,0.3)",
                     pointerEvents: "none",
-                    zIndex: 10
+                    zIndex: 10,
                   }}
                 />
               )}
@@ -1926,7 +2149,7 @@ function App() {
                     height: "50%",
                     background: "rgba(0,0,0,0.3)",
                     pointerEvents: "none",
-                    zIndex: 10
+                    zIndex: 10,
                   }}
                 />
               )}
@@ -1968,7 +2191,7 @@ function App() {
                   pointerEvents: "none",
                   display: "grid",
                   gridTemplateColumns: "repeat(64, 1fr)",
-                  gridTemplateRows: "repeat(64, 1fr)"
+                  gridTemplateRows: "repeat(64, 1fr)",
                 }}
               >
                 {currentSkinGrid.map((skin, i) =>
@@ -2001,7 +2224,7 @@ function App() {
               className="toggle-btn"
               onClick={() => {
                 setShowMyGames(false);
-                setRefreshKey(prev => prev + 1);
+                setRefreshKey((prev) => prev + 1);
               }}
             >
               All Games
@@ -2010,7 +2233,7 @@ function App() {
               className="toggle-btn"
               onClick={() => {
                 setShowMyGames(true);
-                setRefreshKey(prev => prev + 1);
+                setRefreshKey((prev) => prev + 1);
               }}
               disabled={!userAddress}
             >
@@ -2058,7 +2281,7 @@ function App() {
               <div className="replay-container" style={{ justifyContent: "center" }}>
                 <button
                   onClick={() => {
-                    setSelectedReplayIndex(prev => {
+                    setSelectedReplayIndex((prev) => {
                       if (selectedHistory.length === 0) return -1;
                       if (prev < 0) return selectedHistory.length - 1;
                       return Math.max(0, prev - 1);
@@ -2070,7 +2293,7 @@ function App() {
                 <button onClick={recordGoBackToLive}>Exit</button>
                 <button
                   onClick={() => {
-                    setSelectedReplayIndex(prev => {
+                    setSelectedReplayIndex((prev) => {
                       if (selectedHistory.length === 0) return -1;
                       if (prev < 0) return 0;
                       return Math.min(selectedHistory.length - 1, prev + 1);
@@ -2083,7 +2306,9 @@ function App() {
               {selectedReplayIndex < 0 ? (
                 <p>Viewing final snapshot</p>
               ) : (
-                <p>Viewing Board {selectedReplayIndex + 1}/{selectedHistory.length}</p>
+                <p>
+                  Viewing Board {selectedReplayIndex + 1}/{selectedHistory.length}
+                </p>
               )}
             </div>
           )}
@@ -2102,9 +2327,7 @@ function App() {
           skinLockContract={skinLockContract}
         />
       )}
-      {showLorePanel && (
-        <LorePanel onClose={() => setShowLorePanel(false)} ownedSkins={ownedSkins} />
-      )}
+      {showLorePanel && <LorePanel onClose={() => setShowLorePanel(false)} ownedSkins={ownedSkins} />}
 
       {errorMsg && (
         <div className="error-bar">
@@ -2115,7 +2338,7 @@ function App() {
         </div>
       )}
 
-      {/* Add some mobile-specific overrides */}
+      {/* Mobile overrides */}
       <style>{`
         @media (max-width: 768px) {
           .main-content {

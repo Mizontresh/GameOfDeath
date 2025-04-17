@@ -69,13 +69,13 @@ let liveSkinOverlay = Array(4096).fill(0);
 let boardSquareOwners = Array(4096).fill(null);
 
 // Timing constants:
-const PICKING_TIME = 30;
-const PLACING_TIME = 30;
-const FINAL_COUNTDOWN = 20;
+const PICKING_TIME = 150;
+const PLACING_TIME = 300;
+const FINAL_COUNTDOWN = 30;
 const CONWAY_STEPS = 10;
-const MAX_CYCLES = 2;
+const MAX_CYCLES = 5;
 const STEP_DELAY = 1000;             // Delay between Conway steps (in ms)
-const FINAL_CYCLE_STEP_DELAY = 3000;   // Delay for final cycle steps (in ms)
+const FINAL_CYCLE_STEP_DELAY = 2000;   // Delay for final cycle steps (in ms)
 
 // Base URL (used to generate image URLs)
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
