@@ -196,8 +196,7 @@ async function determineSpawnedSkinForUser(user) {
   try {
     const locked = await skinLockContract.getLockedSkins(user);
     if (!locked.length) return 0;
-    const pick = locked[Math.floor(Math.random()*locked.length)];
-    return Number(pick.bakedId);
+    return Number(locked[Math.floor(Math.random()*locked.length)].bakedId);
   } catch {
     return 0;
   }
@@ -239,11 +238,9 @@ async function distributeWinnings(gameId, winTeam) {
   const loseSum = losers.reduce((a,b) => a + Number(b.tickets), 0);
   if (!winSum) return console.log("No winners");
 
-  // build arrays
   const recipients = winners.map(w => w.user);
-  const amounts    = winners.map(w => Math.floor(w.tickets * loseSum / winSum));
+  const amounts    = winners.map(w => Math.floor(Number(w.tickets) * loseSum / winSum));
 
-  // chunk into batches of ≤200
   const CHUNK_SIZE = 200;
   const recChunks  = chunkArray(recipients, CHUNK_SIZE);
   const amtChunks  = chunkArray(amounts,    CHUNK_SIZE);
@@ -421,13 +418,8 @@ async function transitionPhase() {
         await closeBettingForCurrentGame();
         await setContractPhase("placing");
         phaseTimeLeft = PLACING_TIME;
-        // reset log pointers
-        {
-          const now = await provider.getBlockNumber();
-          lastJoinBlock  = lastPlaceBlock = now + 1;
-        }
+        lastJoinBlock  = lastPlaceBlock = await provider.getBlockNumber() + 1;
         break;
-
       case "placing":
         await setContractPhase("conway");
         await runConwaySteps(CONWAY_STEPS);
@@ -440,7 +432,6 @@ async function transitionPhase() {
           await runFinalCycle();
         }
         break;
-
       case "final":
         await resetGame();
         break;
@@ -463,7 +454,7 @@ setInterval(() => {
   if (phaseTimeLeft === 0) transitionPhase();
 }, 1000);
 
-// Polling for logs during placing (guarded so fromBlock <= toBlock)
+// Polling for logs during placing (guarded so fromBlock ≤ toBlock)
 setInterval(async () => {
   if (phase !== "placing") return;
   try {
