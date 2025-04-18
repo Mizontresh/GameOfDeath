@@ -504,9 +504,7 @@ function MizontreshOverlay({
   }, [mizontreshContract, userAddress, buying]);
 
 
-// somewhere near the top of your App.js:
-import { ethers } from "ethers";
-// …
+
 
 async function handleBuy() {
   // 0) sanity checks
