@@ -411,6 +411,7 @@ async function transitionPhase() {
           lastJoinBlock  = lastPlaceBlock = now + 1;
         }
         break;
+
       case "placing":
         await setContractPhase("conway");
         await runConwaySteps(CONWAY_STEPS);
@@ -423,6 +424,7 @@ async function transitionPhase() {
           await runFinalCycle();
         }
         break;
+
       case "final":
         await resetGame();
         break;
@@ -445,31 +447,36 @@ setInterval(() => {
   if (phaseTimeLeft === 0) transitionPhase();
 }, 1000);
 
-// Polling for logs during placing
+// Polling for logs during placing (guarded so we never query fromBlock>toBlock)
 setInterval(async () => {
   if (phase !== "placing") return;
   try {
     const currentBlock = await provider.getBlockNumber();
-    // TeamJoined
-    const joins = await gameContract.queryFilter(
-      gameContract.filters.TeamJoined(currentGameId),
-      lastJoinBlock, currentBlock
-    );
-    joins.forEach(log => activePlayers.add(log.args.user.toLowerCase()));
-    lastJoinBlock = currentBlock + 1;
 
-    // SquarePlaced
-    const places = await gameContract.queryFilter(
-      gameContract.filters.SquarePlaced(currentGameId),
-      lastPlaceBlock, currentBlock
-    );
-    places.forEach(log => {
-      const x = Number(log.args.x), y = Number(log.args.y);
-      boardSquareOwners[y*64 + x] = log.args.user.toLowerCase();
-    });
-    lastPlaceBlock = currentBlock + 1;
+    // 1) TeamJoined
+    if (currentBlock >= lastJoinBlock) {
+      const joins = await gameContract.queryFilter(
+        gameContract.filters.TeamJoined(currentGameId),
+        lastJoinBlock, currentBlock
+      );
+      joins.forEach(log => activePlayers.add(log.args.user.toLowerCase()));
+      lastJoinBlock = currentBlock + 1;
+    }
 
-    // spawn skins
+    // 2) SquarePlaced
+    if (currentBlock >= lastPlaceBlock) {
+      const places = await gameContract.queryFilter(
+        gameContract.filters.SquarePlaced(currentGameId),
+        lastPlaceBlock, currentBlock
+      );
+      places.forEach(log => {
+        const x = Number(log.args.x), y = Number(log.args.y);
+        boardSquareOwners[y*64 + x] = log.args.user.toLowerCase();
+      });
+      lastPlaceBlock = currentBlock + 1;
+    }
+
+    // 3) spawn skins
     const board = await getOnChainBoard();
     for (let i=0; i<4096; i++) {
       if (board[i] && !liveSkinOverlay[i] && boardSquareOwners[i]) {
@@ -565,7 +572,6 @@ app.post("/admin/reset-to-game1", async(_,res) => {
     const onChainPhase = Number(await gameContract.currentPhase());
     currentGameId = onChainId;
 
-    // reset poll pointers
     const now = await provider.getBlockNumber();
     lastJoinBlock  = lastPlaceBlock = now + 1;
 
