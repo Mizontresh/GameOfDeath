@@ -113,51 +113,14 @@ function toNumber(bn) {
   return s.length < 16 ? Number(s) : Number(s.slice(-13));
 }
 
-// TX Queue (serializes nonces)
-let txQueue = Promise.resolve();
-function enqueueTx(fn) {
-  txQueue = txQueue.then(() => fn().catch(e => { throw e; }));
-  return txQueue;
-}
-
-// wait for inclusion in up to `maxBlocks` mined blocks
-async function waitForInclusion(txHash, maxBlocks = 2, timeout = 30_000) {
-  console.log(`🔎 [inclusion] waiting for ${txHash} up to ${maxBlocks} blocks`);
-  let seen = 0;
-
-  return new Promise((resolve, reject) => {
-    // block listener
-    const onBlock = async (blockNumber) => {
-      seen++;
-      console.log(`⛓ new block ${blockNumber} (#${seen}/${maxBlocks}) checking ${txHash}`);
-      try {
-        const rcpt = await provider.getTransactionReceipt(txHash);
-        if (rcpt) {
-          console.log(`✅ ${txHash} included in block ${rcpt.blockNumber}`);
-          provider.off("block", onBlock);
-          clearTimeout(timer);
-          return resolve(rcpt);
-        }
-        if (seen >= maxBlocks) {
-          provider.off("block", onBlock);
-          clearTimeout(timer);
-          return reject(new Error(`⏱️ timed out after ${seen} blocks waiting for ${txHash}`));
-        }
-      } catch (err) {
-        console.error("error fetching receipt:", err);
-      }
-    };
-
-    // fallback absolute timeout
-    const timer = setTimeout(() => {
-      provider.off("block", onBlock);
-      reject(new Error(`⏱️ timed out after ${timeout}ms waiting for ${txHash}`));
-    }, timeout);
-
-    provider.on("block", onBlock);
-    // initial check immediately
-    onBlock();
-  });
+// wrap send‑and‑confirm for 1 confirmation
+async function sendTx(fn, description) {
+  console.log(`▶️ [tx] ${description}`);
+  const tx = await fn();
+  console.log(`   ↳ sent: ${tx.hash}`);
+  const receipt = await tx.wait(1);
+  console.log(`✅ [conf] ${description} in block ${receipt.blockNumber}`);
+  return receipt;
 }
 
 // ─── On‑chain board helpers ───────────────────────────────────────────────────
@@ -258,9 +221,9 @@ async function distributeWinnings(gameId, winTeam) {
   for (let w of winners) {
     const share = Math.floor(w.tickets * loseSum / winSum);
     if (!share) continue;
-    await enqueueTx(() =>
-      mizonsContract.mint(w.user, share)
-        .then(tx => waitForInclusion(tx.hash, 2))
+    await sendTx(
+      () => mizonsContract.mint(w.user, share),
+      `mint payout to ${w.user} (${share})`
     );
   }
   console.log("💸 payouts done");
@@ -273,17 +236,17 @@ async function resetGame() {
 
   const newId = currentGameId + 1;
 
-  await enqueueTx(() =>
-    bettingContract.clearBets(currentGameId)
-      .then(tx => waitForInclusion(tx.hash, 2))
+  await sendTx(
+    () => bettingContract.clearBets(currentGameId),
+    "clearBets"
   );
-  await enqueueTx(() =>
-    gameContract.newGame(newId)
-      .then(tx => waitForInclusion(tx.hash, 2))
+  await sendTx(
+    () => gameContract.newGame(newId),
+    "newGame"
   );
-  await enqueueTx(() =>
-    bettingContract.openBetting(newId)
-      .then(tx => waitForInclusion(tx.hash, 2))
+  await sendTx(
+    () => bettingContract.openBetting(newId),
+    "openBetting"
   );
 
   currentGameId     = newId;
@@ -317,9 +280,9 @@ async function runConwaySteps(steps, delay = STEP_DELAY) {
     console.log(`   ↳ Conway step ${i}/${steps}`);
     await sleep(delay);
   }
-  await enqueueTx(() =>
-    gameContract.serverOverwriteBoard(packBoard(b))
-      .then(tx => waitForInclusion(tx.hash, 2))
+  await sendTx(
+    () => gameContract.serverOverwriteBoard(packBoard(b)),
+    "serverOverwriteBoard"
   );
 }
 
@@ -387,17 +350,15 @@ async function recordGame(winner) {
 
 // ─── Betting Control ──────────────────────────────────────────────────────────
 async function openBettingForCurrentGame() {
-  console.log(`▶️ [step] openBetting(${currentGameId})`);
-  await enqueueTx(() =>
-    bettingContract.openBetting(currentGameId)
-      .then(tx => waitForInclusion(tx.hash, 2))
+  await sendTx(
+    () => bettingContract.openBetting(currentGameId),
+    "openBetting"
   );
 }
 async function closeBettingForCurrentGame() {
-  console.log(`✋ [step] closeBetting(${currentGameId})`);
-  await enqueueTx(() =>
-    bettingContract.closeBetting(currentGameId)
-      .then(tx => waitForInclusion(tx.hash, 2))
+  await sendTx(
+    () => bettingContract.closeBetting(currentGameId),
+    "closeBetting"
   );
 }
 
@@ -408,9 +369,9 @@ async function setContractPhase(newPhase, attempt = 1) {
   if (pe == null) throw new Error("Unknown phase "+newPhase);
   console.log(`🎛 [step] setContractPhase("${newPhase}") attempt ${attempt}`);
   try {
-    await enqueueTx(() =>
-      gameContract.setPhase(pe)
-        .then(tx => waitForInclusion(tx.hash, 2))
+    await sendTx(
+      () => gameContract.setPhase(pe),
+      `setPhase(${newPhase})`
     );
     phase = newPhase;
     console.log(`   ↳ on‑chain phase now "${newPhase}"`);
@@ -592,11 +553,13 @@ app.post("/admin/reset-to-game1", async(_,res)=>{
       broadcastState();
 
       console.log("⚡ [startup] setPhase(0) & openBetting()");
-      await enqueueTx(() =>
-        gameContract.setPhase(0).then(tx => waitForInclusion(tx.hash, 2))
+      await sendTx(
+        () => gameContract.setPhase(0),
+        "setPhase(0)"
       );
-      await enqueueTx(() =>
-        bettingContract.openBetting(currentGameId).then(tx => waitForInclusion(tx.hash, 2))
+      await sendTx(
+        () => bettingContract.openBetting(currentGameId),
+        "openBetting"
       );
     }
 
