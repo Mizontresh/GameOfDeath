@@ -10,24 +10,23 @@ async function deploy(name, ...args) {
   console.log(`🔨 Deploying ${name}…`);
   const Factory  = await ethers.getContractFactory(name);
   const contract = await Factory.deploy(...args);
-  await contract.deployed();
-  console.log(`✅  ${name} deployed to:`, contract.address);
+  await contract.waitForDeployment();
+  console.log(`✅  ${name} deployed to:`, contract.target || contract.address);
   return contract;
 }
 
 async function main() {
-  // Deployer setup
   const [deployer] = await ethers.getSigners();
-  console.log(`\n👤 Deploying contracts with account: ${deployer.address}`);
-  const balance = await ethers.provider.getBalance(deployer.address);
-  console.log(`💰 ETH balance: ${ethers.formatEther(balance)}\n`);
+  console.log(`\n👤 Deploying with account: ${deployer.address}`);
+  const bal = await ethers.provider.getBalance(deployer.address);
+  console.log(`💰 Balance: ${ethers.formatEther(bal)} ETH\n`);
 
-  // 1. Deploy core contracts
+  // 1. Core
   const game    = await deploy("GameOfDeath");
   const mizons  = await deploy("Mizons", deployer.address);
   const betting = await deploy("GameOfDeathBetting", deployer.address);
 
-  // 2. Deploy Chest contracts
+  // 2. Chests
   const chestMinter = await deploy(
     "ChestMinter",
     mizons.address,
@@ -39,35 +38,31 @@ async function main() {
     "ipfs://bafybeih3u3jnucrmt4lwlbpe2uecnaybwm7g5mtnnarek7252wcpyydxga/"
   );
 
-  // 3. Deploy SkinLockRegistry
+  // 3. SkinLock
   const skinLock = await deploy(
     "SkinLockRegistry",
     chestOpener.address,
     deployer.address
   );
-
-  // Link ChestOpener → ChestMinter
-  console.log(`🔗 Linking ChestOpener on ChestMinter…`);
+  console.log("🔗 Linking ChestOpener → ChestMinter");
   await (await chestMinter.setChestOpener(chestOpener.address)).wait();
-  console.log(`✅  ChestOpener linked\n`);
 
-  // 4. Deploy & whitelist Mizontresh
+  // 4. Mizontresh
   const mizontresh = await deploy(
     "Mizontresh",
     "ipfs://bafybeih3u3jnucrmt4lwlbpe2uecnaybwm7g5mtnnarek7252wcpyydxga/",
     deployer.address
   );
-  console.log(`🔗 Whitelisting Mizontresh in SkinLockRegistry…`);
+  console.log("🔗 Whitelisting Mizontresh");
   await (await skinLock.addAllowedNFT(mizontresh.address)).wait();
-  console.log(`✅  Mizontresh whitelisted\n`);
 
-  // 5. Update .env files without overwriting existing keys
-  console.log(`📦 Updating .env files…`);
+  // 5. Update .env
+  console.log("📦 Updating .env files…");
 
-  // Root .env
-  const rootEnvPath  = path.join(__dirname, ".env");
-  const existingEnv  = dotenv.config({ path: rootEnvPath }).parsed || {};
-  const updatedRoot  = {
+  // root .env
+  const rootEnvPath = path.join(__dirname, ".env");
+  const existingEnv = dotenv.config({ path: rootEnvPath }).parsed || {};
+  const updatedRoot = {
     ...existingEnv,
     GAMEOFDEATH_ADDRESS:         game.address,
     GAMEOFDEATH_BETTING_ADDRESS: betting.address,
@@ -79,14 +74,12 @@ async function main() {
   };
   fs.writeFileSync(
     rootEnvPath,
-    Object.entries(updatedRoot)
-          .map(([k,v]) => `${k}=${v}`)
-          .join("\n"),
+    Object.entries(updatedRoot).map(([k,v])=>`${k}=${v}`).join("\n"),
     "utf8"
   );
-  console.log(`✅  Root .env updated at ${rootEnvPath}`);
+  console.log(`✅ Root .env written to ${rootEnvPath}`);
 
-  // Frontend .env
+  // frontend .env
   const frontEnvPath = path.join(__dirname, "frontend/.env");
   const frontendEnv  = {
     REACT_APP_BACKEND_URL:          process.env.REACT_APP_BACKEND_URL || "http://localhost:3001",
@@ -100,19 +93,17 @@ async function main() {
   };
   fs.writeFileSync(
     frontEnvPath,
-    Object.entries(frontendEnv)
-          .map(([k,v]) => `${k}=${v}`)
-          .join("\n"),
+    Object.entries(frontendEnv).map(([k,v])=>`${k}=${v}`).join("\n"),
     "utf8"
   );
-  console.log(`✅  Frontend .env updated at ${frontEnvPath}\n`);
+  console.log(`✅ Frontend .env written to ${frontEnvPath}\n`);
 
-  console.log(`🏁 Deployment complete!`);
+  console.log("🏁 All done!");
 }
 
 main()
-  .then(() => process.exit(0))
-  .catch(err => {
+  .then(()=>process.exit(0))
+  .catch(err=>{
     console.error("Deployment error:", err);
     process.exit(1);
   });
