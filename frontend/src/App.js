@@ -74,7 +74,7 @@ const chestMinterAddress = process.env.REACT_APP_CHEST_MINTER_ADDRESS;
 const chestOpenerAddress = process.env.REACT_APP_CHEST_OPENER_ADDRESS;
 const skinLockAddress = process.env.REACT_APP_SKIN_LOCK_ADDRESS;
 const mizontreshAddress = process.env.REACT_APP_MIZONTRESH_ADDRESS;
-const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:3000";
+const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://3.234.250.159:3000";
   // Win overlay
 
 
