@@ -791,7 +791,13 @@ function Inventory({ inventory, backendUrl, onOpenChest }) {
 }
 
 /* -------------------- RecordsList -------------------- */
-function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, refreshKey }) {
+function RecordsList({
+  backendUrl,
+  showMyGames,
+  userAddress,
+  onSelectRecord,
+  refreshKey,
+}) {
   const [records, setRecords] = useState([]);
   const [skip, setSkip] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -848,17 +854,28 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
         <p>No records found.</p>
       ) : (
         <ul className="game-records-list">
-          {records.map((rec, index) => {
-            const dateString = rec.timestamp ? new Date(rec.timestamp).toLocaleString() : "N/A";
+          {records.map((rec, idx) => {
+            const dateString = rec.timestamp
+              ? new Date(rec.timestamp).toLocaleString()
+              : "N/A";
+
+            // ensure thumbnail URL is absolute
+            const thumbnailUrl = rec.thumbnail.startsWith("http")
+              ? rec.thumbnail
+              : `${backendUrl.replace(/\/+$/, "")}/${rec.thumbnail.replace(
+                  /^\/+/,
+                  ""
+                )}`;
+
             return (
               <li
-                key={`${rec.gameId}-${index}`}
+                key={`${rec.gameId}-${idx}`}
                 className="game-record-item"
                 onClick={() => onSelectRecord(rec)}
               >
                 {rec.thumbnail && (
                   <img
-                    src={rec.thumbnail}
+                    src={thumbnailUrl}
                     alt={`Game #${rec.gameId}`}
                     className="record-thumbnail"
                   />
@@ -875,7 +892,11 @@ function RecordsList({ backendUrl, showMyGames, userAddress, onSelectRecord, ref
         </ul>
       )}
       {hasMore ? (
-        <button className="load-more-btn" onClick={fetchRecords} disabled={loading}>
+        <button
+          className="load-more-btn"
+          onClick={fetchRecords}
+          disabled={loading}
+        >
           {loading ? "Loading..." : "Load More"}
         </button>
       ) : (
