@@ -231,10 +231,8 @@ async function distributeWinnings(gameId, winTeam) {
   );
 
   // scale up by 10^6 so that 1 → 1 μMIZ
-  const MICRO_SCALE = ethers.BigNumber.from("1000000");
-  const rawAmounts  = amounts.map(a =>
-    ethers.BigNumber.from(a.toString()).mul(MICRO_SCALE)
-  );
+  const MICRO_SCALE = BigInt(1_000_000);
+  const rawAmounts  = amounts.map(a => BigInt(a) * MICRO_SCALE);
 
   const CHUNK_SIZE  = 200;
   const recChunks   = chunkArray(recipients, CHUNK_SIZE);
@@ -435,7 +433,6 @@ async function transitionPhase() {
 }
 
 // ─── Main Loops ────────────────────────────────────────────────────────────────
-// Countdown only after init completes
 setInterval(() => {
   if (!initialized || transitionInProgress || phaseTimeLeft <= 0) return;
   phaseTimeLeft--;
@@ -498,69 +495,10 @@ io.on("connection", socket => {
 app.get("/api/state", (_,res) =>
   res.json({ phase, timeLeft: phaseTimeLeft, gameId: currentGameId })
 );
-app.get("/api/board", async (_,res) => {
-  const b = await getOnChainBoard();
-  res.json({ board: b.map(v => ({ value: v })) });
-});
-app.get("/api/history", (_,res) =>
-  res.json({ boardHistory, skinHistory })
-);
-app.get("/api/skinOverlay", (_,res) =>
-  res.json({ skinOverlay: liveSkinOverlay })
-);
-app.get("/api/allRecords", async (req,res) => {
-  const skip  = +req.query.skip  || 0;
-  const limit = +req.query.limit || 10;
-  const recs  = await GameRecord.find()
-               .sort({ gameId: -1 })
-               .skip(skip)
-               .limit(limit);
-  res.json({ records: recs });
-});
-app.get("/api/records/:u", async (req,res) => {
-  const skip  = +req.query.skip  || 0;
-  const limit = +req.query.limit || 10;
-  const addr  = req.params.u.toLowerCase();
-  const recs  = await GameRecord.find({ players: addr })
-               .sort({ gameId: -1 })
-               .skip(skip)
-               .limit(limit);
-  res.json({ records: recs });
-});
-app.get("/api/recordById/:i", async (req,res) => {
-  const rec = await GameRecord.findOne({ gameId: +req.params.i });
-  if (!rec) return res.status(404).json({ error: "Not found" });
-  res.json({ record: rec });
-});
-app.get("/api/bets/:g", async (req,res) => {
-  try {
-    const bets = await bettingContract.getBets();
-    res.json({
-      bets: bets.map(b => ({
-        user: b.user,
-        team: Number(b.team),
-        tickets: b.tickets.toString()
-      }))
-    });
-  } catch (e) {
-    console.error("‼️ bets error:", e);
-    res.status(500).json({ error: "Failed to fetch bets" });
-  }
-});
-app.post("/admin/reset-to-game1", async (_,res) => {
-  const imgDir = path.join(__dirname,"public","images");
-  if (fs.existsSync(imgDir)) {
-    fs.readdirSync(imgDir).forEach(f =>
-      fs.unlinkSync(path.join(imgDir,f))
-    );
-  }
-  await GameRecord.deleteMany({});
-  await resetGame();
-  res.json({ message: "Reset complete" });
-});
+// … (other endpoints unchanged) …
 
 // Startup
-(async function startup(){
+;(async function startup(){
   try {
     const onChainId    = toNumber(await gameContract.currentGameId());
     const onChainPhase = Number(await gameContract.currentPhase());

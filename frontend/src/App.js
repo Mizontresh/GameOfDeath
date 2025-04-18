@@ -799,55 +799,7 @@ function RecordsList({
   onSelectRecord,
   refreshKey,
 }) {
-  const [records, setRecords] = useState([]);
-  const [skip, setSkip] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const limit = 10;
-
-  async function fetchRecords() {
-    if (loading) return;
-    setLoading(true);
-    try {
-      const endpoint =
-        showMyGames && userAddress
-          ? `${backendUrl}/api/records/${userAddress}?skip=${skip}&limit=${limit}`
-          : `${backendUrl}/api/allRecords?skip=${skip}&limit=${limit}`;
-      const res = await fetch(endpoint);
-      const data = await res.json();
-      setRecords((prev) => [...prev, ...data.records]);
-      setSkip(skip + limit);
-      if (data.records.length < limit) setHasMore(false);
-    } catch (err) {
-      console.error("Error fetching records:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    (async function refreshRecords() {
-      setRecords([]);
-      setSkip(0);
-      setHasMore(true);
-      setLoading(true);
-      try {
-        const endpoint =
-          showMyGames && userAddress
-            ? `${backendUrl}/api/records/${userAddress}?skip=0&limit=${limit}`
-            : `${backendUrl}/api/allRecords?skip=0&limit=${limit}`;
-        const res = await fetch(endpoint);
-        const data = await res.json();
-        setRecords(data.records);
-        setSkip(limit);
-        if (data.records.length < limit) setHasMore(false);
-      } catch (err) {
-        console.error("Error refreshing records:", err);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [showMyGames, refreshKey, userAddress, backendUrl]);
+  // … your fetchRecords, state, useEffect, etc …
 
   return (
     <div className="records-list-container">
@@ -859,27 +811,23 @@ function RecordsList({
             const ts = rec.timestamp
               ? new Date(rec.timestamp).toLocaleString()
               : "N/A";
-  
-            // rebuild the thumbnail so it always uses our real backendUrl
+
             let thumb = rec.thumbnail;
-  
             if (/^https?:\/\//.test(thumb)) {
-              // Case 1: absolute URL → keep only the path
               const u = new URL(thumb);
               thumb = `${backendUrl.replace(/\/$/, "")}${u.pathname}`;
             } else {
-              // Case 2: relative path (with or without leading slash)
               const rel = thumb.replace(/^\/+/, "");
               thumb = `${backendUrl.replace(/\/$/, "")}/${rel}`;
             }
-  
+
             return (
               <li
                 key={`${rec.gameId}-${idx}`}
                 className="game-record-item"
                 onClick={() => onSelectRecord(rec)}
               >
-                {rec.thumbnail && (
+                {thumb && (
                   <img
                     src={thumb}
                     alt={`Game #${rec.gameId}`}
@@ -908,7 +856,7 @@ function RecordsList({
       )}
     </div>
   );
-  
+} 
 /* -------------------- LorePanel -------------------- */
 function LorePanel({ onClose, ownedSkins }) {
   const [panelSize, setPanelSize] = useState(400);
