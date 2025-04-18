@@ -1,4 +1,5 @@
 // App.js
+/* global BigInt */
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { io } from "socket.io-client";
 import { ethers } from "ethers";
@@ -476,7 +477,7 @@ function MizontreshOverlay({
   numUniqueSkins, // we'll pass in ownedSkins.length
 }) {
   const [inventory, setInventory] = useState([]);
-  const [buying, setBuying] = useState(false);
+  const [buying] = useState(false);
   const [error, setError] = useState("");
 
   const [showLoreSlides, setShowLoreSlides] = useState(false);
@@ -1602,7 +1603,7 @@ function App() {
   }
   useEffect(() => {
     fetchOwnedSkinsFromOpener();
-  }, [chestOpenerContract, userAddress, status]);
+  }, [chestOpenerContract, userAddress, status,fetchOwnedSkinsFromOpener]);
 
   // Select a record
   function selectRecord(rec) {
