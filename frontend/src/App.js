@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 import { ethers } from "ethers";
 import "./App.css"; // <-- your big CSS file with all the styling
 import logo from "./logo.png";
- } from "ethers";
+
 
 /* -------------------- Minimal ABIs -------------------- */
 const gameABI = [
