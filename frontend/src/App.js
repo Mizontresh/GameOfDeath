@@ -503,18 +503,42 @@ function MizontreshOverlay({
   async function handleBuy() {
     if (!mizontreshContract) return;
     setBuying(true);
+  
     try {
-      const tx = await mizontreshContract.buyToken({ value: ethers.parseEther("0.5122018") });
+      // 1) read the on‑chain price
+      const price = await mizontreshContract.MINT_PRICE();
+      console.log("👉 Mizontresh price:", ethers.formatEther(price), "ETH");
+  
+      // 2) fetch current fee data and set maxFee/maxPriority
+      const provider = mizontreshContract.provider;
+      const feeData = await provider.getFeeData();
+      const tx = await mizontreshContract.buyToken({
+        value: price,
+        maxFeePerGas: feeData.maxFeePerGas,
+        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas,
+        gasLimit: 300_000
+      });
+  
       await tx.wait();
-      alert("Mizontresh token purchased!");
-      if (refreshInventory) refreshInventory();
+      alert("Purchased!");
+      refreshInventory();
     } catch (err) {
-      console.error("Error purchasing Mizontresh token:", err);
-      setError("Purchase failed: " + err.message);
+      // dump everything so we can see the raw error
+      console.error("FULL ERROR OBJECT:", err);
+      // try to peel out any data
+      const data = err.error?.data || err.data || err.transaction?.data;
+      const reason =
+        err.error?.message ||
+        err.reason ||
+        (data && JSON.stringify(data)) ||
+        err.message ||
+        "unknown";
+      alert("Purchase failed:\n" + reason);
     } finally {
       setBuying(false);
     }
   }
+  
 
   async function lockToken(tokenId) {
     if (!skinLockContract || !mizontreshContract || !userAddress || !skinLockAddress) return;
