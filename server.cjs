@@ -344,11 +344,11 @@ async function recordGame(winner) {
 // ─── Betting control ─────────────────────────────────────────────────────────
 async function openBettingForCurrentGame() {
   console.log("▶️ openBetting for", currentGameId);
-  await enqueueTx(() => bettingContract.openBetting(currentGameId));
+  await enqueueTx(() => bettingContract.openBetting());
 }
 async function closeBettingForCurrentGame() {
   console.log("✋ closeBetting for", currentGameId);
-  await enqueueTx(() => bettingContract.closeBetting(currentGameId));
+  await enqueueTx(() => bettingContract.closeBetting());
 }
 
 // ─── Phase transitions ───────────────────────────────────────────────────────
