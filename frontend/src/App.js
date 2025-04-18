@@ -862,16 +862,19 @@ function RecordsList({
 
             // rebuild the thumbnail so it always uses our real backendUrl
             let thumb = rec.thumbnail;
-            try {
-              const url = new URL(rec.thumbnail);
-              // discard everything except the pathname
-              thumb = `${backendUrl.replace(/\/$/, "")}${url.pathname}`;
-            } catch {
-              // if rec.thumbnail was already relative, just prefix it
-              if (rec.thumbnail.startsWith("/")) {
-                thumb = `${backendUrl.replace(/\/$/, "")}${rec.thumbnail}`;
-              }
-            }
+
+// Case 1: it’s already an absolute URL
+if (/^https?:\/\//.test(thumb)) {
+  const u = new URL(thumb);
+  thumb = `${backendUrl.replace(/\/$/, "")}${u.pathname}`;
+
+// Case 2: it’s a relative path (with or without a leading slash)
+} else {
+  // strip any leading slashes and then prefix a single “/”
+  const rel = thumb.replace(/^\/+/, "");
+  thumb = `${backendUrl.replace(/\/$/, "")}/${rel}`;
+}
+
 
             return (
               <li
