@@ -238,22 +238,35 @@ async function distributeWinnings(gameId, winTeam) {
   const loseSum = losers.reduce((a,b) => a + Number(b.tickets), 0);
   if (!winSum) return console.log("No winners");
 
+  // compute raw ticket‐based payouts
   const recipients = winners.map(w => w.user);
-  const amounts    = winners.map(w => Math.floor(Number(w.tickets) * loseSum / winSum));
+  const amounts    = winners.map(w =>
+    Math.floor(Number(w.tickets) * loseSum / winSum)
+  );
 
-  const CHUNK_SIZE = 200;
-  const recChunks  = chunkArray(recipients, CHUNK_SIZE);
-  const amtChunks  = chunkArray(amounts,    CHUNK_SIZE);
+  // ——— SCALE UP by 10^6 so that 1 → 1 μMIZ (10⁶ wei = 10⁻¹² MIZ) ———
+  const MICRO_SCALE = BigNumber.from("1000000");  // 10^6
+  const rawAmounts  = amounts.map(a =>
+    BigNumber.from(a).mul(MICRO_SCALE)
+  );
+  // ——————————————————————————————————————————————————————————————
+
+  // Now chunk & mint exactly those wei‐scaled amounts
+  const CHUNK_SIZE  = 200;
+  const recChunks   = chunkArray(recipients, CHUNK_SIZE);
+  const amtChunks   = chunkArray(rawAmounts,  CHUNK_SIZE);
 
   for (let i = 0; i < recChunks.length; i++) {
     await sendTx(
       () => mizonsContract.mintBatch(recChunks[i], amtChunks[i]),
-      `mintBatch ${i+1}/${recChunks.length} (${recChunks[i].length})`,
+      `mintBatch ${i+1}/${recChunks.length} (${recChunks[i].length} addresses)`,
       2
     );
   }
+
   console.log("💸 all batches done");
 }
+
 
 // ─── Reset & New Game ─────────────────────────────────────────────────────────
 async function resetGame() {
