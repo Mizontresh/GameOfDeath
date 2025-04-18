@@ -57,6 +57,8 @@ const mizontreshABI = [
   "function balanceOf(address owner) external view returns (uint256)",
   "function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256)",
   "function buyToken() external payable",
+  "function TOKEN_PRICE() external view returns (uint256)",
+  "function buyToken() external payable",
   "function getApproved(uint256 tokenId) external view returns (address)",
   "function approve(address to, uint256 tokenId) external",
   "function setApprovalForAll(address operator, bool approved) external",
@@ -503,41 +505,23 @@ function MizontreshOverlay({
   async function handleBuy() {
     if (!mizontreshContract) return;
     setBuying(true);
-  
     try {
       // 1) read the on‑chain price
-      const price = await mizontreshContract.MINT_PRICE();
-      console.log("👉 Mizontresh price:", ethers.formatEther(price), "ETH");
-  
-      // 2) fetch current fee data and set maxFee/maxPriority
-      const provider = mizontreshContract.provider;
-      const feeData = await provider.getFeeData();
-      const tx = await mizontreshContract.buyToken({
-        value: price,
-        maxFeePerGas: feeData.maxFeePerGas,
-        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas,
-        gasLimit: 300_000
-      });
-  
+      const price = await mizontreshContract.TOKEN_PRICE();           // <— this now works
+      // 2) send exactly that much (or more) to buy
+      const tx    = await mizontreshContract.buyToken({ value: price });
       await tx.wait();
-      alert("Purchased!");
-      refreshInventory();
+      alert("Mizontresh token purchased!");
+      if (refreshInventory) refreshInventory();
     } catch (err) {
-      // dump everything so we can see the raw error
-      console.error("FULL ERROR OBJECT:", err);
-      // try to peel out any data
-      const data = err.error?.data || err.data || err.transaction?.data;
-      const reason =
-        err.error?.message ||
-        err.reason ||
-        (data && JSON.stringify(data)) ||
-        err.message ||
-        "unknown";
-      alert("Purchase failed:\n" + reason);
+      console.error("Error purchasing Mizontresh token:", err);
+      // if it’s a revert, err.reason should contain your require‑string
+      alert("Purchase failed: " + (err.reason || err.message));
     } finally {
       setBuying(false);
     }
   }
+  
   
 
   async function lockToken(tokenId) {
