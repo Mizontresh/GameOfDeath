@@ -503,26 +503,39 @@ function MizontreshOverlay({
   }, [mizontreshContract, userAddress, buying]);
 
   async function handleBuy() {
-    if (!mizontreshContract || !window.ethereum) return;
+    if (!mizontreshContract) return;
+    setBuying(true);
+    try {
+      // 1️⃣ Read the on‑chain price
+      const price = await mizontreshContract.TOKEN_PRICE();
   
-    const provider = new ethers.BrowserProvider(window.ethereum);
-    const signer   = await provider.getSigner();
-    const me       = await signer.getAddress();
+      // 2️⃣ Get the signer and its ETH balance
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer   = await provider.getSigner();
+      const balance  = await signer.getBalance();
   
-    // 1) figure out the mint price from chain
-    const price = await mizontreshContract.MINT_PRICE(); // BigInt in wei
+      // 3️⃣ If they don’t have enough, show a friendly alert and bail out
+      if (balance.lt(price)) {
+        const needed = ethers.formatEther(price);
+        const have   = ethers.formatEther(balance);
+        alert(`❌ Not enough ETH. You need ${needed} ETH but only have ${have} ETH.`);
+        return;
+      }
   
-    // 2) get your wallet balance
-    const balance = await provider.getBalance(me);       // BigInt in wei
-  
-    // 3) compare
-    if (balance.lt(price)) {
-      const need = ethers.formatEther(price);
-      const have = ethers.formatEther(balance);
-      return alert(
-        `Insufficient funds to mint:\nRequired : ${need} ETH\nYour balance: ${have} ETH`
-      );
+      // 4️⃣ Otherwise do the purchase
+      const tx = await mizontreshContract.buyToken({ value: price });
+      await tx.wait();
+      alert("✅ Mizontresh token purchased!");
+    } catch (err) {
+      console.error("Error purchasing Mizontresh token:", err);
+      // try to pull out a revert reason if there is one
+      const reason = err.reason || err.error?.message || err.message;
+      alert("⚠️ Purchase failed: " + reason);
+    } finally {
+      setBuying(false);
     }
+  }
+  
   
     // 4) you’ve got enough — go for it
     try {
