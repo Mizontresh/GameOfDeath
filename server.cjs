@@ -467,7 +467,6 @@ setInterval(async () => {
 
 // ─── Socket.io connections ───────────────────────────────────────────────────
 io.on("connection", socket => {
-  // send current state
   socket.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
   if (boardHistory.length) {
     const last = boardHistory[boardHistory.length-1].map(v => ({ value: v }));
@@ -533,9 +532,15 @@ app.post("/admin/reset-to-game1", async (_,res) => {
 // ─── Startup ─────────────────────────────────────────────────────────────────
 (async function startup(){
   try {
+    // seed current game ID + phase
     const onChainId    = toNumber(await gameContract.currentGameId());
     const onChainPhase = Number(await gameContract.currentPhase());
     currentGameId      = onChainId;
+
+    // pick up the block height so we don't fetch logs from block 1 → huge range
+    const startBlock = await provider.getBlockNumber();
+    lastBlockForSquare = startBlock;
+    lastBlockForTeam   = startBlock;
 
     if (onChainPhase === 3) {
       await resetGame();
