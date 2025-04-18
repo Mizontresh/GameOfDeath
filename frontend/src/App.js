@@ -855,17 +855,22 @@ function RecordsList({
       ) : (
         <ul className="game-records-list">
           {records.map((rec, idx) => {
-            const dateString = rec.timestamp
+            const ts = rec.timestamp
               ? new Date(rec.timestamp).toLocaleString()
               : "N/A";
 
-            // ensure thumbnail URL is absolute
-            const thumbnailUrl = rec.thumbnail.startsWith("http")
-              ? rec.thumbnail
-              : `${backendUrl.replace(/\/+$/, "")}/${rec.thumbnail.replace(
-                  /^\/+/,
-                  ""
-                )}`;
+            // rebuild the thumbnail so it always uses our real backendUrl
+            let thumb = rec.thumbnail;
+            try {
+              const url = new URL(rec.thumbnail);
+              // discard everything except the pathname
+              thumb = `${backendUrl.replace(/\/$/, "")}${url.pathname}`;
+            } catch {
+              // if rec.thumbnail was already relative, just prefix it
+              if (rec.thumbnail.startsWith("/")) {
+                thumb = `${backendUrl.replace(/\/$/, "")}${rec.thumbnail}`;
+              }
+            }
 
             return (
               <li
@@ -875,16 +880,14 @@ function RecordsList({
               >
                 {rec.thumbnail && (
                   <img
-                    src={thumbnailUrl}
+                    src={thumb}
                     alt={`Game #${rec.gameId}`}
                     className="record-thumbnail"
                   />
                 )}
                 <div className="record-info">
                   <strong>Game #{rec.gameId}</strong>
-                  <p>
-                    {rec.winner} won at {dateString}
-                  </p>
+                  <p>{rec.winner} won at {ts}</p>
                 </div>
               </li>
             );
