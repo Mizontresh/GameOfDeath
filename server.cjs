@@ -99,7 +99,7 @@ const PICKING_TIME     = 120;
 const PLACING_TIME     = 150;
 const FINAL_COUNTDOWN  = 30;
 const CONWAY_STEPS     = 10;
-const MAX_CYCLES       = 3;
+const MAX_CYCLES       = 1;
 const STEP_DELAY       = 1000;
 const FINAL_STEP_DELAY = 2000;
 
@@ -245,10 +245,10 @@ async function distributeWinnings(gameId, winTeam) {
   );
 
   // ——— SCALE UP by 10^6 so that 1 → 1 μMIZ (10⁶ wei = 10⁻¹² MIZ) ———
-  const MICRO_SCALE = BigNumber.from("1000000");  // 10^6
-  const rawAmounts  = amounts.map(a =>
-    BigNumber.from(a).mul(MICRO_SCALE)
-  );
+    const MICRO_SCALE = ethers.BigNumber.from("1000000");  // 10^6
+    const rawAmounts  = amounts.map(a =>
+      ethers.BigNumber.from(a.toString()).mul(MICRO_SCALE)
+    );
   // ——————————————————————————————————————————————————————————————
 
   // Now chunk & mint exactly those wei‐scaled amounts
