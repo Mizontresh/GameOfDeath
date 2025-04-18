@@ -30,10 +30,9 @@ if (!RPC_URL || !PRIVATE_KEY) {
 
 const provider = new ethers.JsonRpcProvider(RPC_URL);
 setInterval(() => provider.send("net_version", []).catch(() => {}), 10_000);
+const wallet   = new ethers.Wallet(PRIVATE_KEY, provider);
 
-const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-
-// ─── MongoDB Setup ────────────────────────────────────────────────────────────
+// ─── MongoDB Setup ───────────────────────────────────────────────────────────
 mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
 mongoose.connection
   .once("open", () => console.log("✅ MongoDB connected"))
@@ -129,7 +128,7 @@ async function waitForTxConfirmation(tx, timeout = 90_000, interval = 3_000) {
   throw new Error("⏱️ tx confirmation timeout");
 }
 
-// encode/decode board to/from on‐chain chunks
+// encode/decode board to/from on‑chain chunks
 async function getOnChainBoard() {
   const packed = await gameContract.getBoard();
   const cells = [];
@@ -153,7 +152,7 @@ function packBoard(cells) {
   return arr.map(n => n.toString());
 }
 
-// Conway‐style skin evolution
+// Conway‑style skin evolution
 function runSkinStep(oldGrid) {
   const newGrid = Array(4096).fill(0);
   for (let y=0; y<64; y++) for (let x=0; x<64; x++) {
@@ -213,11 +212,7 @@ async function generateThumbnail(board, gameId) {
 
 // broadcast phase & gameId
 function broadcastState() {
-  io.emit("phaseUpdated", {
-    phase,
-    timeLeft: phaseTimeLeft,
-    gameId: currentGameId
-  });
+  io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
 }
 
 // ─── Distribute winnings ──────────────────────────────────────────────────────
@@ -249,7 +244,7 @@ async function resetGame() {
 
   // clear previous bets
   await enqueueTx(() =>
-    bettingContract.clearBets(currentGameId)
+    bettingContract.clearBet()
       .then(tx => waitForTxConfirmation(tx))
   );
   // create & open new game
@@ -258,7 +253,7 @@ async function resetGame() {
       .then(tx => waitForTxConfirmation(tx))
   );
   await enqueueTx(() =>
-    bettingContract.openBetting(newId)
+    bettingContract.openBetting()
       .then(tx => waitForTxConfirmation(tx))
   );
 
@@ -322,8 +317,8 @@ async function runFinalCycle() {
   io.emit("winner", { winner });
   await recordGame(winner);
 
-  phase = "final";
-  phaseTimeLeft = FINAL_COUNTDOWN;
+  phase           = "final";
+  phaseTimeLeft   = FINAL_COUNTDOWN;
   broadcastState();
 }
 
@@ -364,14 +359,14 @@ async function recordGame(winner) {
 async function openBettingForCurrentGame() {
   console.log("▶️ openBetting for", currentGameId);
   await enqueueTx(() =>
-    bettingContract.openBetting(currentGameId)
+    bettingContract.openBetting()
       .then(tx => waitForTxConfirmation(tx))
   );
 }
 async function closeBettingForCurrentGame() {
   console.log("✋ closeBetting for", currentGameId);
   await enqueueTx(() =>
-    bettingContract.closeBetting(currentGameId)
+    bettingContract.closeBetting()
       .then(tx => waitForTxConfirmation(tx))
   );
 }
@@ -405,7 +400,6 @@ async function transitionPhase() {
         await closeBettingForCurrentGame();
         await setContractPhase("placing");
         phaseTimeLeft = PLACING_TIME;
-        // reset polls
         {
           const now = await provider.getBlockNumber();
           lastJoinBlock  = lastPlaceBlock = now + 1;
@@ -413,7 +407,7 @@ async function transitionPhase() {
         break;
 
       case "placing":
-        await setContractPhase("conway");
+        await setContractPhase("conney");
         await runConwaySteps(CONWAY_STEPS);
         cycleCount++;
         if (cycleCount < MAX_CYCLES) {
@@ -458,7 +452,7 @@ setInterval(async () => {
         gameContract.filters.TeamJoined(currentGameId),
         lastJoinBlock, currentBlock
       );
-      joins.forEach(log => 
+      joins.forEach(log =>
         activePlayers.add(log.args.user.toLowerCase())
       );
       lastJoinBlock = currentBlock + 1;
@@ -492,9 +486,7 @@ setInterval(async () => {
 
 // ─── Socket.io Initial Sync ───────────────────────────────────────────────────
 io.on("connection", socket => {
-  socket.emit("phaseUpdated", {
-    phase, timeLeft: phaseTimeLeft, gameId: currentGameId
-  });
+  socket.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
   if (boardHistory.length) {
     const last = boardHistory[boardHistory.length-1].map(v => ({ value: v }));
     socket.emit("boardUpdated", last);
@@ -505,20 +497,16 @@ io.on("connection", socket => {
 app.get("/api/state", (_,res) =>
   res.json({ phase, timeLeft: phaseTimeLeft, gameId: currentGameId })
 );
-
 app.get("/api/board", async (_,res) => {
   const b = await getOnChainBoard();
   res.json({ board: b.map(v=>({value:v})) });
 });
-
 app.get("/api/history", (_,res) =>
   res.json({ boardHistory, skinHistory })
 );
-
 app.get("/api/skinOverlay",(_,res) =>
   res.json({ skinOverlay: liveSkinOverlay })
 );
-
 app.get("/api/allRecords", async(req,res) => {
   const skip  = +req.query.skip  || 0;
   const limit = +req.query.limit || 10;
@@ -528,7 +516,6 @@ app.get("/api/allRecords", async(req,res) => {
                .limit(limit);
   res.json({ records: recs });
 });
-
 app.get("/api/records/:u", async(req,res) => {
   const skip  = +req.query.skip  || 0;
   const limit = +req.query.limit || 10;
@@ -539,13 +526,11 @@ app.get("/api/records/:u", async(req,res) => {
                .limit(limit);
   res.json({ records: recs });
 });
-
 app.get("/api/recordById/:i", async(req,res) => {
   const rec = await GameRecord.findOne({ gameId: +req.params.i });
   if (!rec) return res.status(404).json({ error:"Not found" });
   res.json({ record: rec });
 });
-
 app.get("/api/bets/:g", async(req,res) => {
   try {
     const bets = await bettingContract.getBets();
@@ -561,11 +546,10 @@ app.get("/api/bets/:g", async(req,res) => {
     res.status(500).json({ error:"Failed to fetch bets" });
   }
 });
-
 app.post("/admin/reset-to-game1", async(_,res) => {
   const imgDir = path.join(__dirname,"public","images");
   if (fs.existsSync(imgDir)) {
-    fs.readdirSync(imgDir).forEach(f => 
+    fs.readdirSync(imgDir).forEach(f =>
       fs.unlinkSync(path.join(imgDir,f))
     );
   }
@@ -596,7 +580,7 @@ app.post("/admin/reset-to-game1", async(_,res) => {
           .then(tx => waitForTxConfirmation(tx))
       );
       await enqueueTx(() =>
-        bettingContract.openBetting(currentGameId)
+        bettingContract.openBetting()
           .then(tx => waitForTxConfirmation(tx))
       );
       broadcastState();
