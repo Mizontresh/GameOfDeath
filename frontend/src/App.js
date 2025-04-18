@@ -859,23 +859,20 @@ function RecordsList({
             const ts = rec.timestamp
               ? new Date(rec.timestamp).toLocaleString()
               : "N/A";
-
+  
             // rebuild the thumbnail so it always uses our real backendUrl
             let thumb = rec.thumbnail;
-
-// Case 1: it’s already an absolute URL
-if (/^https?:\/\//.test(thumb)) {
-  const u = new URL(thumb);
-  thumb = `${backendUrl.replace(/\/$/, "")}${u.pathname}`;
-
-// Case 2: it’s a relative path (with or without a leading slash)
-} else {
-  // strip any leading slashes and then prefix a single “/”
-  const rel = thumb.replace(/^\/+/, "");
-  thumb = `${backendUrl.replace(/\/$/, "")}/${rel}`;
-}
-
-
+  
+            if (/^https?:\/\//.test(thumb)) {
+              // Case 1: absolute URL → keep only the path
+              const u = new URL(thumb);
+              thumb = `${backendUrl.replace(/\/$/, "")}${u.pathname}`;
+            } else {
+              // Case 2: relative path (with or without leading slash)
+              const rel = thumb.replace(/^\/+/, "");
+              thumb = `${backendUrl.replace(/\/$/, "")}/${rel}`;
+            }
+  
             return (
               <li
                 key={`${rec.gameId}-${idx}`}
@@ -911,8 +908,7 @@ if (/^https?:\/\//.test(thumb)) {
       )}
     </div>
   );
-}
-
+  
 /* -------------------- LorePanel -------------------- */
 function LorePanel({ onClose, ownedSkins }) {
   const [panelSize, setPanelSize] = useState(400);
