@@ -11,7 +11,7 @@ const { createCanvas } = require("canvas");
 const mongoose     = require("mongoose");
 const conway       = require("./conway");
 
-// ─── Config & HTTP Provider ────────────────────────────────────────────────────
+// ─── Environment & HTTP Provider ─────────────────────────────────────────────
 const {
   RPC_URL,
   PRIVATE_KEY,
@@ -72,9 +72,9 @@ const bettingABI = require("./artifacts/contracts/GameOfDeathBetting.sol/GameOfD
 const mizonsABI  = require("./artifacts/contracts/Mizons.sol/Mizons.json").abi;
 const skinLockABI= require("./artifacts/contracts/SkinLockRegistry.sol/SkinLockRegistry.json").abi;
 
-const gameContract    = new ethers.Contract(GAMEOFDEATH_ADDRESS,        gameABI,    wallet);
+const gameContract    = new ethers.Contract(GAMEOFDEATH_ADDRESS,    gameABI,    wallet);
 const bettingContract = new ethers.Contract(GAMEOFDEATH_BETTING_ADDRESS, bettingABI, wallet);
-const mizonsContract  = new ethers.Contract(MIZONS_ADDRESS,              mizonsABI,  wallet);
+const mizonsContract  = new ethers.Contract(MIZONS_ADDRESS,          mizonsABI,  wallet);
 const skinLockContract= SKIN_LOCK_ADDRESS
   ? new ethers.Contract(SKIN_LOCK_ADDRESS, skinLockABI, wallet)
   : null;
@@ -97,18 +97,13 @@ let lastPlaceBlock = 0;
 const activePlayers = new Set();
 
 // ─── Timing Constants ─────────────────────────────────────────────────────────
-const PICKING_TIME       = 120;
-const PLACING_TIME       = 150;
-const FINAL_COUNTDOWN    = 30;
-const CONWAY_STEPS       = 10;
-const MAX_CYCLES         = 5;
-const STEP_DELAY         = 1000;
-const FINAL_STEP_DELAY   = 2000;
-
-// how many blocks to wait for inclusion
-const CONFIRMATION_BLOCKS = 2;
-// fallback timeout for inclusion (ms)
-const INCLUSION_TIMEOUT_MS = 30_000;
+const PICKING_TIME     = 120;
+const PLACING_TIME     = 150;
+const FINAL_COUNTDOWN  = 30;
+const CONWAY_STEPS     = 10;
+const MAX_CYCLES       = 5;
+const STEP_DELAY       = 1000;
+const FINAL_STEP_DELAY = 2000;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -117,47 +112,40 @@ function toNumber(bn) {
   return s.length < 16 ? Number(s) : Number(s.slice(-13));
 }
 
-// TX Queue (serialize nonces)
-let txQueue = Promise.resolve();
-function enqueueTx(fn) {
-  txQueue = txQueue.then(() => fn().catch(e => { throw e; }));
-  return txQueue;
-}
-
-// wait up to CONFIRMATION_BLOCKS blocks for the tx to be mined
-async function waitForInclusion(hash) {
-  console.log(`🔎 [inclusion] waiting for ${hash} up to ${CONFIRMATION_BLOCKS} blocks`);
-  const startBlock = await provider.getBlockNumber();
-  const timeoutAt  = Date.now() + INCLUSION_TIMEOUT_MS;
-
+// unified sendTx helper
+const CONFIRMATION_BLOCKS = 2;
+async function sendTx(fn, label) {
+  const tx = await fn();
+  console.log(`▶️ [tx] ${label}`);
+  console.log(`   ↳ sent: ${tx.hash}`);
+  let blocksSeen = 0;
+  let lastBlock = await provider.getBlockNumber();
   return new Promise((resolve, reject) => {
     const onBlock = async (blockNumber) => {
-      console.log(`⛓ new block ${blockNumber} (#${blockNumber - startBlock}/${CONFIRMATION_BLOCKS}) checking ${hash}`);
-      const rcpt = await provider.getTransactionReceipt(hash);
-      if (rcpt && rcpt.blockNumber) {
-        console.log(`✅ ${hash} included in block ${rcpt.blockNumber}`);
-        provider.removeListener("block", onBlock);
-        return resolve(rcpt);
-      }
-      if (blockNumber >= startBlock + CONFIRMATION_BLOCKS || Date.now() > timeoutAt) {
-        provider.removeListener("block", onBlock);
-        return reject(new Error(`⏱️ inclusion timeout for ${hash}`));
+      try {
+        await provider.getTransactionReceipt(tx.hash)
+          .then(rcpt => {
+            if (rcpt && rcpt.blockNumber != null) {
+              blocksSeen++;
+              console.log(`⛓ new block ${blockNumber} (#${blocksSeen}/${CONFIRMATION_BLOCKS}) checking ${tx.hash}`);
+              if (blocksSeen >= CONFIRMATION_BLOCKS) {
+                provider.off("block", onBlock);
+                console.log(`✅ ${tx.hash} included in block ${rcpt.blockNumber}`);
+                resolve(rcpt);
+              }
+            }
+          })
+          .catch(() => {});
+      } catch (e) {
+        provider.off("block", onBlock);
+        reject(e);
       }
     };
     provider.on("block", onBlock);
   });
 }
 
-// wrap an on‑chain call so we log, send, wait for inclusion, then return
-async function sendTx(callFactory, description) {
-  console.log(`▶️ [tx] ${description}`);
-  const tx = await callFactory();
-  console.log(`   ↳ sent: ${tx.hash}`);
-  await waitForInclusion(tx.hash);
-  return tx;
-}
-
-// ─── On‑chain Board Packing ───────────────────────────────────────────────────
+// ─── Board encode/decode ──────────────────────────────────────────────────────
 async function getOnChainBoard() {
   const packed = await gameContract.getBoard();
   const cells  = [];
@@ -175,39 +163,37 @@ function packBoard(cells) {
   const per    = 161, chunks = 26;
   const arr    = Array(chunks).fill(0n);
   cells.forEach((c,i) => {
-    const ci  = Math.floor(i / per), pos = i % per;
-    arr[ci]  += BigInt(c) * (3n ** BigInt(pos));
+    const ci = Math.floor(i / per), pos = i % per;
+    arr[ci] += BigInt(c) * (3n ** BigInt(pos));
   });
   return arr.map(n => n.toString());
 }
 
-// cell‑based skin Conway evolution
+// ─── Conway skin evolution ───────────────────────────────────────────────────
 function runSkinStep(oldGrid) {
   const newGrid = Array(4096).fill(0);
-  for (let y=0; y<64; y++) {
-    for (let x=0; x<64; x++) {
-      const i = y*64 + x, neigh = [];
-      for (let dy=-1; dy<=1; dy++) for (let dx=-1; dx<=1; dx++) {
-        if (!dx && !dy) continue;
-        const nx = x+dx, ny = y+dy;
-        if (nx>=0 && nx<64 && ny>=0 && ny<64) {
-          const j = ny*64 + nx;
-          if (oldGrid[j]) neigh.push(oldGrid[j]);
-        }
+  for (let y=0; y<64; y++) for (let x=0; x<64; x++) {
+    const i = y*64 + x, neigh = [];
+    for (let dy=-1; dy<=1; dy++) for (let dx=-1; dx<=1; dx++) {
+      if (!dx && !dy) continue;
+      const nx = x+dx, ny = y+dy;
+      if (nx>=0&&nx<64&&ny>=0&&ny<64) {
+        const j = ny*64 + nx;
+        if (oldGrid[j]) neigh.push(oldGrid[j]);
       }
-      if (oldGrid[i]) {
-        newGrid[i] = (neigh.length===2||neigh.length===3) ? oldGrid[i] : 0;
-      } else {
-        newGrid[i] = (neigh.length===3)
-          ? neigh[Math.floor(Math.random()*neigh.length)]
-          : 0;
-      }
+    }
+    if (oldGrid[i]) {
+      newGrid[i] = (neigh.length===2||neigh.length===3) ? oldGrid[i] : 0;
+    } else {
+      newGrid[i] = (neigh.length===3)
+        ? neigh[Math.floor(Math.random()*neigh.length)]
+        : 0;
     }
   }
   return newGrid;
 }
 
-// pick a random locked skin
+// ─── pick random skin ─────────────────────────────────────────────────────────
 async function determineSpawnedSkinForUser(user) {
   if (!skinLockContract) return 0;
   try {
@@ -220,7 +206,7 @@ async function determineSpawnedSkinForUser(user) {
   }
 }
 
-// generate a 512×512 thumbnail for a given board
+// ─── thumbnail PNG ───────────────────────────────────────────────────────────
 async function generateThumbnail(board, gameId) {
   const size  = 64, scale = 8;
   const canvas= createCanvas(size,size);
@@ -241,38 +227,42 @@ async function generateThumbnail(board, gameId) {
   return `${BASE_URL}/images/game_${gameId}.png`;
 }
 
-// broadcast phase & gameId
+// ─── broadcast state ─────────────────────────────────────────────────────────
 function broadcastState() {
   io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
 }
 
-// ─── Distribute winnings ──────────────────────────────────────────────────────
+// ─── payouts ─────────────────────────────────────────────────────────────────
 async function distributeWinnings(gameId, winTeam) {
   console.log("💰 distributeWinnings for", gameId, winTeam);
-  const bets    = await bettingContract.getBets();
-  const winners = bets.filter(b => Number(b.team) === winTeam);
-  const losers  = bets.filter(b => Number(b.team) !== winTeam);
-  const winSum  = winners.reduce((a,b)=>a + Number(b.tickets), 0);
-  const loseSum = losers.reduce((a,b)=>a + Number(b.tickets), 0);
+  const bets   = await bettingContract.getBets();
+  const winners= bets.filter(b => Number(b.team) === winTeam);
+  const losers = bets.filter(b => Number(b.team) !== winTeam);
+  const winSum = winners.reduce((a,b)=>a + Number(b.tickets), 0);
+  const loseSum= losers.reduce((a,b)=>a + Number(b.tickets), 0);
   if (!winSum) return console.log("No winners");
   for (let w of winners) {
     const share = Math.floor(w.tickets * loseSum / winSum);
     if (!share) continue;
-    await enqueueTx(() =>
-      mizonsContract.mint(w.user, share)
-        .then(tx => waitForInclusion(tx.hash))
+    await sendTx(
+      () => mizonsContract.mint(w.user, share),
+      `mint(${w.user},${share})`
     );
   }
   console.log("💸 payouts done");
 }
 
-// ─── Reset & New Game ─────────────────────────────────────────────────────────
+// ─── new game reset ───────────────────────────────────────────────────────────
 async function resetGame() {
   console.log("🔄 [step] resetGame()");
-  txQueue = Promise.resolve();
+  boardHistory      = [];
+  skinHistory       = [];
+  liveSkinOverlay   = Array(4096).fill(0);
+  boardSquareOwners = Array(4096).fill(null);
+  activePlayers.clear();
+  cycleCount = 0;
 
   const newId = currentGameId + 1;
-
   await sendTx(
     () => bettingContract.clearBets(currentGameId),
     `clearBets(${currentGameId})`
@@ -286,25 +276,18 @@ async function resetGame() {
     `openBetting(${newId})`
   );
 
-  currentGameId     = newId;
-  phase             = "picking";
-  phaseTimeLeft     = PICKING_TIME;
-  cycleCount        = 0;
-  boardHistory      = [];
-  skinHistory       = [];
-  liveSkinOverlay   = Array(4096).fill(0);
-  boardSquareOwners = Array(4096).fill(null);
-  activePlayers.clear();
+  currentGameId    = newId;
+  phase            = "picking";
+  phaseTimeLeft    = PICKING_TIME;
+  const now        = await provider.getBlockNumber();
+  lastJoinBlock    = now + 1;
+  lastPlaceBlock   = now + 1;
 
-  const now = await provider.getBlockNumber();
-  lastJoinBlock  = now + 1;
-  lastPlaceBlock = now + 1;
-
-  console.log(`▶️ [step] New gameId=${currentGameId}, phase reset to "picking"`);
+  console.log(`▶️ [step] New gameId=${currentGameId}, phase="picking"`);
   broadcastState();
 }
 
-// ─── Conway Steps ────────────────────────────────────────────────────────────
+// ─── Conway steps ────────────────────────────────────────────────────────────
 async function runConwaySteps(steps, delay = STEP_DELAY) {
   console.log(`🔀 [step] runConwaySteps(${steps})`);
   let b = await getOnChainBoard();
@@ -319,11 +302,11 @@ async function runConwaySteps(steps, delay = STEP_DELAY) {
   }
   await sendTx(
     () => gameContract.serverOverwriteBoard(packBoard(b)),
-    `serverOverwriteBoard`
+    `serverOverwriteBoard(...)`
   );
 }
 
-// ─── Final Cycle & Record ────────────────────────────────────────────────────
+// ─── final cycle & record ───────────────────────────────────────────────────
 async function runFinalCycle() {
   console.log("🔚 [step] runFinalCycle()");
   const snap = await getOnChainBoard();
@@ -341,8 +324,8 @@ async function runFinalCycle() {
   });
   const winner = redOnBlue===blueOnRed ? "Tie"
                : redOnBlue>blueOnRed   ? "Red":"Blue";
+  console.log(`   ↳ Final: RedOnBlue=${redOnBlue}, BlueOnRed=${blueOnRed} → ${winner}`);
 
-  console.log(`   ↳ Final tally → RedOnBlue=${redOnBlue}, BlueOnRed=${blueOnRed}, winner=${winner}`);
   io.emit("winner", { winner });
   await recordGame(winner);
 
@@ -351,18 +334,19 @@ async function runFinalCycle() {
   broadcastState();
 }
 
+// ─── persist record ──────────────────────────────────────────────────────────
 async function recordGame(winner) {
   console.log("📚 [step] recordGame()");
   const [rBig,bBig] = await gameContract.getTeamCounts(currentGameId);
   const redCount    = toNumber(rBig);
   const blueCount   = toNumber(bBig);
 
-  const bets        = await bettingContract.getBets();
+  const bets = await bettingContract.getBets();
   bets.forEach(b => activePlayers.add(b.user.toLowerCase()));
 
   let thumbnail = "";
   if (boardHistory.length) {
-    thumbnail = await generateThumbnail(boardHistory[boardHistory.length-1], currentGameId);
+    thumbnail = await generateThumbnail(boardHistory.at(-1), currentGameId);
   }
 
   const rec = {
@@ -379,12 +363,12 @@ async function recordGame(winner) {
   await new GameRecord(rec).save();
   io.emit("newGameRecord", rec);
 
-  if (winner==="Red")  await distributeWinnings(currentGameId,1);
-  if (winner==="Blue") await distributeWinnings(currentGameId,2);
+  if (winner === "Red")  await distributeWinnings(currentGameId, 1);
+  if (winner === "Blue") await distributeWinnings(currentGameId, 2);
   activePlayers.clear();
 }
 
-// ─── Betting Control ──────────────────────────────────────────────────────────
+// ─── betting open/close ──────────────────────────────────────────────────────
 async function openBettingForCurrentGame() {
   console.log(`▶️ [step] openBetting(${currentGameId})`);
   await sendTx(
@@ -393,14 +377,14 @@ async function openBettingForCurrentGame() {
   );
 }
 async function closeBettingForCurrentGame() {
-  console.log(`✋ [step] closeBetting()`);
+  console.log(`✋ [step] closeBetting(${currentGameId})`);
   await sendTx(
-    () => bettingContract.closeBetting(),
-    `closeBetting()`
+    () => bettingContract.closeBetting(currentGameId),
+    `closeBetting(${currentGameId})`
   );
 }
 
-// ─── Phase Transitions ────────────────────────────────────────────────────────
+// ─── phase transitions ───────────────────────────────────────────────────────
 async function setContractPhase(newPhase, attempt = 1) {
   const MAP = { picking:0, placing:1, conway:2, final:3 };
   const pe  = MAP[newPhase];
@@ -412,12 +396,12 @@ async function setContractPhase(newPhase, attempt = 1) {
       `setPhase(${newPhase})`
     );
     phase = newPhase;
-    console.log(`   ↳ on-chain phase now "${newPhase}"`);
+    console.log(`   ↳ on‑chain phase="${newPhase}"`);
     broadcastState();
   } catch (e) {
     console.error("‼️ setContractPhase error:", e);
     if (attempt < 3) return setContractPhase(newPhase, attempt+1);
-    console.error("‼️ Max retries, invoking resetGame()");
+    console.error("‼️ Max retries → resetGame()");
     await resetGame();
   }
 }
@@ -432,7 +416,8 @@ async function transitionPhase() {
         await closeBettingForCurrentGame();
         await setContractPhase("placing");
         phaseTimeLeft = PLACING_TIME;
-        { const now=await provider.getBlockNumber(); lastJoinBlock=lastPlaceBlock=now+1; }
+        ({ blockNumber: lastJoinBlock } = await provider.getBlock());
+        lastPlaceBlock = lastJoinBlock;
         break;
 
       case "placing":
@@ -460,20 +445,20 @@ async function transitionPhase() {
   }
 }
 
-// ─── Main Loops ────────────────────────────────────────────────────────────────
-// countdown + timer logging
-setInterval(()=>{
-  if (!transitionInProgress && phaseTimeLeft>0) {
+// ─── main loops ───────────────────────────────────────────────────────────────
+// countdown timer
+setInterval(() => {
+  if (!transitionInProgress && phaseTimeLeft > 0) {
     phaseTimeLeft--;
     console.log(`⏱ [Timer] Phase "${phase}", timeLeft=${phaseTimeLeft}s`);
     broadcastState();
-    if (phaseTimeLeft===0) transitionPhase();
+    if (phaseTimeLeft === 0) transitionPhase();
   }
 }, 1000);
 
-// polling (every 3s) for joins, placements & skin spawns
-setInterval(async()=>{
-  if (phase==="placing") {
+// polling placements & spawns
+setInterval(async () => {
+  if (phase === "placing") {
     try {
       const currentBlock = await provider.getBlockNumber();
 
@@ -482,23 +467,23 @@ setInterval(async()=>{
         gameContract.filters.TeamJoined(currentGameId),
         lastJoinBlock, currentBlock
       );
-      joins.forEach(log=> activePlayers.add(log.args.user.toLowerCase()));
-      lastJoinBlock = currentBlock+1;
+      joins.forEach(log => activePlayers.add(log.args.user.toLowerCase()));
+      lastJoinBlock = currentBlock + 1;
 
       // SquarePlaced
       const places = await gameContract.queryFilter(
         gameContract.filters.SquarePlaced(currentGameId),
         lastPlaceBlock, currentBlock
       );
-      places.forEach(log=>{
-        const x=Number(log.args.x), y=Number(log.args.y);
+      places.forEach(log => {
+        const x = Number(log.args.x), y = Number(log.args.y);
         boardSquareOwners[y*64 + x] = log.args.user.toLowerCase();
       });
-      lastPlaceBlock = currentBlock+1;
+      lastPlaceBlock = currentBlock + 1;
 
       // spawn skins
       const board = await getOnChainBoard();
-      for (let i=0; i<4096; i++) {
+      for (let i = 0; i < 4096; i++) {
         if (board[i] && !liveSkinOverlay[i] && boardSquareOwners[i]) {
           const skin = await determineSpawnedSkinForUser(boardSquareOwners[i]);
           if (skin) liveSkinOverlay[i] = skin;
@@ -506,64 +491,63 @@ setInterval(async()=>{
       }
       io.emit("skinOverlayUpdated", liveSkinOverlay);
 
-    } catch(err) {
+    } catch (err) {
       console.error("‼️ Polling error:", err);
     }
   }
 }, 3000);
 
-// ─── Socket.io Initial Sync ───────────────────────────────────────────────────
-io.on("connection", socket=>{
+// ─── socket.io sync ──────────────────────────────────────────────────────────
+io.on("connection", socket => {
   socket.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
   if (boardHistory.length) {
-    const last = boardHistory[boardHistory.length-1].map(v=>({ value:v }));
+    const last = boardHistory.at(-1).map(v => ({ value: v }));
     socket.emit("boardUpdated", last);
   }
 });
 
-// ─── REST Endpoints ───────────────────────────────────────────────────────────
-app.get("/api/state", (_,res)=>
+// ─── REST endpoints ──────────────────────────────────────────────────────────
+app.get("/api/state", (_,res) =>
   res.json({ phase, timeLeft: phaseTimeLeft, gameId: currentGameId })
 );
-app.get("/api/board", async(_,res)=>{
+app.get("/api/board", async (_,res) => {
   const b = await getOnChainBoard();
-  res.json({ board: b.map(v=>({ value:v })) });
+  res.json({ board: b.map(v => ({ value: v })) });
 });
-app.get("/api/history", (_,res)=>
+app.get("/api/history", (_,res) =>
   res.json({ boardHistory, skinHistory })
 );
-app.get("/api/skinOverlay",(_,res)=>
+app.get("/api/skinOverlay", (_,res) =>
   res.json({ skinOverlay: liveSkinOverlay })
 );
-app.get("/api/allRecords", async(req,res)=>{
+app.get("/api/allRecords", async (req,res) => {
   const skip  = +req.query.skip  || 0;
   const limit = +req.query.limit || 10;
   const recs  = await GameRecord.find()
-               .sort({gameId:-1})
+               .sort({ gameId: -1 })
                .skip(skip)
                .limit(limit);
   res.json({ records: recs });
 });
-app.get("/api/records/:u", async(req,res)=>{
+app.get("/api/records/:u", async (req,res) => {
   const skip  = +req.query.skip  || 0;
   const limit = +req.query.limit || 10;
-  const addr  = req.params.u.toLowerCase();
-  const recs  = await GameRecord.find({ players: addr })
-               .sort({gameId:-1})
+  const recs  = await GameRecord.find({ players: req.params.u.toLowerCase() })
+               .sort({ gameId: -1 })
                .skip(skip)
                .limit(limit);
   res.json({ records: recs });
 });
-app.get("/api/recordById/:i", async(req,res)=>{
+app.get("/api/recordById/:i", async (req,res) => {
   const rec = await GameRecord.findOne({ gameId: +req.params.i });
-  if (!rec) return res.status(404).json({ error:"Not found" });
+  if (!rec) return res.status(404).json({ error: "Not found" });
   res.json({ record: rec });
 });
-app.get("/api/bets/:g", async(req,res)=>{
+app.get("/api/bets/:g", async (req,res) => {
   try {
     const bets = await bettingContract.getBets();
     res.json({
-      bets: bets.map(b=>({
+      bets: bets.map(b => ({
         user: b.user,
         team: Number(b.team),
         tickets: b.tickets.toString()
@@ -571,45 +555,51 @@ app.get("/api/bets/:g", async(req,res)=>{
     });
   } catch(e) {
     console.error("‼️ bets error:", e);
-    res.status(500).json({ error:"Failed to fetch bets" });
+    res.status(500).json({ error: "Failed to fetch bets" });
   }
 });
-app.post("/admin/reset-to-game1", async(_,res)=>{
+app.post("/admin/reset-to-game1", async (_,res) => {
   const imgDir = path.join(__dirname,"public","images");
   if (fs.existsSync(imgDir)) {
-    fs.readdirSync(imgDir).forEach(f=>
+    fs.readdirSync(imgDir).forEach(f =>
       fs.unlinkSync(path.join(imgDir,f))
     );
   }
   await GameRecord.deleteMany({});
   await resetGame();
-  res.json({ message:"Reset complete" });
+  res.json({ message: "Reset complete" });
 });
 
 // ─── Startup ──────────────────────────────────────────────────────────────────
-(async function startup(){
+;(async function startup(){
   try {
-    const onChainId    = toNumber(await gameContract.currentGameId());
+    // 1) read on‑chain values
+    currentGameId = toNumber(await gameContract.currentGameId());
+    phaseTimeLeft = PICKING_TIME;
+    // sync pointers
+    lastJoinBlock  = lastPlaceBlock = await provider.getBlockNumber() + 1;
+
+    // 2) if chain is in final, reset
     const onChainPhase = Number(await gameContract.currentPhase());
-    console.log(`✅ [gameContract.currentPhase()] succeeded on attempt 1 → ${onChainPhase}`);
-    currentGameId = onChainId;
-
-    const now = await provider.getBlockNumber();
-    lastJoinBlock  = lastPlaceBlock = now + 1;
-
     if (onChainPhase === 3) {
       await resetGame();
     } else {
-      phase         = "picking";
-      phaseTimeLeft = PICKING_TIME;
+      phase = "picking";
       broadcastState();
 
+      // 3) now truly wait for both txs
       console.log("⚡ [startup] setPhase(0) & openBetting()");
-      await sendTx(() => gameContract.setPhase(0), `setPhase(0)`);
-      await sendTx(() => bettingContract.openBetting(currentGameId), `openBetting(${currentGameId})`);
-    }
+      await sendTx(
+        () => gameContract.setPhase(0),
+        "setPhase(0)"
+      );
+      await sendTx(
+        () => bettingContract.openBetting(currentGameId),
+        `openBetting(${currentGameId})`
+      );
 
-    console.log(`🚀 Server up, gameId=${currentGameId}`);
+      console.log("🚀 Server up, gameId=", currentGameId);
+    }
   } catch(e) {
     console.error("‼️ Startup error:", e);
   }
