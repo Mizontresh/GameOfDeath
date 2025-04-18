@@ -30,7 +30,8 @@ if (!RPC_URL || !PRIVATE_KEY) {
 
 // HTTP‐only JSON‑RPC provider
 const provider = new ethers.JsonRpcProvider(RPC_URL);
-// keep the HTTP connection alive
+// Poll new blocks every second
+provider.pollingInterval = 1000;
 setInterval(() => provider.send("net_version", []).catch(() => {}), 10_000);
 
 const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
@@ -113,21 +114,6 @@ function toNumber(bn) {
   return s.length < 16 ? Number(s) : Number(s.slice(-13));
 }
 
-// Retry wrapper for on‐chain calls
-async function safeCall(fn, description, retries = 5, delay = 2000) {
-  for (let i = 1; i <= retries; i++) {
-    try {
-      const res = await fn();
-      console.log(`✅ [${description}] succeeded on attempt ${i}`);
-      return res;
-    } catch (e) {
-      console.error(`⚠️ [${description}] failed on attempt ${i}:`, e);
-      if (i < retries) await sleep(delay);
-    }
-  }
-  throw new Error(`[${description}] failed after ${retries} retries`);
-}
-
 // TX Queue (serializes nonces)
 let txQueue = Promise.resolve();
 function enqueueTx(fn) {
@@ -135,16 +121,35 @@ function enqueueTx(fn) {
   return txQueue;
 }
 
-// Wait for the tx to be mined in its first block
-async function waitForTxConfirmation(tx, confirmations = 0, timeout = 60_000) {
-  console.log(`🔃 [confirm] waiting for ${tx.hash}, confirmations=${confirmations}`);
-  const receipt = await provider.waitForTransaction(tx.hash, confirmations, timeout);
-  if (!receipt) throw new Error(`⏱️ tx confirmation timeout for ${tx.hash}`);
-  console.log(`✅ [confirm] mined in block ${receipt.blockNumber}`);
-  return receipt;
+// Wait only for inclusion in the next mined block
+async function waitForInclusion(txHash, timeout = 60_000) {
+  console.log(`🔎 [inclusion] waiting for ${txHash}`);
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    const onBlock = async (blockNumber) => {
+      console.log(`⛓ new block ${blockNumber}: checking receipt for ${txHash}`);
+      try {
+        const rcpt = await provider.getTransactionReceipt(txHash);
+        if (rcpt) {
+          console.log(`✅ ${txHash} included in block ${rcpt.blockNumber}`);
+          provider.off("block", onBlock);
+          return resolve(rcpt);
+        }
+        if (Date.now() - start > timeout) {
+          provider.off("block", onBlock);
+          return reject(new Error(`⏱️ inclusion timeout for ${txHash}`));
+        }
+      } catch (err) {
+        console.error("error fetching receipt:", err);
+      }
+    };
+    provider.on("block", onBlock);
+    // immediate check
+    onBlock();
+  });
 }
 
-// Encode/decode board to/from on‑chain chunks
+// On‑chain board encoding helpers
 async function getOnChainBoard() {
   const packed = await gameContract.getBoard();
   const cells  = [];
@@ -176,7 +181,7 @@ function runSkinStep(oldGrid) {
     for (let dy=-1; dy<=1; dy++) for (let dx=-1; dx<=1; dx++) {
       if (!dx && !dy) continue;
       const nx = x+dx, ny = y+dy;
-      if (nx>=0&&nx<64&&ny>=0&&ny<64) {
+      if (nx>=0 && nx<64 && ny>=0 && ny<64) {
         const j = ny*64 + nx;
         if (oldGrid[j]) neigh.push(oldGrid[j]);
       }
@@ -204,7 +209,7 @@ async function determineSpawnedSkinForUser(user) {
   }
 }
 
-// Draw a little PNG thumbnail
+// Generate a PNG thumbnail
 async function generateThumbnail(board, gameId) {
   const size  = 64, scale = 8;
   const canvas= createCanvas(size,size);
@@ -218,7 +223,7 @@ async function generateThumbnail(board, gameId) {
   bctx.imageSmoothingEnabled = false;
   bctx.drawImage(canvas,0,0, size*scale, size*scale);
 
-  const dir = path.join(__dirname,"public","images");
+  const dir  = path.join(__dirname,"public","images");
   if (!fs.existsSync(dir)) fs.mkdirSync(dir,{recursive:true});
   const file = path.join(dir,`game_${gameId}.png`);
   fs.writeFileSync(file, big.toBuffer());
@@ -244,7 +249,7 @@ async function distributeWinnings(gameId, winTeam) {
     if (!share) continue;
     await enqueueTx(() =>
       mizonsContract.mint(w.user, share)
-        .then(tx => waitForTxConfirmation(tx))
+        .then(tx => waitForInclusion(tx.hash))
     );
   }
   console.log("💸 payouts done");
@@ -259,15 +264,15 @@ async function resetGame() {
 
   await enqueueTx(() =>
     bettingContract.clearBets(currentGameId)
-      .then(tx => waitForTxConfirmation(tx))
+      .then(tx => waitForInclusion(tx.hash))
   );
   await enqueueTx(() =>
     gameContract.newGame(newId)
-      .then(tx => waitForTxConfirmation(tx))
+      .then(tx => waitForInclusion(tx.hash))
   );
   await enqueueTx(() =>
     bettingContract.openBetting(newId)
-      .then(tx => waitForTxConfirmation(tx))
+      .then(tx => waitForInclusion(tx.hash))
   );
 
   currentGameId     = newId;
@@ -303,7 +308,7 @@ async function runConwaySteps(steps, delay = STEP_DELAY) {
   }
   await enqueueTx(() =>
     gameContract.serverOverwriteBoard(packBoard(b))
-      .then(tx => waitForTxConfirmation(tx))
+      .then(tx => waitForInclusion(tx.hash))
   );
 }
 
@@ -374,14 +379,14 @@ async function openBettingForCurrentGame() {
   console.log(`▶️ [step] openBetting(${currentGameId})`);
   await enqueueTx(() =>
     bettingContract.openBetting(currentGameId)
-      .then(tx => waitForTxConfirmation(tx))
+      .then(tx => waitForInclusion(tx.hash))
   );
 }
 async function closeBettingForCurrentGame() {
   console.log(`✋ [step] closeBetting(${currentGameId})`);
   await enqueueTx(() =>
     bettingContract.closeBetting(currentGameId)
-      .then(tx => waitForTxConfirmation(tx))
+      .then(tx => waitForInclusion(tx.hash))
   );
 }
 
@@ -394,7 +399,7 @@ async function setContractPhase(newPhase, attempt = 1) {
   try {
     await enqueueTx(() =>
       gameContract.setPhase(pe)
-        .then(tx => waitForTxConfirmation(tx))
+        .then(tx => waitForInclusion(tx.hash))
     );
     phase = newPhase;
     console.log(`   ↳ on‑chain phase now "${newPhase}"`);
@@ -564,14 +569,9 @@ app.post("/admin/reset-to-game1", async(_,res)=>{
 // ─── Startup ──────────────────────────────────────────────────────────────────
 (async function startup(){
   try {
-    // retry on timeouts
-    const onChainId    = toNumber(await safeCall(() =>
-      gameContract.currentGameId(), "gameContract.currentGameId()"
-    ));
-    const onChainPhase = Number(await safeCall(() =>
-      gameContract.currentPhase(), "gameContract.currentPhase()"
-    ));
-    currentGameId = onChainId;
+    // fetch chain state with no timeouts
+    currentGameId = toNumber(await gameContract.currentGameId());
+    const onChainPhase = Number(await gameContract.currentPhase());
 
     const now = await provider.getBlockNumber();
     lastJoinBlock  = lastPlaceBlock = now + 1;
@@ -585,10 +585,10 @@ app.post("/admin/reset-to-game1", async(_,res)=>{
 
       console.log("⚡ [startup] setPhase(0) & openBetting()");
       await enqueueTx(() =>
-        gameContract.setPhase(0).then(tx => waitForTxConfirmation(tx))
+        gameContract.setPhase(0).then(tx => waitForInclusion(tx.hash))
       );
       await enqueueTx(() =>
-        bettingContract.openBetting(currentGameId).then(tx => waitForTxConfirmation(tx))
+        bettingContract.openBetting(currentGameId).then(tx => waitForInclusion(tx.hash))
       );
     }
 
