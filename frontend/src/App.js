@@ -504,46 +504,55 @@ function MizontreshOverlay({
   }, [mizontreshContract, userAddress, buying]);
 
 
+// somewhere near the top of your App.js:
+import { ethers } from "ethers";
+// …
+
 async function handleBuy() {
-  if (!mizontreshContract) {
-    alert("Mizontresh contract not ready");
+  // 0) sanity checks
+  if (!window.ethereum || !mizontreshContract) {
+    alert("Please connect your wallet and make sure the Mizontresh contract is ready.");
     return;
   }
 
   try {
-    // 1) fetch the price
-    const priceBN = await mizontreshContract.TOKEN_PRICE();
+    // 1) build provider, signer, and a contract instance connected to that signer
+    const provider     = new ethers.BrowserProvider(window.ethereum);
+    const signer       = await provider.getSigner();
+    const userAddress  = await signer.getAddress();
+    const mintContract = mizontreshContract.connect(signer);
 
-    // 2) fetch the signer’s ETH balance
-    const signer = mizontreshContract.signer;
-    const balanceBN = await signer.getBalance();
+    // 2) fetch the on‑chain price constant
+    //    (rename `MINT_PRICE` to whatever your Solidity getter actually is)
+    const price = await mintContract.MINT_PRICE(); 
+    // price is a BigInt in ethers v6
 
-    // 3) if you don’t have enough, bail out with a friendly message
-    if (balanceBN.lt(priceBN)) {
-      const priceEth   = ethers.formatUnits(priceBN,   18);
-      const balanceEth = ethers.formatUnits(balanceBN, 18);
-      alert(`Insufficient funds:\nYou have ${balanceEth} ETH but need ${priceEth} ETH`);
+    // 3) fetch the user’s ETH balance
+    const balance = await provider.getBalance(userAddress);
+
+    // 4) compare
+    if (balance < price) {
+      alert(
+        `Insufficient funds:\n` +
+        `Your balance: ${ethers.formatEther(balance)} ETH\n` +
+        `Cost:          ${ethers.formatEther(price)} ETH`
+      );
       return;
     }
 
-    // 4) otherwise, send the purchase tx
-    const tx = await mizontreshContract.buyToken({ value: priceBN });
+    // 5) everything looks good—send the tx
+    const tx = await mintContract.buyToken({ value: price });
     await tx.wait();
 
-    alert("Mizontresh purchased successfully!");
-    // (optional) refresh your inventory / UI here
-
+    alert("🎉 Purchase succeeded!");
   } catch (err) {
     console.error("Purchase failed:", err);
-    // try to pick out a nice revert reason if there is one
-    const reason =
-      err.reason ??
-      err.error?.data?.message ??
-      err.data?.message ??
-      err.message;
+    // try to pull out a human‑readable revert reason
+    const reason = err.reason || err.data?.message || err.message;
     alert("Purchase failed: " + reason);
   }
 }
+
 
 
 
