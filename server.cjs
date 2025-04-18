@@ -33,7 +33,7 @@ setInterval(() => provider.send("net_version", []).catch(() => {}), 10_000);
 const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 
 // ─── MongoDB Setup ────────────────────────────────────────────────────────────
-mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+mongoose.connect(MONGO_URI);
 mongoose.connection
   .once("open", () => console.log("✅ MongoDB connected"))
   .on("error", err => console.error("❌ MongoDB error:", err));
@@ -110,27 +110,14 @@ function toNumber(bn) {
   return s.length < 16 ? Number(s) : Number(s.slice(-13));
 }
 
-// sendTx helper: sends, logs, then waits for `confirmations` blocks
-async function sendTx(fn, label, confirmations = 2) {
+// sendTx helper: sends, logs, then waits for `confirmations` confirmations
+async function sendTx(fn, label, confirmations = 1) {
   console.log(`▶️ [tx] ${label}`);
   const tx = await fn();
   console.log(`   ↳ sent: ${tx.hash}`);
-  return new Promise((resolve, reject) => {
-    let blocksSeen = 0;
-    const listener = async () => {
-      blocksSeen++;
-      const rcpt = await provider.getTransactionReceipt(tx.hash);
-      if (rcpt && blocksSeen >= confirmations) {
-        console.log(`✅ [conf] ${label} in block ${rcpt.blockNumber}`);
-        provider.off("block", listener);
-        resolve(rcpt);
-      } else if (blocksSeen > confirmations + 5) {
-        provider.off("block", listener);
-        reject(new Error(`⏱️ inclusion timeout for ${tx.hash}`));
-      }
-    };
-    provider.on("block", listener);
-  });
+  const receipt = await tx.wait(confirmations);
+  console.log(`✅ [conf] ${label} in block ${receipt.blockNumber}`);
+  return receipt;
 }
 
 // chunking utility
@@ -228,7 +215,7 @@ function broadcastState() {
   io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
 }
 
-// ─── Distribute winnings (batch‐mint) ─────────────────────────────────────────
+// ─── Distribute winnings (batch‑mint) ─────────────────────────────────────────
 async function distributeWinnings(gameId, winTeam) {
   console.log("💰 distributeWinnings for", gameId, winTeam);
   const bets    = await bettingContract.getBets();
@@ -238,20 +225,17 @@ async function distributeWinnings(gameId, winTeam) {
   const loseSum = losers.reduce((a,b) => a + Number(b.tickets), 0);
   if (!winSum) return console.log("No winners");
 
-  // compute raw ticket‐based payouts
   const recipients = winners.map(w => w.user);
   const amounts    = winners.map(w =>
     Math.floor(Number(w.tickets) * loseSum / winSum)
   );
 
-  // ——— SCALE UP by 10^6 so that 1 → 1 μMIZ (10⁶ wei = 10⁻¹² MIZ) ———
-    const MICRO_SCALE = ethers.BigNumber.from("1000000");  // 10^6
-    const rawAmounts  = amounts.map(a =>
-      ethers.BigNumber.from(a.toString()).mul(MICRO_SCALE)
-    );
-  // ——————————————————————————————————————————————————————————————
+  // scale up by 10^6 so that 1 → 1 μMIZ
+  const MICRO_SCALE = ethers.BigNumber.from("1000000");
+  const rawAmounts  = amounts.map(a =>
+    ethers.BigNumber.from(a.toString()).mul(MICRO_SCALE)
+  );
 
-  // Now chunk & mint exactly those wei‐scaled amounts
   const CHUNK_SIZE  = 200;
   const recChunks   = chunkArray(recipients, CHUNK_SIZE);
   const amtChunks   = chunkArray(rawAmounts,  CHUNK_SIZE);
@@ -259,23 +243,21 @@ async function distributeWinnings(gameId, winTeam) {
   for (let i = 0; i < recChunks.length; i++) {
     await sendTx(
       () => mizonsContract.mintBatch(recChunks[i], amtChunks[i]),
-      `mintBatch ${i+1}/${recChunks.length} (${recChunks[i].length} addresses)`,
-      2
+      `mintBatch ${i+1}/${recChunks.length} (${recChunks[i].length} addresses)`
     );
   }
 
   console.log("💸 all batches done");
 }
 
-
 // ─── Reset & New Game ─────────────────────────────────────────────────────────
 async function resetGame() {
   console.log("🔄 [step] resetGame()");
   const newId = currentGameId + 1;
 
-  await sendTx(() => bettingContract.clearBets(currentGameId),  `clearBets(${currentGameId})`, 2);
-  await sendTx(() => gameContract.newGame(newId),             `newGame(${newId})`,        2);
-  await sendTx(() => bettingContract.openBetting(newId),      `openBetting(${newId})`,    2);
+  await sendTx(() => bettingContract.clearBets(currentGameId),  `clearBets(${currentGameId})`);
+  await sendTx(() => gameContract.newGame(newId),             `newGame(${newId})`);
+  await sendTx(() => bettingContract.openBetting(newId),      `openBetting(${newId})`);
 
   currentGameId     = newId;
   phase             = "picking";
@@ -288,8 +270,7 @@ async function resetGame() {
   activePlayers.clear();
 
   const now = await provider.getBlockNumber();
-  lastJoinBlock  = now + 1;
-  lastPlaceBlock = now + 1;
+  lastJoinBlock  = lastPlaceBlock = now + 1;
 
   console.log(`▶️ [step] New gameId=${currentGameId}, phase reset to "picking"`);
   broadcastState();
@@ -310,8 +291,7 @@ async function runConwaySteps(steps, delay = STEP_DELAY) {
   }
   await sendTx(
     () => gameContract.serverOverwriteBoard(packBoard(b)),
-    "serverOverwriteBoard",
-    2
+    "serverOverwriteBoard"
   );
 }
 
@@ -385,16 +365,14 @@ async function openBettingForCurrentGame() {
   console.log(`▶️ [step] openBetting(${currentGameId})`);
   await sendTx(
     () => bettingContract.openBetting(currentGameId),
-    `openBetting(${currentGameId})`,
-    2
+    `openBetting(${currentGameId})`
   );
 }
 async function closeBettingForCurrentGame() {
   console.log(`✋ [step] closeBetting()`);
   await sendTx(
     () => bettingContract.closeBetting(),
-    `closeBetting()`,
-    2
+    `closeBetting()`
   );
 }
 
@@ -407,8 +385,7 @@ async function setContractPhase(newPhase, attempt = 1) {
   try {
     await sendTx(
       () => gameContract.setPhase(pe),
-      `setPhase(${newPhase})`,
-      2
+      `setPhase(${newPhase})`
     );
     phase = newPhase;
     console.log(`   ↳ on‑chain phase now "${newPhase}"`);
@@ -467,13 +444,12 @@ setInterval(() => {
   if (phaseTimeLeft === 0) transitionPhase();
 }, 1000);
 
-// Polling for logs during placing (guarded so fromBlock ≤ toBlock)
+// Polling for logs during placing
 setInterval(async () => {
   if (phase !== "placing") return;
   try {
     const currentBlock = await provider.getBlockNumber();
 
-    // TeamJoined
     if (currentBlock >= lastJoinBlock) {
       const joins = await gameContract.queryFilter(
         gameContract.filters.TeamJoined(currentGameId),
@@ -483,7 +459,6 @@ setInterval(async () => {
       lastJoinBlock = currentBlock + 1;
     }
 
-    // SquarePlaced
     if (currentBlock >= lastPlaceBlock) {
       const places = await gameContract.queryFilter(
         gameContract.filters.SquarePlaced(currentGameId),
@@ -496,7 +471,6 @@ setInterval(async () => {
       lastPlaceBlock = currentBlock + 1;
     }
 
-    // spawn skins
     const board = await getOnChainBoard();
     for (let i = 0; i < 4096; i++) {
       if (board[i] && !liveSkinOverlay[i] && boardSquareOwners[i]) {
@@ -511,7 +485,7 @@ setInterval(async () => {
   }
 }, 3000);
 
-// ─── Socket.io Initial Sync ───────────────────────────────────────────────────
+// Initial Sync
 io.on("connection", socket => {
   socket.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
   if (boardHistory.length) {
@@ -520,7 +494,7 @@ io.on("connection", socket => {
   }
 });
 
-// ─── REST Endpoints ───────────────────────────────────────────────────────────
+// REST Endpoints
 app.get("/api/state", (_,res) =>
   res.json({ phase, timeLeft: phaseTimeLeft, gameId: currentGameId })
 );
@@ -585,7 +559,7 @@ app.post("/admin/reset-to-game1", async (_,res) => {
   res.json({ message: "Reset complete" });
 });
 
-// ─── Startup ──────────────────────────────────────────────────────────────────
+// Startup
 (async function startup(){
   try {
     const onChainId    = toNumber(await gameContract.currentGameId());
@@ -596,7 +570,6 @@ app.post("/admin/reset-to-game1", async (_,res) => {
     lastJoinBlock  = lastPlaceBlock = now + 1;
 
     if (onChainPhase === 3) {
-      // if on‑chain in “final”, start fresh
       await resetGame();
     } else {
       phase         = "picking";
@@ -604,11 +577,10 @@ app.post("/admin/reset-to-game1", async (_,res) => {
       broadcastState();
 
       console.log("⚡ [startup] setPhase(0) & openBetting()");
-      await sendTx(() => gameContract.setPhase(0), "setPhase(0)", 2);
+      await sendTx(() => gameContract.setPhase(0), "setPhase(0)");
       await sendTx(
         () => bettingContract.openBetting(currentGameId),
-        `openBetting(${currentGameId})`,
-        2
+        `openBetting(${currentGameId})`
       );
 
       initialized = true;
