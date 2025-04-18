@@ -503,41 +503,42 @@ function MizontreshOverlay({
   }, [mizontreshContract, userAddress, buying]);
 
   // in your App.js (make sure you have `const [buying, setBuying] = useState(false);`)
+// somewhere up in your component, after you’ve done:
+//   const [mizontreshContract, setMizontreshContract] = useState(null);
+//   const [userAddress, setUserAddress] = useState("");
+
 const handleBuy = async () => {
-  if (!mizontreshContract || !window.ethereum) return;
-  setBuying(true);
+  if (!mizontreshContract || !userAddress) {
+    alert("Connect your wallet first!");
+    return;
+  }
 
   try {
-    // 1) fetch the price from chain
-    // adjust the method name if your contract uses a different getter
-    const price = await mizontreshContract.mintPrice();
+    // 1) pull the price from chain
+    const priceBN = await mizontreshContract.TOKEN_PRICE();
+    const priceEth = ethers.formatEther(priceBN);
 
-    // 2) get signer & address
-    const provider = new ethers.BrowserProvider(window.ethereum);
-    const signer   = await provider.getSigner();
-    const addr     = await signer.getAddress();
-
-    // 3) check your ETH balance
-    const balance = await provider.getBalance(addr);
-    if (balance < price) {
-      const need = ethers.formatEther(price);
-      const have = ethers.formatEther(balance);
-      alert(`❌ Not enough ETH to buy: need ${need} ETH but you only have ${have} ETH`);
-      return;
-    }
-
-    // 4) go for it
-    const tx = await mizontreshContract.buyToken({ value: price });
+    // 2) show MetaMask prompt (this will revert if you don't have enough)
+    const tx = await mizontreshContract.buyToken({ value: priceBN });
     await tx.wait();
-    alert("✅ Mizontresh purchased!");
+
+    alert(`Purchase succeeded! You paid ${priceEth} ETH.`);
+    // if you have a refreshInventory or similar, call it here
+    if (typeof refreshInventory === "function") {
+      refreshInventory();
+    }
   } catch (err) {
-    // try to pull out a revert message
-    const reason = err.reason || err.error?.message || err.message;
-    alert("⚠️ Purchase failed: " + reason);
-  } finally {
-    setBuying(false);
+    console.error("Purchase failed:", err);
+
+    // Ethers will throw INSufficient_FUNDS or you might get a revert from require
+    const msg = err.code === "INSUFFICIENT_FUNDS"
+      ? `You need ${ethers.formatEther(await mizontreshContract.TOKEN_PRICE())} ETH but your wallet is too low.`
+      : err.reason || err.data?.message || err.message || "Unknown error";
+
+    alert(`Purchase failed: ${msg}`);
   }
 };
+
 
   
   
