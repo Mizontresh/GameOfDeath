@@ -95,11 +95,11 @@ let lastPlaceBlock = 0;
 const activePlayers = new Set();
 
 // ─── Timing Constants ─────────────────────────────────────────────────────────
-const PICKING_TIME     = 30;
-const PLACING_TIME     = 30;
+const PICKING_TIME     = 120;
+const PLACING_TIME     = 150;
 const FINAL_COUNTDOWN  = 30;
 const CONWAY_STEPS     = 10;
-const MAX_CYCLES       = 2;
+const MAX_CYCLES       = 3;
 const STEP_DELAY       = 1000;
 const FINAL_STEP_DELAY = 2000;
 

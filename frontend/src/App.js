@@ -503,24 +503,38 @@ function MizontreshOverlay({
   }, [mizontreshContract, userAddress, buying]);
 
   async function handleBuy() {
-    if (!mizontreshContract) return;
-    setBuying(true);
+    if (!mizontreshContract || !window.ethereum) return;
+  
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer   = await provider.getSigner();
+    const me       = await signer.getAddress();
+  
+    // 1) figure out the mint price from chain
+    const price = await mizontreshContract.MINT_PRICE(); // BigInt in wei
+  
+    // 2) get your wallet balance
+    const balance = await provider.getBalance(me);       // BigInt in wei
+  
+    // 3) compare
+    if (balance.lt(price)) {
+      const need = ethers.formatEther(price);
+      const have = ethers.formatEther(balance);
+      return alert(
+        `Insufficient funds to mint:\nRequired : ${need} ETH\nYour balance: ${have} ETH`
+      );
+    }
+  
+    // 4) you’ve got enough — go for it
     try {
-      // 1) read the on‑chain price
-      const price = await mizontreshContract.TOKEN_PRICE();           // <— this now works
-      // 2) send exactly that much (or more) to buy
-      const tx    = await mizontreshContract.buyToken({ value: price });
+      const tx = await mizontreshContract.buyToken({ value: price });
       await tx.wait();
-      alert("Mizontresh token purchased!");
-      if (refreshInventory) refreshInventory();
+      alert("Mint succeeded!");
     } catch (err) {
-      console.error("Error purchasing Mizontresh token:", err);
-      // if it’s a revert, err.reason should contain your require‑string
-      alert("Purchase failed: " + (err.reason || err.message));
-    } finally {
-      setBuying(false);
+      console.error("Mint failed:", err);
+      alert("Mint failed: " + (err.reason || err.message));
     }
   }
+  
   
   
 
