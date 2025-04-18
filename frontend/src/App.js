@@ -506,51 +506,50 @@ function MizontreshOverlay({
 
 
 
-async function handleBuy() {
-  // 0) sanity checks
-  if (!window.ethereum || !mizontreshContract) {
-    alert("Please connect your wallet and make sure the Mizontresh contract is ready.");
-    return;
-  }
-
-  try {
-    // 1) build provider, signer, and a contract instance connected to that signer
-    const provider     = new ethers.BrowserProvider(window.ethereum);
-    const signer       = await provider.getSigner();
-    const userAddress  = await signer.getAddress();
-    const mintContract = mizontreshContract.connect(signer);
-
-    // 2) fetch the on‑chain price constant
-    //    (rename `MINT_PRICE` to whatever your Solidity getter actually is)
-    const price = await mintContract.MINT_PRICE(); 
-    // price is a BigInt in ethers v6
-
-    // 3) fetch the user’s ETH balance
-    const balance = await provider.getBalance(userAddress);
-
-    // 4) compare
-    if (balance < price) {
-      alert(
-        `Insufficient funds:\n` +
-        `Your balance: ${ethers.formatEther(balance)} ETH\n` +
-        `Cost:          ${ethers.formatEther(price)} ETH`
-      );
+  async function handleBuy() {
+    // sanity check
+    if (!window.ethereum || !mizontreshContract) {
+      alert("Please connect your wallet and wait for the Mizontresh contract to load.");
       return;
     }
-
-    // 5) everything looks good—send the tx
-    const tx = await mintContract.buyToken({ value: price });
-    await tx.wait();
-
-    alert("🎉 Purchase succeeded!");
-  } catch (err) {
-    console.error("Purchase failed:", err);
-    // try to pull out a human‑readable revert reason
-    const reason = err.reason || err.data?.message || err.message;
-    alert("Purchase failed: " + reason);
+  
+    try {
+      // 1) build a signer‐backed contract instance
+      const provider     = new ethers.BrowserProvider(window.ethereum);
+      const signer       = await provider.getSigner();
+      const contract     = mizontreshContract.connect(signer);
+  
+      // 2) fetch the on‐chain price
+      //    (your Solidity public variable is called TOKEN_PRICE)
+      const price = await contract.TOKEN_PRICE(); // BigInt
+  
+      // 3) fetch the user’s ETH balance
+      const userAddr = await signer.getAddress();
+      const balance  = await provider.getBalance(userAddr); // BigInt
+  
+      // 4) compare
+      if (balance < price) {
+        alert(
+          `❌ Insufficient funds\n` +
+          `Your balance: ${ethers.formatEther(balance)} ETH\n` +
+          `Cost:          ${ethers.formatEther(price)} ETH`
+        );
+        return;
+      }
+  
+      // 5) send the transaction
+      const tx = await contract.buyToken({ value: price });
+      await tx.wait();
+  
+      alert("🎉 Purchase succeeded!");
+    } catch (err) {
+      console.error("Purchase failed:", err);
+      // try to extract a human‐readable revert reason
+      const reason = err.reason || err.data?.message || err.message || "Unknown error";
+      alert("❌ Purchase failed: " + reason);
+    }
   }
-}
-
+  
 
 
 
