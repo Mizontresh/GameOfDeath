@@ -507,37 +507,51 @@ function MizontreshOverlay({
 //   const [mizontreshContract, setMizontreshContract] = useState(null);
 //   const [userAddress, setUserAddress] = useState("");
 
-const handleBuy = async () => {
-  if (!mizontreshContract || !userAddress) {
-    alert("Connect your wallet first!");
+// at the top of your file, make sure you have:
+import { ethers } from "ethers";
+// …and that mizontreshContract is in scope (with a signer)
+
+async function handleBuy() {
+  if (!mizontreshContract) {
+    alert("Mizontresh contract not ready");
     return;
   }
 
   try {
-    // 1) pull the price from chain
+    // 1) fetch the price
     const priceBN = await mizontreshContract.TOKEN_PRICE();
-    const priceEth = ethers.formatEther(priceBN);
 
-    // 2) show MetaMask prompt (this will revert if you don't have enough)
+    // 2) fetch the signer’s ETH balance
+    const signer = mizontreshContract.signer;
+    const balanceBN = await signer.getBalance();
+
+    // 3) if you don’t have enough, bail out with a friendly message
+    if (balanceBN.lt(priceBN)) {
+      const priceEth   = ethers.formatUnits(priceBN,   18);
+      const balanceEth = ethers.formatUnits(balanceBN, 18);
+      alert(`Insufficient funds:\nYou have ${balanceEth} ETH but need ${priceEth} ETH`);
+      return;
+    }
+
+    // 4) otherwise, send the purchase tx
     const tx = await mizontreshContract.buyToken({ value: priceBN });
     await tx.wait();
 
-    alert(`Purchase succeeded! You paid ${priceEth} ETH.`);
-    // if you have a refreshInventory or similar, call it here
-    if (typeof refreshInventory === "function") {
-      refreshInventory();
-    }
+    alert("Mizontresh purchased successfully!");
+    // (optional) refresh your inventory / UI here
+
   } catch (err) {
     console.error("Purchase failed:", err);
-
-    // Ethers will throw INSufficient_FUNDS or you might get a revert from require
-    const msg = err.code === "INSUFFICIENT_FUNDS"
-      ? `You need ${ethers.formatEther(await mizontreshContract.TOKEN_PRICE())} ETH but your wallet is too low.`
-      : err.reason || err.data?.message || err.message || "Unknown error";
-
-    alert(`Purchase failed: ${msg}`);
+    // try to pick out a nice revert reason if there is one
+    const reason =
+      err.reason ??
+      err.error?.data?.message ??
+      err.data?.message ??
+      err.message;
+    alert("Purchase failed: " + reason);
   }
-};
+}
+
 
 
   
