@@ -1,8 +1,8 @@
 // deployAll.js
 require("dotenv").config();
-const fs      = require("fs");
-const path    = require("path");
-const dotenv  = require("dotenv");
+const fs     = require("fs");
+const path   = require("path");
+const dotenv = require("dotenv");
 const { ethers } = require("hardhat");
 
 // Generic deploy helper using Ethers v6
@@ -11,22 +11,23 @@ async function deploy(name, ...args) {
   const Factory  = await ethers.getContractFactory(name);
   const contract = await Factory.deploy(...args);
   await contract.waitForDeployment();
-  console.log(`✅  ${name} deployed to:`, contract.target || contract.address);
+  console.log(`✅  ${name} deployed to:`, contract.address);
   return contract;
 }
 
 async function main() {
+  // 0. Deployer
   const [deployer] = await ethers.getSigners();
   console.log(`\n👤 Deploying with account: ${deployer.address}`);
-  const bal = await ethers.provider.getBalance(deployer.address);
-  console.log(`💰 Balance: ${ethers.formatEther(bal)} ETH\n`);
+  const balance = await ethers.provider.getBalance(deployer.address);
+  console.log(`💰 Balance: ${ethers.formatEther(balance)} ETH\n`);
 
-  // 1. Core
+  // 1. Core contracts
   const game    = await deploy("GameOfDeath");
   const mizons  = await deploy("Mizons", deployer.address);
   const betting = await deploy("GameOfDeathBetting", deployer.address);
 
-  // 2. Chests
+  // 2. Chest contracts
   const chestMinter = await deploy(
     "ChestMinter",
     mizons.address,
@@ -38,28 +39,32 @@ async function main() {
     "ipfs://bafybeih3u3jnucrmt4lwlbpe2uecnaybwm7g5mtnnarek7252wcpyydxga/"
   );
 
-  // 3. SkinLock
+  // 3. SkinLockRegistry
   const skinLock = await deploy(
     "SkinLockRegistry",
     chestOpener.address,
     deployer.address
   );
-  console.log("🔗 Linking ChestOpener → ChestMinter");
-  await (await chestMinter.setChestOpener(chestOpener.address)).wait();
 
-  // 4. Mizontresh
+  // Link ChestOpener → ChestMinter
+  console.log("🔗 Linking ChestOpener on ChestMinter…");
+  await (await chestMinter.setChestOpener(chestOpener.address)).wait();
+  console.log("✅ ChestOpener linked\n");
+
+  // 4. Mizontresh & whitelist
   const mizontresh = await deploy(
     "Mizontresh",
     "ipfs://bafybeih3u3jnucrmt4lwlbpe2uecnaybwm7g5mtnnarek7252wcpyydxga/",
     deployer.address
   );
-  console.log("🔗 Whitelisting Mizontresh");
+  console.log("🔗 Whitelisting Mizontresh in SkinLockRegistry…");
   await (await skinLock.addAllowedNFT(mizontresh.address)).wait();
+  console.log("✅ Mizontresh whitelisted\n");
 
-  // 5. Update .env
+  // 5. Update .env files
   console.log("📦 Updating .env files…");
 
-  // root .env
+  // Root .env
   const rootEnvPath = path.join(__dirname, ".env");
   const existingEnv = dotenv.config({ path: rootEnvPath }).parsed || {};
   const updatedRoot = {
@@ -77,9 +82,9 @@ async function main() {
     Object.entries(updatedRoot).map(([k,v])=>`${k}=${v}`).join("\n"),
     "utf8"
   );
-  console.log(`✅ Root .env written to ${rootEnvPath}`);
+  console.log(`✅ Root .env updated at ${rootEnvPath}`);
 
-  // frontend .env
+  // Frontend .env
   const frontEnvPath = path.join(__dirname, "frontend/.env");
   const frontendEnv  = {
     REACT_APP_BACKEND_URL:          process.env.REACT_APP_BACKEND_URL || "http://localhost:3001",
@@ -96,14 +101,14 @@ async function main() {
     Object.entries(frontendEnv).map(([k,v])=>`${k}=${v}`).join("\n"),
     "utf8"
   );
-  console.log(`✅ Frontend .env written to ${frontEnvPath}\n`);
+  console.log(`✅ Frontend .env updated at ${frontEnvPath}\n`);
 
-  console.log("🏁 All done!");
+  console.log("🏁 Deployment complete!");
 }
 
 main()
-  .then(()=>process.exit(0))
-  .catch(err=>{
+  .then(() => process.exit(0))
+  .catch(err => {
     console.error("Deployment error:", err);
     process.exit(1);
   });
