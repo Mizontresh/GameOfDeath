@@ -1721,18 +1721,23 @@ function App() {
       setErrorMsg("Betting is only allowed during picking phase.");
       return;
     }
+  
     try {
       setStatus(`Placing ${betAmount} bet(s) on ${teamId === 1 ? "Red" : "Blue"}...`);
-      // after
-for (let i = 0; i < betAmount; i++) {
-  const tx = await bettingContract.placeBet(
-    teamId,                // ← first argument is now team
-    1,                     // tickets
-    { value: ethers.parseEther("0.00005") }
-  );
-  await tx.wait();
-}
-
+  
+      // price per ticket
+      const pricePerTicket = ethers.parseEther("0.00005"); // bigint
+      // total cost = pricePerTicket * betAmount
+      const totalCost = pricePerTicket * BigInt(betAmount);
+  
+      // single call, passing total number of tickets
+      const tx = await bettingContract.placeBet(
+        teamId,
+        betAmount,
+        { value: totalCost }
+      );
+      await tx.wait();
+  
       setStatus(`${betAmount} bet(s) placed on ${teamId === 1 ? "Red" : "Blue"}!`);
       setErrorMsg("");
     } catch (err) {
@@ -1740,7 +1745,7 @@ for (let i = 0; i < betAmount; i++) {
       setErrorMsg("Bet failed: " + err.message);
     }
   }
-
+  
   // Mint chest
   async function handleMintChest() {
     if (!userAddress) {
