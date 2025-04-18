@@ -1,15 +1,15 @@
 // server.cjs
 require("dotenv").config();
-const fs         = require("fs");
-const path       = require("path");
-const express    = require("express");
-const cors       = require("cors");
-const http       = require("http");
-const { Server } = require("socket.io");
-const { ethers } = require("ethers");
+const fs           = require("fs");
+const path         = require("path");
+const express      = require("express");
+const cors         = require("cors");
+const http         = require("http");
+const { Server }   = require("socket.io");
+const { ethers }   = require("ethers");
 const { createCanvas } = require("canvas");
-const mongoose   = require("mongoose");
-const conway     = require("./conway");
+const mongoose     = require("mongoose");
+const conway       = require("./conway");
 
 // ─── Environment & HTTP Provider ─────────────────────────────────────────────
 const {
@@ -29,6 +29,7 @@ if (!RPC_URL || !PRIVATE_KEY) {
 }
 
 const provider = new ethers.JsonRpcProvider(RPC_URL);
+// keep HTTP alive
 setInterval(() => provider.send("net_version", []).catch(() => {}), 10_000);
 
 const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
@@ -126,10 +127,10 @@ async function waitForTxConfirmation(tx, timeout = 30_000, interval = 1_000) {
   while (Date.now() - start < timeout) {
     const rcpt = await provider.getTransactionReceipt(tx.hash);
     if (rcpt) {
-      console.log(`✅ [confirm] got receipt for ${tx.hash} in ${Date.now()-start}ms`);
+      console.log(`✅ [confirm] got receipt for ${tx.hash} in ${Date.now() - start}ms`);
       return rcpt;
     }
-    console.log(`⏳ [confirm] still waiting for ${tx.hash}… elapsed ${Date.now()-start}ms`);
+    console.log(`⏳ [confirm] still waiting for ${tx.hash}… elapsed ${Date.now() - start}ms`);
     await sleep(interval);
   }
   throw new Error("⏱️ tx confirmation timeout");
@@ -330,10 +331,11 @@ async function runFinalCycle() {
 // ─── Record Game ──────────────────────────────────────────────────────────────
 async function recordGame(winner) {
   console.log("📚 [step] recordGame()");
-  const [rBig,bBig]   = await gameContract.getTeamCounts(currentGameId);
-  const redCount      = toNumber(rBig);
-  const blueCount     = toNumber(bBig);
-  const bets          = await bettingContract.getBets();
+  const [rBig,bBig] = await gameContract.getTeamCounts(currentGameId);
+  const redCount    = toNumber(rBig);
+  const blueCount   = toNumber(bBig);
+
+  const bets       = await bettingContract.getBets();
   bets.forEach(b => activePlayers.add(b.user.toLowerCase()));
 
   let thumbnail = "";
@@ -505,7 +507,7 @@ app.get("/api/state", (_,res)=>
   res.json({ phase, timeLeft: phaseTimeLeft, gameId: currentGameId })
 );
 app.get("/api/board", async(_,res)=>{
-  const b=await getOnChainBoard();
+  const b = await getOnChainBoard();
   res.json({ board: b.map(v=>({value:v})) });
 });
 app.get("/api/history", (_,res)=>
