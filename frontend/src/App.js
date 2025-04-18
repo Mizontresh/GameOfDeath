@@ -502,34 +502,43 @@ function MizontreshOverlay({
     fetchInventory();
   }, [mizontreshContract, userAddress, buying]);
 
-  const handleBuy = async () => {
-    // 1) read price
-    const price   = await mizontreshContract.TOKEN_PRICE();
-  
-    // 2) get wallet balance
+  // in your App.js (make sure you have `const [buying, setBuying] = useState(false);`)
+const handleBuy = async () => {
+  if (!mizontreshContract || !window.ethereum) return;
+  setBuying(true);
+
+  try {
+    // 1) fetch the price from chain
+    // adjust the method name if your contract uses a different getter
+    const price = await mizontreshContract.mintPrice();
+
+    // 2) get signer & address
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer   = await provider.getSigner();
-    const balance  = await signer.getBalance();
-  
-    // 3) pre‑check afford
-    if (balance.lt(price)) {
-      const need = ethers.formatEther(price),
-            have = ethers.formatEther(balance);
-      return alert(`You need ${need} ETH but only have ${have} ETH.`);
+    const addr     = await signer.getAddress();
+
+    // 3) check your ETH balance
+    const balance = await provider.getBalance(addr);
+    if (balance < price) {
+      const need = ethers.formatEther(price);
+      const have = ethers.formatEther(balance);
+      alert(`❌ Not enough ETH to buy: need ${need} ETH but you only have ${have} ETH`);
+      return;
     }
-  
-    // 4) actually buy
-    try {
-      const tx = await mizontreshContract.buyToken({ value: price });
-      await tx.wait();
-      alert("✅ Purchase successful!");
-    } catch (err) {
-      const reason = err.reason || err.error?.message || err.message;
-      alert("⚠️ Purchase failed: " + reason);
-    } finally {
-      setBuying(false);
-    }
-  };
+
+    // 4) go for it
+    const tx = await mizontreshContract.buyToken({ value: price });
+    await tx.wait();
+    alert("✅ Mizontresh purchased!");
+  } catch (err) {
+    // try to pull out a revert message
+    const reason = err.reason || err.error?.message || err.message;
+    alert("⚠️ Purchase failed: " + reason);
+  } finally {
+    setBuying(false);
+  }
+};
+
   
   
   
