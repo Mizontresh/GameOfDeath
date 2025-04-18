@@ -4,6 +4,7 @@ import { io } from "socket.io-client";
 import { ethers } from "ethers";
 import "./App.css"; // <-- your big CSS file with all the styling
 import logo from "./logo.png";
+import { ethers } from "ethers";
 
 /* -------------------- Minimal ABIs -------------------- */
 const gameABI = [
@@ -502,14 +503,6 @@ function MizontreshOverlay({
     fetchInventory();
   }, [mizontreshContract, userAddress, buying]);
 
-  // in your App.js (make sure you have `const [buying, setBuying] = useState(false);`)
-// somewhere up in your component, after you’ve done:
-//   const [mizontreshContract, setMizontreshContract] = useState(null);
-//   const [userAddress, setUserAddress] = useState("");
-
-// at the top of your file, make sure you have:
-import { ethers } from "ethers";
-// …and that mizontreshContract is in scope (with a signer)
 
 async function handleBuy() {
   if (!mizontreshContract) {
