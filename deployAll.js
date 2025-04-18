@@ -5,22 +5,21 @@ const path   = require("path");
 const dotenv = require("dotenv");
 const { ethers } = require("hardhat");
 
-// Generic deploy helper using Ethers v6 + Hardhat
+// Generic deploy helper
 async function deploy(name, ...args) {
   console.log(`🔨 Deploying ${name}…`);
   const Factory  = await ethers.getContractFactory(name);
   const contract = await Factory.deploy(...args);
-  await contract.waitForDeployment();
+  await contract.deployed();                            // wait for it
   console.log(`✅  ${name} deployed to:`, contract.address);
   return contract;
 }
 
 async function main() {
-  // Deployer
   const [deployer] = await ethers.getSigners();
   console.log(`\n👤 Deploying with account: ${deployer.address}`);
-  const balance = await ethers.provider.getBalance(deployer.address);
-  console.log(`💰 Balance: ${ethers.formatEther(balance)} ETH\n`);
+  const bal = await ethers.provider.getBalance(deployer.address);
+  console.log(`💰 Balance: ${ethers.formatEther(bal)} ETH\n`);
 
   // 1. Core
   const game    = await deploy("GameOfDeath");
@@ -46,7 +45,7 @@ async function main() {
     deployer.address
   );
 
-  // link
+  // link them up
   console.log("🔗 Linking ChestOpener → ChestMinter…");
   await (await chestMinter.setChestOpener(chestOpener.address)).wait();
   console.log("✅ Linked\n");
@@ -61,12 +60,12 @@ async function main() {
   await (await skinLock.addAllowedNFT(mizontresh.address)).wait();
   console.log("✅ Whitelisted\n");
 
-  // 5. Write .env
+  // 5. Write addresses into .env
   console.log("📦 Updating .env files…");
   const rootEnvPath = path.join(__dirname, ".env");
-  const existingEnv = dotenv.config({ path: rootEnvPath }).parsed || {};
+  const existing    = dotenv.config({ path: rootEnvPath }).parsed || {};
   const updatedRoot = {
-    ...existingEnv,
+    ...existing,
     GAMEOFDEATH_ADDRESS:         game.address,
     GAMEOFDEATH_BETTING_ADDRESS: betting.address,
     MIZONS_ADDRESS:              mizons.address,
@@ -80,10 +79,10 @@ async function main() {
     Object.entries(updatedRoot).map(([k,v])=>`${k}=${v}`).join("\n"),
     "utf8"
   );
-  console.log(`✅ Root .env updated`);
+  console.log("✅ Root .env updated");
 
   const frontEnvPath = path.join(__dirname, "frontend/.env");
-  const frontendEnv  = {
+  const frontEnv     = {
     REACT_APP_BACKEND_URL:          process.env.REACT_APP_BACKEND_URL || "http://localhost:3001",
     REACT_APP_GAMEOFDEATH_ADDRESS:  game.address,
     REACT_APP_BETTING_ADDRESS:      betting.address,
@@ -95,10 +94,10 @@ async function main() {
   };
   fs.writeFileSync(
     frontEnvPath,
-    Object.entries(frontendEnv).map(([k,v])=>`${k}=${v}`).join("\n"),
+    Object.entries(frontEnv).map(([k,v])=>`${k}=${v}`).join("\n"),
     "utf8"
   );
-  console.log(`✅ Frontend .env updated\n`);
+  console.log("✅ Frontend .env updated\n");
 
   console.log("🏁 Deployment complete!");
 }
