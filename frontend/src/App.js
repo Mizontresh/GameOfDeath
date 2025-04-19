@@ -792,7 +792,7 @@ function Inventory({ inventory, backendUrl, onOpenChest }) {
 }
 
 /* -------------------- RecordsList -------------------- */
-export default function RecordsList({
+function RecordsList({
   backendUrl,
   showMyGames,
   userAddress,
@@ -818,28 +818,28 @@ export default function RecordsList({
       setHasMore(newRecs.length === LIMIT);
       setSkip(s => s + newRecs.length);
     } catch (err) {
-      console.error('Error fetching records:', err);
+      console.error("Error fetching records:", err);
     } finally {
       setLoading(false);
     }
   }, [backendUrl, showMyGames, userAddress, skip, hasMore, loading]);
 
-  // reset when mode or refreshKey changes
+  // reset when switching modes or refreshKey changes
   useEffect(() => {
     setRecords([]);
     setSkip(0);
     setHasMore(true);
   }, [showMyGames, refreshKey]);
 
-  // initial + subsequent loads
+  // initial & pagination load
   useEffect(() => {
     fetchRecords();
   }, [fetchRecords]);
 
   return (
-    <div className="records-list-wrapper">
+    <div className="records-list-container">
       {records.length === 0 && !loading ? (
-        <p className="empty">No records found.</p>
+        <p>No records found.</p>
       ) : (
         <ul className="game-records-list">
           {records.map(rec => (
@@ -847,18 +847,19 @@ export default function RecordsList({
               key={rec.gameId}
               className="record-item"
               onClick={() => onSelectRecord(rec)}
+              style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "8px" }}
             >
               {rec.thumbnail && (
                 <img
                   src={rec.thumbnail}
                   alt={`Game #${rec.gameId}`}
-                  className="record-thumb"
+                  style={{ width: 50, height: 50, objectFit: "cover", borderRadius: 4 }}
                 />
               )}
-              <div className="record-info">
-                <strong>Game #{rec.gameId}</strong>
+              <div>
+                <div><strong>Game #{rec.gameId}</strong></div>
                 <div>Winner: {rec.winner}</div>
-                <div className="record-date">
+                <div style={{ fontSize: "0.8em", color: "#aaa" }}>
                   {rec.timestamp && new Date(rec.timestamp).toLocaleString()}
                 </div>
               </div>
@@ -866,17 +867,12 @@ export default function RecordsList({
           ))}
         </ul>
       )}
-
       {hasMore ? (
-        <button
-          className="load-more-btn"
-          onClick={fetchRecords}
-          disabled={loading}
-        >
-          {loading ? 'Loading…' : 'Load More'}
+        <button className="load-more-btn" onClick={fetchRecords} disabled={loading}>
+          {loading ? "Loading..." : "Load More"}
         </button>
       ) : (
-        <p className="no-more">No more records to load.</p>
+        <p style={{ textAlign: "center" }}>No more records to load.</p>
       )}
     </div>
   );
