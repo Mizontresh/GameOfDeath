@@ -1567,7 +1567,7 @@ const fetchOwnedSkinsFromOpener = useCallback(async () => {
 
 useEffect(() => {
   fetchOwnedSkinsFromOpener();
-}, [chestOpenerContract, userAddress, status, fetchOwnedSkinsFromOpener]);
+}, [chestOpenerContract, userAddress, status]);
 
   function selectRecord(rec) {
     setSelectedRecord(rec);
