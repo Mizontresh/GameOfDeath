@@ -844,18 +844,31 @@ function RecordsList({
         <p>No records found.</p>
       ) : (
         <ul className="game-records-list">
-          {records.map((rec, idx) => {
-            /* … your existing thumbnail logic … */
-            return (
-              <li
-                key={`${rec.gameId}-${idx}`}
-                onClick={() => onSelectRecord(rec)}
-              >
-                {/* … */}
-              </li>
-            );
-          })}
-        </ul>
+  {records.map((rec) => (
+    <li
+      key={rec.gameId}
+      className="record-item"
+      onClick={() => onSelectRecord(rec)}
+      style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "8px" }}
+    >
+      {rec.thumbnail && (
+        <img
+          src={rec.thumbnail}
+          alt={`Game #${rec.gameId}`}
+          style={{ width: 50, height: 50, objectFit: "cover", borderRadius: 4 }}
+        />
+      )}
+      <div>
+        <div><strong>Game #{rec.gameId}</strong></div>
+        <div>Winner: {rec.winner}</div>
+        <div style={{ fontSize: "0.8em", color: "#aaa" }}>
+          {rec.timestamp && new Date(rec.timestamp).toLocaleString()}
+        </div>
+      </div>
+    </li>
+  ))}
+</ul>
+
       )}
       {hasMore ? (
         <button
@@ -1544,7 +1557,8 @@ function App() {
     refreshInventory();
   }, [refreshInventory, status]);
 
-// Fetch Owned Skins from ChestOpener
+  // Fetch Owned Skins from chestOpener
+  // Fetch Owned Skins from ChestOpener
 const fetchOwnedSkinsFromOpener = useCallback(async () => {
   if (!chestOpenerContract || !userAddress) return;
   try {
@@ -1567,8 +1581,9 @@ const fetchOwnedSkinsFromOpener = useCallback(async () => {
 
 useEffect(() => {
   fetchOwnedSkinsFromOpener();
-}, [chestOpenerContract, userAddress, status]);
+}, [chestOpenerContract, userAddress, status, fetchOwnedSkinsFromOpener]);
 
+  // Select a record
   function selectRecord(rec) {
     setSelectedRecord(rec);
     if (rec.boardHistory && rec.boardHistory.length > 0) {
