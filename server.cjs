@@ -15,7 +15,7 @@ const conway       = require("./conway");
 const {
   RPC_URL, PRIVATE_KEY,
   MONGO_URI         = "mongodb://127.0.0.1:27017/gameofdeath",
-  BASE_URL   = process.env.BASE_URL || "http://3.234.250.159:3000",
+  BASE_URL          = process.env.BASE_URL || "http://3.234.250.159:3000",
   GAMEOFDEATH_ADDRESS,
   GAMEOFDEATH_BETTING_ADDRESS,
   MIZONS_ADDRESS,
@@ -491,13 +491,75 @@ io.on("connection", socket => {
   }
 });
 
-// REST Endpoints
+// ─── REST Endpoints ──────────────────────────────────────────────────────────
+// 1) Current game state
 app.get("/api/state", (_,res) =>
   res.json({ phase, timeLeft: phaseTimeLeft, gameId: currentGameId })
 );
-// … (other endpoints unchanged) …
 
-// Startup
+// 2) All game records (paginated)
+app.get("/api/allRecords", async (req, res) => {
+  const skip  = parseInt(req.query.skip)  || 0;
+  const limit = parseInt(req.query.limit) || 10;
+  const recs  = await GameRecord.find({})
+    .sort({ timestamp: -1 })
+    .skip(skip)
+    .limit(limit)
+    .lean();
+  res.json({ records: recs });
+});
+
+// 3) My game records by wallet (paginated)
+app.get("/api/records/:user", async (req, res) => {
+  const user  = req.params.user.toLowerCase();
+  const skip  = parseInt(req.query.skip)  || 0;
+  const limit = parseInt(req.query.limit) || 10;
+  const recs  = await GameRecord.find({ players: user })
+    .sort({ timestamp: -1 })
+    .skip(skip)
+    .limit(limit)
+    .lean();
+  res.json({ records: recs });
+});
+
+// 4) Live on‑chain board
+app.get("/api/board", async (_, res) => {
+  try {
+    const board = await getOnChainBoard();
+    res.json({ board });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.toString() });
+  }
+});
+
+// 5) Full server‑side history
+app.get("/api/history", (_, res) => {
+  res.json({ boardHistory, skinHistory });
+});
+
+// 6) Skin overlay grid
+app.get("/api/skinOverlay", (_, res) => {
+  res.json({ skinOverlay: liveSkinOverlay });
+});
+
+// 7) Current bets for a game
+app.get("/api/bets/:gameId", async (req, res) => {
+  try {
+    const onChain = await bettingContract.getBets();
+    const bets = onChain.map(b => ({
+      user:    b.user,
+      team:    Number(b.team),
+      tickets: Number(b.tickets)
+    }));
+    res.json({ bets });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.toString() });
+  }
+});
+
+// ─── Startup & Listen ─────────────────────────────────────────────────────────
 ;(async function startup(){
   try {
     const onChainId    = toNumber(await gameContract.currentGameId());
@@ -513,18 +575,15 @@ app.get("/api/state", (_,res) =>
       phase         = "picking";
       phaseTimeLeft = PICKING_TIME;
       broadcastState();
-
-      console.log("⚡ [startup] setPhase(0) & openBetting()");
       await sendTx(() => gameContract.setPhase(0), "setPhase(0)");
       await sendTx(
         () => bettingContract.openBetting(currentGameId),
         `openBetting(${currentGameId})`
       );
-
       initialized = true;
       console.log("✅ Initialization complete, starting countdown");
-      console.log(`🚀 Server up, gameId=${currentGameId}`);
     }
+    console.log(`🚀 Server up, gameId=${currentGameId}`);
   } catch (e) {
     console.error("‼️ Startup error:", e);
   }
