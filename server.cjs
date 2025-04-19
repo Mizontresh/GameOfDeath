@@ -15,7 +15,7 @@ const conway       = require("./conway");
 const {
   RPC_URL, PRIVATE_KEY,
   MONGO_URI         = "mongodb://127.0.0.1:27017/gameofdeath",
-  BASE_URL          = "http://localhost:3000",
+  BASE_URL   = process.env.BASE_URL || "http://3.234.250.159:3000",
   GAMEOFDEATH_ADDRESS,
   GAMEOFDEATH_BETTING_ADDRESS,
   MIZONS_ADDRESS,
@@ -531,6 +531,7 @@ app.get("/api/state", (_,res) =>
 })();
 
 const PORT = process.env.PORT || 3000;
-serverHttp.listen(PORT, () => {
+// bind 0.0.0.0 → listen on all interfaces
+serverHttp.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Listening on ${BASE_URL}:${PORT}`);
 });
