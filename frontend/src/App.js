@@ -1266,19 +1266,6 @@ function App() {
  * Given either a full URL or a bare path,
  * rewrite it to always point at our `backendUrl`.
  */
-function resolveAssetUrl(raw) {
-  if (!raw) return "";
-  try {
-    // if it's a full URL, grab its pathname
-    const u = new URL(raw);
-    return `${backendUrl}${u.pathname}`;
-  } catch {
-    // otherwise it's already a path like "/images/..."
-    return raw.startsWith("/")
-      ? `${backendUrl}${raw}`
-      : `${backendUrl}/${raw}`;
-  }
-}
 
   // Poll skin overlay
   useEffect(() => {
@@ -1500,25 +1487,6 @@ useEffect(() => {
   // Poll the live board if in "placing" and not replaying
     // ─── Poll the live board during placing ────────────────────────────────────
 // ── Poll live board while placing ─────────────────────────────────────────────
-useEffect(() => {
-  if (phaseData.phase !== "placing") return;
-  if (selectedHistory || liveReplayIndex >= 0) return;
-
-  const interval = setInterval(async () => {
-    try {
-      const res = await fetch(`${backendUrl}/api/board`);
-      const { board } = await res.json();
-      if (board) {
-        // convert raw numbers → { value } objects
-        setLiveBoard(convertToAugmentedBoard(board));
-      }
-    } catch (err) {
-      console.error("Error polling board:", err);
-    }
-  }, 1000);
-
-  return () => clearInterval(interval);
-}, [phaseData.phase, selectedHistory, liveReplayIndex]);
 
   // Live board auto replay
   useEffect(() => {
