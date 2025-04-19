@@ -1355,38 +1355,57 @@ function resolveAssetUrl(raw) {
   }, []);
 
   // Socket setup
-  useEffect(() => {
-    socketRef.current = io(backendUrl, { transports: ["websocket"] });
-    socketRef.current.on("connect", () => console.log("Socket connected:", socketRef.current.id));
-    socketRef.current.on("phaseUpdated", (data) => setPhaseData(data));
-    socketRef.current.on("boardUpdated", (augmentedBoard) => {
-      if (liveReplayIndex < 0 && !selectedHistory) {
-        setLiveBoard(augmentedBoard);
-      }
-    });
-    socketRef.current.on("newGameRecord", async () => {
-      setRefreshKey((prev) => prev + 1);
-    
-      try {
-        // grab the latest record
-        const res = await fetch(`${backendUrl}/api/allRecords?skip=0&limit=1`);
-        const json = await res.json();
-        const rec = json.records?.[0];
-        let msg = "Nobody Won";
-        if (rec?.winner === "Red")   msg = "Red Won";
-        else if (rec?.winner === "Blue") msg = "Blue Won";
-    
-        setLastWinnerMsg(msg);
-        setShowWinOverlay(true);
-        // auto‑hide after 5s
-        setTimeout(() => setShowWinOverlay(false), 5000);
-      } catch (err) {
-        console.error("Failed to fetch last winner:", err);
-      }
-    });
-    socketRef.current.on("disconnect", () => console.log("Socket disconnected"));
-    return () => socketRef.current.disconnect();
-  }, [liveReplayIndex, selectedHistory]);
+  // ─── Socket setup ───────────────────────────────────────────────────────────
+useEffect(() => {
+  // build the full backend URL (fallback to current origin)
+  const url = backendUrl || window.location.origin;
+
+  // connect via secure WebSocket only, explicit path
+  socketRef.current = io(url, {
+    path: "/socket.io",
+    transports: ["websocket"],
+  });
+
+  socketRef.current.on("connect", () =>
+    console.log("Socket connected:", socketRef.current.id)
+  );
+
+  socketRef.current.on("phaseUpdated", (data) => setPhaseData(data));
+  socketRef.current.on("boardUpdated", (augmentedBoard) => {
+    if (liveReplayIndex < 0 && !selectedHistory) {
+      setLiveBoard(augmentedBoard);
+    }
+  });
+
+  socketRef.current.on("newGameRecord", async () => {
+    setRefreshKey((prev) => prev + 1);
+    try {
+      const res = await fetch(`${backendUrl}/api/allRecords?skip=0&limit=1`);
+      const json = await res.json();
+      const rec = json.records?.[0] || {};
+      const msg =
+        rec.winner === "Red"
+          ? "Red Won"
+          : rec.winner === "Blue"
+          ? "Blue Won"
+          : "Nobody Won";
+
+      setLastWinnerMsg(msg);
+      setShowWinOverlay(true);
+      setTimeout(() => setShowWinOverlay(false), 5000);
+    } catch (err) {
+      console.error("Failed to fetch last winner:", err);
+    }
+  });
+
+  socketRef.current.on("disconnect", () =>
+    console.log("Socket disconnected")
+  );
+
+  return () => {
+    socketRef.current.disconnect();
+  };
+}, [liveReplayIndex, selectedHistory]);
 
   // Periodically fetch phaseData
   useEffect(() => {
