@@ -1562,9 +1562,9 @@ function App() {
     }
   }, [chestOpenerContract, userAddress, status]);  // ← exactly the values you close over
   
-  useEffect(() => {
-    fetchOwnedSkinsFromOpener();
-  }, [fetchOwnedSkinsFromOpener]);
+    useEffect(() => {
+        fetchOwnedSkinsFromOpener();
+      }, [chestOpenerContract, userAddress, status, fetchOwnedSkinsFromOpener]);
 
   // Select a record
   function selectRecord(rec) {
