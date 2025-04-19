@@ -1545,26 +1545,30 @@ function App() {
   }, [refreshInventory, status]);
 
   // Fetch Owned Skins from chestOpener
-  const fetchOwnedSkinsFromOpener = useCallback(async () => {
-    if (!chestOpenerContract || !userAddress) return;
-    try {
-      const itemBalanceBN = await chestOpenerContract.balanceOf(userAddress);
-      const itemBalance   = Number(itemBalanceBN);
-      const skins = [];
-      for (let i = 0; i < itemBalance; i++) {
-        const tokenIdBN     = await chestOpenerContract.tokenOfOwnerByIndex(userAddress, i);
-        const awardedItemBN = await chestOpenerContract.tokenAwardedItem(tokenIdBN);
-        skins.push({ tokenId: Number(tokenIdBN), bakedId: Number(awardedItemBN) });
-      }
-      setOwnedSkins(skins);
-    } catch (err) {
-      console.error("Error fetching owned skins:", err);
+  // Fetch Owned Skins from ChestOpener
+const fetchOwnedSkinsFromOpener = useCallback(async () => {
+  if (!chestOpenerContract || !userAddress) return;
+  try {
+    const itemBalanceBN = await chestOpenerContract.balanceOf(userAddress);
+    const itemBalance   = Number(itemBalanceBN);
+    const skins = [];
+    for (let i = 0; i < itemBalance; i++) {
+      const tokenIdBN     = await chestOpenerContract.tokenOfOwnerByIndex(userAddress, i);
+      const awardedItemBN = await chestOpenerContract.tokenAwardedItem(tokenIdBN);
+      skins.push({
+        tokenId: Number(tokenIdBN),
+        bakedId: Number(awardedItemBN)
+      });
     }
-  }, [chestOpenerContract, userAddress, status]);  // ← exactly the values you close over
-  
-    useEffect(() => {
-        fetchOwnedSkinsFromOpener();
-      }, [chestOpenerContract, userAddress, status, fetchOwnedSkinsFromOpener]);
+    setOwnedSkins(skins);
+  } catch (err) {
+    console.error("Error fetching owned skins:", err);
+  }
+}, [chestOpenerContract, userAddress, status]);
+
+useEffect(() => {
+  fetchOwnedSkinsFromOpener();
+}, [chestOpenerContract, userAddress, status, fetchOwnedSkinsFromOpener]);
 
   // Select a record
   function selectRecord(rec) {
