@@ -1544,8 +1544,7 @@ function App() {
     refreshInventory();
   }, [refreshInventory, status]);
 
-  // Fetch Owned Skins from chestOpener
-  // Fetch Owned Skins from ChestOpener
+// Fetch Owned Skins from ChestOpener
 const fetchOwnedSkinsFromOpener = useCallback(async () => {
   if (!chestOpenerContract || !userAddress) return;
   try {
@@ -1570,7 +1569,6 @@ useEffect(() => {
   fetchOwnedSkinsFromOpener();
 }, [chestOpenerContract, userAddress, status, fetchOwnedSkinsFromOpener]);
 
-  // Select a record
   function selectRecord(rec) {
     setSelectedRecord(rec);
     if (rec.boardHistory && rec.boardHistory.length > 0) {
