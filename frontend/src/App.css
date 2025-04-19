@@ -1340,3 +1340,77 @@ html, body, #root {
   60%  { transform: scale(1.05); opacity: 1; }
   100% { transform: scale(1); }
 }
+/* outer wrapper: fixed-height flex column */
+.records-list-wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 280px;    /* adjust to your right‑panel width */
+  height: 360px;       /* change to fit ~10 items */
+  padding: 8px;
+  box-sizing: border-box;
+  background: rgba(0,0,0,0.6);
+}
+
+/* the UL scrolls */
+.game-records-list {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+/* each row */
+.record-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #333;
+  cursor: pointer;
+}
+
+/* thumbnail */
+.record-thumb {
+  width: 50px;
+  height: 50px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+/* info column */
+.record-info {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.9rem;
+}
+
+/* date styling */
+.record-date {
+  font-size: 0.8rem;
+  color: #aaa;
+}
+
+/* Load more button pinned below scroll area */
+.load-more-btn {
+  margin-top: 8px;
+  padding: 6px 12px;
+  align-self: center;
+  cursor: pointer;
+}
+
+/* no-more text */
+.no-more {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+/* empty list placeholder */
+.empty {
+  text-align: center;
+  margin: auto;
+  color: #888;
+}

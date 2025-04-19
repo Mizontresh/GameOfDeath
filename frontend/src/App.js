@@ -792,7 +792,7 @@ function Inventory({ inventory, backendUrl, onOpenChest }) {
 }
 
 /* -------------------- RecordsList -------------------- */
-function RecordsList({
+export default function RecordsList({
   backendUrl,
   showMyGames,
   userAddress,
@@ -812,74 +812,71 @@ function RecordsList({
       const endpoint = showMyGames
         ? `${backendUrl}/api/records/${userAddress}`
         : `${backendUrl}/api/allRecords`;
-      const res = await fetch(
-        `${endpoint}?skip=${skip}&limit=${LIMIT}`
-      );
+      const res = await fetch(`${endpoint}?skip=${skip}&limit=${LIMIT}`);
       const { records: newRecs = [] } = await res.json();
-      setRecords((r) => [...r, ...newRecs]);
+      setRecords(r => [...r, ...newRecs]);
       setHasMore(newRecs.length === LIMIT);
-      setSkip((s) => s + newRecs.length);
+      setSkip(s => s + newRecs.length);
     } catch (err) {
-      console.error("Error fetching records:", err);
+      console.error('Error fetching records:', err);
     } finally {
       setLoading(false);
     }
   }, [backendUrl, showMyGames, userAddress, skip, hasMore, loading]);
 
-  // Reset list whenever mode or refreshKey changes
+  // reset when mode or refreshKey changes
   useEffect(() => {
     setRecords([]);
     setSkip(0);
     setHasMore(true);
   }, [showMyGames, refreshKey]);
 
-  // Load first page (or next page when skip changes)
+  // initial + subsequent loads
   useEffect(() => {
     fetchRecords();
   }, [fetchRecords]);
 
   return (
-    <div className="records-list-container">
+    <div className="records-list-wrapper">
       {records.length === 0 && !loading ? (
-        <p>No records found.</p>
+        <p className="empty">No records found.</p>
       ) : (
         <ul className="game-records-list">
-  {records.map((rec) => (
-    <li
-      key={rec.gameId}
-      className="record-item"
-      onClick={() => onSelectRecord(rec)}
-      style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "8px" }}
-    >
-      {rec.thumbnail && (
-        <img
-          src={rec.thumbnail}
-          alt={`Game #${rec.gameId}`}
-          style={{ width: 50, height: 50, objectFit: "cover", borderRadius: 4 }}
-        />
+          {records.map(rec => (
+            <li
+              key={rec.gameId}
+              className="record-item"
+              onClick={() => onSelectRecord(rec)}
+            >
+              {rec.thumbnail && (
+                <img
+                  src={rec.thumbnail}
+                  alt={`Game #${rec.gameId}`}
+                  className="record-thumb"
+                />
+              )}
+              <div className="record-info">
+                <strong>Game #{rec.gameId}</strong>
+                <div>Winner: {rec.winner}</div>
+                <div className="record-date">
+                  {rec.timestamp && new Date(rec.timestamp).toLocaleString()}
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
-      <div>
-        <div><strong>Game #{rec.gameId}</strong></div>
-        <div>Winner: {rec.winner}</div>
-        <div style={{ fontSize: "0.8em", color: "#aaa" }}>
-          {rec.timestamp && new Date(rec.timestamp).toLocaleString()}
-        </div>
-      </div>
-    </li>
-  ))}
-</ul>
 
-      )}
       {hasMore ? (
         <button
           className="load-more-btn"
           onClick={fetchRecords}
           disabled={loading}
         >
-          {loading ? "Loading..." : "Load More"}
+          {loading ? 'Loading…' : 'Load More'}
         </button>
       ) : (
-        <p style={{ textAlign: "center" }}>No more records to load.</p>
+        <p className="no-more">No more records to load.</p>
       )}
     </div>
   );
