@@ -209,8 +209,23 @@ async function generateThumbnail(board, gameId) {
   return `${BASE_URL}/images/game_${gameId}.png`;
 }
 
+// ─── Duplicate on clients: phase, board & skin overlay ──────────────────────
 function broadcastState() {
-  io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
+  // 1) phase
+  io.emit("phaseUpdated", {
+    phase,
+    timeLeft: phaseTimeLeft,
+    gameId: currentGameId,
+  });
+
+  // 2) board (latest snapshot)
+  const lastBoard = boardHistory.length
+    ? boardHistory[boardHistory.length - 1].map(v => ({ value: v }))
+    : [];
+  io.emit("boardUpdated", lastBoard);
+
+  // 3) skin overlay grid
+  io.emit("skinOverlayUpdated", liveSkinOverlay);
 }
 
 // ─── Distribute winnings (batch‑mint) ─────────────────────────────────────────
@@ -280,7 +295,8 @@ async function runConwaySteps(steps, delay = STEP_DELAY) {
     boardHistory.push([...b]);
     liveSkinOverlay = runSkinStep(liveSkinOverlay);
     skinHistory.push([...liveSkinOverlay]);
-    io.emit("boardUpdated", b.map(v => ({ value: v })));
+    // broadcast updated board + skins each step
+    broadcastState();
     console.log(`   ↳ Conway step ${i}/${steps}`);
     await sleep(delay);
   }
@@ -478,19 +494,30 @@ setInterval(async () => {
         if (skin) liveSkinOverlay[i] = skin;
       }
     }
+    // emit updated overlay
     io.emit("skinOverlayUpdated", liveSkinOverlay);
   } catch (err) {
     console.error("‼️ Polling error:", err);
   }
 }, 3000);
 
-// Initial Sync
+// ─── Initial Sync ─────────────────────────────────────────────────────────────
 io.on("connection", socket => {
-  socket.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
-  if (boardHistory.length) {
-    const last = boardHistory[boardHistory.length-1].map(v => ({ value: v }));
-    socket.emit("boardUpdated", last);
-  }
+  // phase
+  socket.emit("phaseUpdated", {
+    phase,
+    timeLeft: phaseTimeLeft,
+    gameId: currentGameId,
+  });
+
+  // board (latest)
+  const lastBoard = boardHistory.length
+    ? boardHistory[boardHistory.length - 1].map(v => ({ value: v }))
+    : [];
+  socket.emit("boardUpdated", lastBoard);
+
+  // skin overlay
+  socket.emit("skinOverlayUpdated", liveSkinOverlay);
 });
 
 // ─── REST Endpoints ──────────────────────────────────────────────────────────
