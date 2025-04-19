@@ -68,16 +68,32 @@ const mizontreshABI = [
 ];
 
 /* -------------------- Environment Constants -------------------- */
-const gameAddress = process.env.REACT_APP_GAMEOFDEATH_ADDRESS;
-const bettingAddress = process.env.REACT_APP_BETTING_ADDRESS;
-const mizonsAddress = process.env.REACT_APP_MIZONS_ADDRESS;
-const chestMinterAddress = process.env.REACT_APP_CHEST_MINTER_ADDRESS;
-const chestOpenerAddress = process.env.REACT_APP_CHEST_OPENER_ADDRESS;
-const skinLockAddress = process.env.REACT_APP_SKIN_LOCK_ADDRESS;
-const mizontreshAddress = process.env.REACT_APP_MIZONTRESH_ADDRESS;
-const backendUrl = process.env.REACT_APP_BACKEND_URL;
-  // Win overlay
+const gameAddress          = process.env.REACT_APP_GAMEOFDEATH_ADDRESS;
+const bettingAddress       = process.env.REACT_APP_BETTING_ADDRESS;
+const mizonsAddress        = process.env.REACT_APP_MIZONS_ADDRESS;
+const chestMinterAddress   = process.env.REACT_APP_CHEST_MINTER_ADDRESS;
+const chestOpenerAddress   = process.env.REACT_APP_CHEST_OPENER_ADDRESS;
+const skinLockAddress      = process.env.REACT_APP_SKIN_LOCK_ADDRESS;
+const mizontreshAddress    = process.env.REACT_APP_MIZONTRESH_ADDRESS;
 
+// ensure we always have our HTTPS backend host (no trailing slash)
+const rawBackend = process.env.REACT_APP_BACKEND_URL || "";
+export const backendUrl = rawBackend.replace(/\/$/, "");
+
+/**
+ * Given any raw path or URL, point it at our backend over HTTPS.
+ * - full URLs get their path re‑mapped
+ * - relative paths get prefixed
+ */
+export function resolveAssetUrl(raw) {
+  if (!raw) return "";
+  try {
+    const u = new URL(raw);
+    return backendUrl + u.pathname;
+  } catch {
+    return backendUrl + (raw.startsWith("/") ? raw : "/" + raw);
+  }
+}
 
 
 /* -------------------- Utility Functions -------------------- */
@@ -851,11 +867,12 @@ function RecordsList({
             >
               {rec.thumbnail && (
                 <img
-                  src={rec.thumbnail}
+                  src={resolveAssetUrl(rec.thumbnail)}
                   alt={`Game #${rec.gameId}`}
                   style={{ width: 50, height: 50, objectFit: "cover", borderRadius: 4 }}
-                />
-              )}
+                 />
+                )}
+
               <div>
                 <div><strong>Game #{rec.gameId}</strong></div>
                 <div>Winner: {rec.winner}</div>
@@ -1245,6 +1262,23 @@ function App() {
   const [skinOverlay, setSkinOverlay] = useState(Array(4096).fill(0));
 
   const socketRef = useRef(null);
+   /**
+ * Given either a full URL or a bare path,
+ * rewrite it to always point at our `backendUrl`.
+ */
+function resolveAssetUrl(raw) {
+  if (!raw) return "";
+  try {
+    // if it's a full URL, grab its pathname
+    const u = new URL(raw);
+    return `${backendUrl}${u.pathname}`;
+  } catch {
+    // otherwise it's already a path like "/images/..."
+    return raw.startsWith("/")
+      ? `${backendUrl}${raw}`
+      : `${backendUrl}/${raw}`;
+  }
+}
 
   // Poll skin overlay
   useEffect(() => {
@@ -2330,17 +2364,18 @@ useEffect(() => {
                 }}
               >
                 {currentSkinGrid.map((skin, i) =>
-                  skin ? (
-                    <img
-                      key={i}
-                      src={`${backendUrl}/skins/icons/${skin}.png`}
-                      alt={`Skin ${skin}`}
-                      style={{ width: "100%", height: "100%", objectFit: "contain" }}
-                    />
-                  ) : (
-                    <div key={i} style={{ width: "100%", height: "100%" }} />
-                  )
-                )}
+                             skin ? (
+                              <img
+                                     key={i}
+                                     src={resolveAssetUrl(`/skins/icons/${skin}.png`)}
+                                     style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                                     alt={`Skin ${skin}`}
+                        />
+                      ) : (
+                          <div key={i} style={{ width: "100%", height: "100%" }} />
+                      )
+                    )}
+
               </div>
             </div>
           </div>
