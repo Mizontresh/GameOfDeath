@@ -1358,11 +1358,13 @@ useEffect(() => {
   );
 
   socketRef.current.on("phaseUpdated", (data) => setPhaseData(data));
-  socketRef.current.on("boardUpdated", (augmentedBoard) => {
+  socketRef.current.on("boardUpdated", (rawBoard) => {
     if (liveReplayIndex < 0 && !selectedHistory) {
-      setLiveBoard(augmentedBoard);
+      // wrap the incoming number[] in {value} objects
+      setLiveBoard(convertToAugmentedBoard(rawBoard));
     }
   });
+  
 
   socketRef.current.on("newGameRecord", async () => {
     setRefreshKey((prev) => prev + 1);
@@ -1484,25 +1486,6 @@ useEffect(() => {
     return () => clearInterval(interval);
   }, []);
 
-  // Poll the live board if in "placing" and not replaying
-    // ─── Poll the live board during placing ────────────────────────────────────
-// ── Poll live board while placing ─────────────────────────────────────────────
-
-  // Live board auto replay
-  useEffect(() => {
-    if (!liveAutoReplay || boardHistory.length === 0) return;
-    const autoInterval = setInterval(() => {
-      setLiveReplayIndex((prev) => {
-        const newIndex = prev < 0 ? 0 : prev + 1;
-        if (newIndex >= boardHistory.length) {
-          setLiveAutoReplay(false);
-          return boardHistory.length - 1;
-        }
-        return newIndex;
-      });
-    }, 500);
-    return () => clearInterval(autoInterval);
-  }, [liveAutoReplay, boardHistory]);
 
   // Selected record auto replay
   useEffect(() => {
