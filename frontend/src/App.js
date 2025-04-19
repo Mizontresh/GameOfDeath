@@ -1545,27 +1545,27 @@ function App() {
   }, [refreshInventory, status]);
 
   // Fetch Owned Skins from chestOpener
-  async function fetchOwnedSkinsFromOpener() {
+  const fetchOwnedSkinsFromOpener = useCallback(async () => {
     if (!chestOpenerContract || !userAddress) return;
     try {
       const itemBalanceBN = await chestOpenerContract.balanceOf(userAddress);
-      const itemBalance = Number(itemBalanceBN);
+      const itemBalance   = Number(itemBalanceBN);
       const skins = [];
       for (let i = 0; i < itemBalance; i++) {
-        const tokenIdBN = await chestOpenerContract.tokenOfOwnerByIndex(userAddress, i);
-        const tokenId = Number(tokenIdBN);
-        const awardedItemBN = await chestOpenerContract.tokenAwardedItem(tokenId);
-        const awardedItem = Number(awardedItemBN);
-        skins.push({ tokenId, bakedId: awardedItem });
+        const tokenIdBN     = await chestOpenerContract.tokenOfOwnerByIndex(userAddress, i);
+        const awardedItemBN = await chestOpenerContract.tokenAwardedItem(tokenIdBN);
+        skins.push({ tokenId: Number(tokenIdBN), bakedId: Number(awardedItemBN) });
       }
       setOwnedSkins(skins);
     } catch (err) {
-      console.error("Error fetching owned skins from ChestOpener:", err);
+      console.error("Error fetching owned skins:", err);
     }
-  }
+  }, [chestOpenerContract, userAddress, status]);  // ← exactly the values you close over
+  
   useEffect(() => {
     fetchOwnedSkinsFromOpener();
-  }, [chestOpenerContract, userAddress, status,fetchOwnedSkinsFromOpener]);
+  }, [fetchOwnedSkinsFromOpener]);
+   [chestOpenerContract, userAddress, status,fetchOwnedSkinsFromOpener]);
 
   // Select a record
   function selectRecord(rec) {
