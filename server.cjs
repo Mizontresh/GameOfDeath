@@ -13,8 +13,10 @@ const conway       = require("./conway");
 
 // ─── Environment & HTTP Provider ─────────────────────────────────────────────
 const {
-  RPC_URL, PRIVATE_KEY,
+  RPC_URL,
+  PRIVATE_KEY,
   MONGO_URI         = "mongodb://127.0.0.1:27017/gameofdeath",
+  // use your public IP or domain here, or override via env
   BASE_URL          = process.env.BASE_URL || "http://3.234.250.159:3000",
   GAMEOFDEATH_ADDRESS,
   GAMEOFDEATH_BETTING_ADDRESS,
@@ -39,15 +41,15 @@ mongoose.connection
   .on("error", err => console.error("❌ MongoDB error:", err));
 
 const gameRecordSchema = new mongoose.Schema({
-  gameId: Number,
-  winner: String,
-  timestamp: Date,
-  teamRedCount: Number,
+  gameId:        Number,
+  winner:        String,
+  timestamp:     Date,
+  teamRedCount:  Number,
   teamBlueCount: Number,
   boardHistory: { type: [[Number]], default: [] },
   skinHistory:  { type: [[Number]], default: [] },
-  players: [String],
-  thumbnail: String,
+  players:      [String],
+  thumbnail:    String,
 });
 const GameRecord = mongoose.model("GameRecord", gameRecordSchema);
 
@@ -110,17 +112,15 @@ function toNumber(bn) {
   return s.length < 16 ? Number(s) : Number(s.slice(-13));
 }
 
-// sendTx helper: sends, logs, then waits for `confirmations` confirmations
 async function sendTx(fn, label, confirmations = 1) {
   console.log(`▶️ [tx] ${label}`);
-  const tx = await fn();
+  const tx      = await fn();
   console.log(`   ↳ sent: ${tx.hash}`);
   const receipt = await tx.wait(confirmations);
   console.log(`✅ [conf] ${label} in block ${receipt.blockNumber}`);
   return receipt;
 }
 
-// chunking utility
 function chunkArray(arr, size) {
   const out = [];
   for (let i = 0; i < arr.length; i += size) {
@@ -129,7 +129,6 @@ function chunkArray(arr, size) {
   return out;
 }
 
-// ─── On‑chain board packing/unpacking ─────────────────────────────────────────
 async function getOnChainBoard() {
   const packed = await gameContract.getBoard();
   const cells  = [];
@@ -143,6 +142,7 @@ async function getOnChainBoard() {
   }
   return cells;
 }
+
 function packBoard(cells) {
   const per    = 161, chunks = 26;
   const arr    = Array(chunks).fill(0n);
@@ -153,64 +153,62 @@ function packBoard(cells) {
   return arr.map(n => n.toString());
 }
 
-// Conway‑style skin evolution
 function runSkinStep(oldGrid) {
   const newGrid = Array(4096).fill(0);
   for (let y=0; y<64; y++) for (let x=0; x<64; x++) {
-    const i = y*64 + x, neigh = [];
+    const i    = y * 64 + x;
+    const neigh = [];
     for (let dy=-1; dy<=1; dy++) for (let dx=-1; dx<=1; dx++) {
       if (!dx && !dy) continue;
-      const nx = x+dx, ny = y+dy;
-      if (nx>=0&&nx<64&&ny>=0&&ny<64) {
-        const j = ny*64 + nx;
+      const nx = x + dx, ny = y + dy;
+      if (nx>=0 && nx<64 && ny>=0 && ny<64) {
+        const j = ny * 64 + nx;
         if (oldGrid[j]) neigh.push(oldGrid[j]);
       }
     }
     if (oldGrid[i]) {
-      newGrid[i] = (neigh.length===2 || neigh.length===3) ? oldGrid[i] : 0;
+      newGrid[i] = (neigh.length === 2 || neigh.length === 3) ? oldGrid[i] : 0;
     } else {
-      newGrid[i] = (neigh.length===3)
-        ? neigh[Math.floor(Math.random()*neigh.length)]
+      newGrid[i] = (neigh.length === 3)
+        ? neigh[Math.floor(Math.random() * neigh.length)]
         : 0;
     }
   }
   return newGrid;
 }
 
-// pick a random locked skin for this user
 async function determineSpawnedSkinForUser(user) {
   if (!skinLockContract) return 0;
   try {
     const locked = await skinLockContract.getLockedSkins(user);
     if (!locked.length) return 0;
-    return Number(locked[Math.floor(Math.random()*locked.length)].bakedId);
+    return Number(locked[Math.floor(Math.random() * locked.length)].bakedId);
   } catch {
     return 0;
   }
 }
 
-// draw PNG thumbnail
 async function generateThumbnail(board, gameId) {
-  const size  = 64, scale = 8;
-  const canvas= createCanvas(size,size);
-  const ctx   = canvas.getContext("2d");
-  board.forEach((c,i) => {
-    ctx.fillStyle = c===1? "#ff0050" : c===2? "#00bbff":"#000";
-    ctx.fillRect(i%size, Math.floor(i/size), 1,1);
+  const size   = 64, scale = 8;
+  const canvas = createCanvas(size, size);
+  const ctx    = canvas.getContext("2d");
+  board.forEach((c, i) => {
+    ctx.fillStyle = c === 1 ? "#ff0050" : c === 2 ? "#00bbff" : "#000";
+    ctx.fillRect(i % size, Math.floor(i / size), 1, 1);
   });
-  const big = createCanvas(size*scale, size*scale);
-  const bctx= big.getContext("2d");
+
+  const big  = createCanvas(size*scale, size*scale);
+  const bctx = big.getContext("2d");
   bctx.imageSmoothingEnabled = false;
   bctx.drawImage(canvas, 0, 0, size*scale, size*scale);
 
-  const dir  = path.join(__dirname,"public","images");
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir,{recursive:true});
+  const dir  = path.join(__dirname, "public", "images");
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `game_${gameId}.png`);
   fs.writeFileSync(file, big.toBuffer());
   return `${BASE_URL}/images/game_${gameId}.png`;
 }
 
-// broadcast phase & gameId
 function broadcastState() {
   io.emit("phaseUpdated", { phase, timeLeft: phaseTimeLeft, gameId: currentGameId });
 }
@@ -234,9 +232,9 @@ async function distributeWinnings(gameId, winTeam) {
   const MICRO_SCALE = BigInt(1_000_000);
   const rawAmounts  = amounts.map(a => BigInt(a) * MICRO_SCALE);
 
-  const CHUNK_SIZE  = 200;
-  const recChunks   = chunkArray(recipients, CHUNK_SIZE);
-  const amtChunks   = chunkArray(rawAmounts,  CHUNK_SIZE);
+  const CHUNK_SIZE = 200;
+  const recChunks  = chunkArray(recipients, CHUNK_SIZE);
+  const amtChunks  = chunkArray(rawAmounts,   CHUNK_SIZE);
 
   for (let i = 0; i < recChunks.length; i++) {
     await sendTx(
@@ -244,7 +242,6 @@ async function distributeWinnings(gameId, winTeam) {
       `mintBatch ${i+1}/${recChunks.length} (${recChunks[i].length} addresses)`
     );
   }
-
   console.log("💸 all batches done");
 }
 
@@ -254,21 +251,21 @@ async function resetGame() {
   const newId = currentGameId + 1;
 
   await sendTx(() => bettingContract.clearBets(currentGameId),  `clearBets(${currentGameId})`);
-  await sendTx(() => gameContract.newGame(newId),             `newGame(${newId})`);
-  await sendTx(() => bettingContract.openBetting(newId),      `openBetting(${newId})`);
+  await sendTx(() => gameContract.newGame(newId),              `newGame(${newId})`);
+  await sendTx(() => bettingContract.openBetting(newId),       `openBetting(${newId})`);
 
-  currentGameId     = newId;
-  phase             = "picking";
-  phaseTimeLeft     = PICKING_TIME;
-  cycleCount        = 0;
-  boardHistory      = [];
-  skinHistory       = [];
-  liveSkinOverlay   = Array(4096).fill(0);
-  boardSquareOwners = Array(4096).fill(null);
+  currentGameId       = newId;
+  phase               = "picking";
+  phaseTimeLeft       = PICKING_TIME;
+  cycleCount          = 0;
+  boardHistory        = [];
+  skinHistory         = [];
+  liveSkinOverlay     = Array(4096).fill(0);
+  boardSquareOwners   = Array(4096).fill(null);
   activePlayers.clear();
 
   const now = await provider.getBlockNumber();
-  lastJoinBlock  = lastPlaceBlock = now + 1;
+  lastJoinBlock = lastPlaceBlock = now + 1;
 
   console.log(`▶️ [step] New gameId=${currentGameId}, phase reset to "picking"`);
   broadcastState();
@@ -302,15 +299,17 @@ async function runFinalCycle() {
 
   await runConwaySteps(CONWAY_STEPS, FINAL_STEP_DELAY);
 
-  const finalB = await getOnChainBoard();
-  let redOnBlue = 0, blueOnRed = 0;
+  const finalB     = await getOnChainBoard();
+  let redOnBlue    = 0;
+  let blueOnRed    = 0;
   finalB.forEach((c,i) => {
     const y = Math.floor(i/64);
     if (c === 1 && y >= 32) redOnBlue++;
     if (c === 2 && y < 32)  blueOnRed++;
   });
-  const winner = redOnBlue === blueOnRed ? "Tie"
-               : redOnBlue > blueOnRed   ? "Red":"Blue";
+  const winner = redOnBlue === blueOnRed
+               ? "Tie"
+               : (redOnBlue > blueOnRed ? "Red" : "Blue");
 
   console.log(`   ↳ Final: RedOnBlue=${redOnBlue}, BlueOnRed=${blueOnRed} → ${winner}`);
   io.emit("winner", { winner });
@@ -324,9 +323,9 @@ async function runFinalCycle() {
 // ─── Record Game ──────────────────────────────────────────────────────────────
 async function recordGame(winner) {
   console.log("📚 [step] recordGame()");
-  const [rBig,bBig] = await gameContract.getTeamCounts(currentGameId);
-  const redCount    = toNumber(rBig);
-  const blueCount   = toNumber(bBig);
+  const [rBig, bBig] = await gameContract.getTeamCounts(currentGameId);
+  const redCount     = toNumber(rBig);
+  const blueCount    = toNumber(bBig);
 
   const bets = await bettingContract.getBets();
   bets.forEach(b => activePlayers.add(b.user.toLowerCase()));
@@ -340,14 +339,14 @@ async function recordGame(winner) {
   }
 
   const rec = {
-    gameId: currentGameId,
+    gameId:        currentGameId,
     winner,
-    timestamp: new Date(),
-    teamRedCount: redCount,
+    timestamp:     new Date(),
+    teamRedCount:  redCount,
     teamBlueCount: blueCount,
     boardHistory,
     skinHistory,
-    players: Array.from(activePlayers),
+    players:       Array.from(activePlayers),
     thumbnail
   };
   await new GameRecord(rec).save();
@@ -366,6 +365,7 @@ async function openBettingForCurrentGame() {
     `openBetting(${currentGameId})`
   );
 }
+
 async function closeBettingForCurrentGame() {
   console.log(`✋ [step] closeBetting()`);
   await sendTx(
@@ -447,6 +447,7 @@ setInterval(async () => {
   try {
     const currentBlock = await provider.getBlockNumber();
 
+    // TeamJoined logs
     if (currentBlock >= lastJoinBlock) {
       const joins = await gameContract.queryFilter(
         gameContract.filters.TeamJoined(currentGameId),
@@ -456,6 +457,7 @@ setInterval(async () => {
       lastJoinBlock = currentBlock + 1;
     }
 
+    // SquarePlaced logs
     if (currentBlock >= lastPlaceBlock) {
       const places = await gameContract.queryFilter(
         gameContract.filters.SquarePlaced(currentGameId),
@@ -468,6 +470,7 @@ setInterval(async () => {
       lastPlaceBlock = currentBlock + 1;
     }
 
+    // Skin spawn logic
     const board = await getOnChainBoard();
     for (let i = 0; i < 4096; i++) {
       if (board[i] && !liveSkinOverlay[i] && boardSquareOwners[i]) {
@@ -476,7 +479,6 @@ setInterval(async () => {
       }
     }
     io.emit("skinOverlayUpdated", liveSkinOverlay);
-
   } catch (err) {
     console.error("‼️ Polling error:", err);
   }
@@ -492,7 +494,7 @@ io.on("connection", socket => {
 });
 
 // ─── REST Endpoints ──────────────────────────────────────────────────────────
-// 1) Current game state
+// 1) Current state
 app.get("/api/state", (_,res) =>
   res.json({ phase, timeLeft: phaseTimeLeft, gameId: currentGameId })
 );
@@ -567,7 +569,7 @@ app.get("/api/bets/:gameId", async (req, res) => {
     currentGameId = onChainId;
 
     const now = await provider.getBlockNumber();
-    lastJoinBlock  = lastPlaceBlock = now + 1;
+    lastJoinBlock = lastPlaceBlock = now + 1;
 
     if (onChainPhase === 3) {
       await resetGame();
@@ -590,7 +592,7 @@ app.get("/api/bets/:gameId", async (req, res) => {
 })();
 
 const PORT = process.env.PORT || 3000;
-// bind 0.0.0.0 → listen on all interfaces
+// **Bind to 0.0.0.0** so it’s reachable externally
 serverHttp.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Listening on ${BASE_URL}:${PORT}`);
 });
