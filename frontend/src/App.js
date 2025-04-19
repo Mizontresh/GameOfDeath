@@ -1498,20 +1498,30 @@ useEffect(() => {
   }, []);
 
   // Poll the live board if in "placing" and not replaying
-  useEffect(() => {
-    if (phaseData.phase !== "placing") return;
-    if (selectedHistory || liveReplayIndex >= 0) return;
-    const interval = setInterval(() => {
-      fetch(`${backendUrl}/api/board`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data && data.board) setLiveBoard(data.board);
-        })
-        .catch((err) => console.error("Error polling board:", err));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [phaseData.phase, selectedHistory, liveReplayIndex]);
-
+    // ─── Poll the live board during placing ────────────────────────────────────
+    useEffect(() => {
+      // only during the on‑chain placing phase
+      if (phaseData.phase !== "placing") return;
+      // never poll if you’re currently replaying a record
+      if (selectedHistory || liveReplayIndex >= 0) return;
+  
+      const fetchBoard = async () => {
+        try {
+          const res = await fetch(`${backendUrl}/api/board`);
+          const { board } = await res.json();
+          // convert numeric array into your {value} shape
+          setLiveBoard(board.map((v) => ({ value: v })));
+        } catch (err) {
+          console.error("Error polling board:", err);
+        }
+      };
+  
+      // do an immediate fetch, then every second
+      fetchBoard();
+      const iv = setInterval(fetchBoard, 1000);
+      return () => clearInterval(iv);
+    }, [phaseData.phase, selectedHistory, liveReplayIndex, backendUrl]);
+  
   // Live board auto replay
   useEffect(() => {
     if (!liveAutoReplay || boardHistory.length === 0) return;
