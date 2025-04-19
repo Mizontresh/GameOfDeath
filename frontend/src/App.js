@@ -1686,29 +1686,28 @@ function App() {
     }
   
     try {
-      setStatus(`Placing ${betAmount} bet(s) on ${teamId === 1 ? "Red" : "Blue"}...`);
+      setStatus(`Placing ${betAmount} ticket${betAmount>1?"s":""} on ${teamId === 1 ? "Red" : "Blue"}...`);
   
-      // price per ticket
-      const pricePerTicket = ethers.parseEther("0.00005"); // bigint
-      // total cost = pricePerTicket * betAmount
-      const totalCost = pricePerTicket * BigInt(betAmount);
+      const pricePerTicket = ethers.parseEther("0.00005"); // your contract’s ticket price
   
-      // single call, passing total number of tickets
-      const tx = await bettingContract.placeBet(
-        teamId,
-        betAmount,
-        { value: totalCost }
-      );
-      await tx.wait();
+      // loop N times, each with tickets=1
+      for (let i = 0; i < betAmount; i++) {
+        const tx = await bettingContract.placeBet(
+          teamId,
+          1,                      // always 1 ticket per call
+          { value: pricePerTicket }
+        );
+        await tx.wait();
+      }
   
-      setStatus(`${betAmount} bet(s) placed on ${teamId === 1 ? "Red" : "Blue"}!`);
+      setStatus(`${betAmount} ticket${betAmount>1?"s":"" } placed on ${teamId === 1 ? "Red" : "Blue"}!`);
       setErrorMsg("");
     } catch (err) {
       console.error("Bet failed:", err);
-      setErrorMsg("Bet failed: " + err.message);
+      setErrorMsg("Bet failed: " + (err.reason||err.message));
     }
   }
-  
+   
   // Mint chest
   async function handleMintChest() {
     if (!userAddress) {
