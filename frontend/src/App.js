@@ -1499,29 +1499,27 @@ useEffect(() => {
 
   // Poll the live board if in "placing" and not replaying
     // ─── Poll the live board during placing ────────────────────────────────────
-    useEffect(() => {
-      // only during the on‑chain placing phase
-      if (phaseData.phase !== "placing") return;
-      // never poll if you’re currently replaying a record
-      if (selectedHistory || liveReplayIndex >= 0) return;
-  
-      const fetchBoard = async () => {
-        try {
-          const res = await fetch(`${backendUrl}/api/board`);
-          const { board } = await res.json();
-          // convert numeric array into your {value} shape
-          setLiveBoard(board.map((v) => ({ value: v })));
-        } catch (err) {
-          console.error("Error polling board:", err);
-        }
-      };
-  
-      // do an immediate fetch, then every second
-      fetchBoard();
-      const iv = setInterval(fetchBoard, 1000);
-      return () => clearInterval(iv);
-    }, [phaseData.phase, selectedHistory, liveReplayIndex, backendUrl]);
-  
+// ── Poll live board while placing ─────────────────────────────────────────────
+useEffect(() => {
+  if (phaseData.phase !== "placing") return;
+  if (selectedHistory || liveReplayIndex >= 0) return;
+
+  const interval = setInterval(async () => {
+    try {
+      const res = await fetch(`${backendUrl}/api/board`);
+      const { board } = await res.json();
+      if (board) {
+        // convert raw numbers → { value } objects
+        setLiveBoard(convertToAugmentedBoard(board));
+      }
+    } catch (err) {
+      console.error("Error polling board:", err);
+    }
+  }, 1000);
+
+  return () => clearInterval(interval);
+}, [phaseData.phase, selectedHistory, liveReplayIndex]);
+
   // Live board auto replay
   useEffect(() => {
     if (!liveAutoReplay || boardHistory.length === 0) return;
@@ -2460,11 +2458,11 @@ useEffect(() => {
                 Team Red: {selectedRecord.teamRedCount} | Team Blue: {selectedRecord.teamBlueCount}
               </p>
               {selectedRecord.thumbnail && (
-                <img
-                  src={selectedRecord.thumbnail}
-                  alt={`Game #${selectedRecord.gameId}`}
+              <img
+                src={resolveAssetUrl(selectedRecord.thumbnail)}
+                 alt={`Game #${selectedRecord.gameId}`}
                   style={{ width: "150px", height: "150px", objectFit: "cover" }}
-                />
+                 />
               )}
               <div style={{ marginTop: "6px" }}>
                 <button
