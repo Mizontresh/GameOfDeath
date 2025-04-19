@@ -1565,7 +1565,6 @@ function App() {
   useEffect(() => {
     fetchOwnedSkinsFromOpener();
   }, [fetchOwnedSkinsFromOpener]);
-   [chestOpenerContract, userAddress, status,fetchOwnedSkinsFromOpener]);
 
   // Select a record
   function selectRecord(rec) {
