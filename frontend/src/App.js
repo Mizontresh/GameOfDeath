@@ -1959,7 +1959,7 @@ useEffect(() => {
 
   // Decide which board to show (live vs record)
   let displayBoard;
-  if (selectedHistory) {
+  if (selectedHistory && selectedHistory.length > 0) {
     const replayIndex = selectedReplayIndex < 0 ? selectedHistory.length - 1 : selectedReplayIndex;
     displayBoard = convertToAugmentedBoard(selectedHistory[replayIndex]);
   } else if (liveReplayIndex >= 0 && boardHistory.length > 0) {
