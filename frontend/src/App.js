@@ -1939,19 +1939,28 @@ useEffect(() => {
       : skinOverlay;
 
   // scoreboard stats
-  function computeOpposingStats(board) {
-    let redOnBlue = 0;
-    let blueOnRed = 0;
-    for (let y = 0; y < 64; y++) {
-      for (let x = 0; x < 64; x++) {
-        const idx = y * 64 + x;
-        const val = board[idx].value;
-        if (val === 1 && y >= 32) redOnBlue++;
-        if (val === 2 && y < 32) blueOnRed++;
-      }
-    }
+  // scoreboard stats
+function computeOpposingStats(board) {
+  let redOnBlue = 0;
+  let blueOnRed = 0;
+
+  // if we haven't got a full 64×64 grid yet, bail out
+  if (!board || board.length < 64 * 64) {
     return { redOnBlue, blueOnRed };
   }
+
+  for (let y = 0; y < 64; y++) {
+    for (let x = 0; x < 64; x++) {
+      const idx = y * 64 + x;
+      // safely grab .value, defaulting to 0
+      const val = board[idx]?.value || 0;
+      if (val === 1 && y >= 32) redOnBlue++;
+      if (val === 2 && y < 32)  blueOnRed++;
+    }
+  }
+  return { redOnBlue, blueOnRed };
+}
+
   const { redOnBlue, blueOnRed } = computeOpposingStats(displayBoard);
   const totalOpposing = redOnBlue + blueOnRed;
   const redPercent = totalOpposing > 0 ? (redOnBlue / totalOpposing) * 100 : 50;
