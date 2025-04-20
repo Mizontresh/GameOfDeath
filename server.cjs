@@ -97,11 +97,11 @@ let lastPlaceBlock = 0;
 const activePlayers = new Set();
 
 // ─── Timing Constants ─────────────────────────────────────────────────────────
-const PICKING_TIME     = 120;
+const PICKING_TIME     = 150;
 const PLACING_TIME     = 150;
 const FINAL_COUNTDOWN  = 30;
-const CONWAY_STEPS     = 10;
-const MAX_CYCLES       = 5;
+const CONWAY_STEPS     = 50;
+const MAX_CYCLES       = 3;
 const STEP_DELAY       = 1000;
 const FINAL_STEP_DELAY = 2000;
 
@@ -463,30 +463,33 @@ setInterval(async () => {
   try {
     const currentBlock = await provider.getBlockNumber();
 
-    // TeamJoined logs
+    // 1) TeamJoined logs
     if (currentBlock >= lastJoinBlock) {
       const joins = await gameContract.queryFilter(
         gameContract.filters.TeamJoined(currentGameId),
-        lastJoinBlock, currentBlock
+        lastJoinBlock,
+        currentBlock
       );
       joins.forEach(log => activePlayers.add(log.args.user.toLowerCase()));
       lastJoinBlock = currentBlock + 1;
     }
 
-    // SquarePlaced logs
+    // 2) SquarePlaced logs
     if (currentBlock >= lastPlaceBlock) {
       const places = await gameContract.queryFilter(
         gameContract.filters.SquarePlaced(currentGameId),
-        lastPlaceBlock, currentBlock
+        lastPlaceBlock,
+        currentBlock
       );
       places.forEach(log => {
-        const x = Number(log.args.x), y = Number(log.args.y);
-        boardSquareOwners[y*64 + x] = log.args.user.toLowerCase();
+        const x = Number(log.args.x),
+              y = Number(log.args.y);
+        boardSquareOwners[y * 64 + x] = log.args.user.toLowerCase();
       });
       lastPlaceBlock = currentBlock + 1;
     }
 
-    // Skin spawn logic
+    // 3) Skin‑spawn logic
     const board = await getOnChainBoard();
     for (let i = 0; i < 4096; i++) {
       if (board[i] && !liveSkinOverlay[i] && boardSquareOwners[i]) {
@@ -494,8 +497,12 @@ setInterval(async () => {
         if (skin) liveSkinOverlay[i] = skin;
       }
     }
-    // emit updated overlay
+
+    // 4) **Emit both** the new board _and_ the skin overlay
+    const augmentedBoard = board.map(v => ({ value: v }));
+    io.emit("boardUpdated", augmentedBoard);
     io.emit("skinOverlayUpdated", liveSkinOverlay);
+
   } catch (err) {
     console.error("‼️ Polling error:", err);
   }

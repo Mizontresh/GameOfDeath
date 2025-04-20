@@ -51,9 +51,9 @@ const chestOpenerABI = [
   "function safeTransferFrom(address from, address to, uint256 tokenId, bytes data) external"
 ];
 const skinLockABI = [
-  "function getLockedSkins(address owner) external view returns (tuple(uint256 tokenId, uint256 bakedId)[])",
-  "function lockedTokens(uint256 tokenId) external view returns (address)",
-  "function unlockNFT(uint256 tokenId) external"
+  "function getLockedSkins(address owner) view returns (tuple(uint256 tokenId,uint256 bakedId)[])",
+  "function lockedTokens(address nft, uint256 tokenId) view returns (address)",
+  "function unlockNFT(address nft, uint256 tokenId)"
 ];
 const mizontreshABI = [
   "function balanceOf(address owner) external view returns (uint256)",
@@ -238,7 +238,7 @@ function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLoc
     if (!selectedLockedSkin) return;
     try {
       const { tokenId, bakedId } = selectedLockedSkin;
-      const tx = await skinLockContract.unlockNFT(tokenId);
+      await skinLockContract.unlockNFT(mizontreshAddress, tokenId);
       await tx.wait();
       alert(`Unlocked Skin #${bakedId} (tokenId ${tokenId})!`);
       fetchLockedSkins();
