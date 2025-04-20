@@ -1346,11 +1346,10 @@ function App() {
 
   // Socket setup
   // ─── Socket setup ───────────────────────────────────────────────────────────
+// 🟢 New code – only run once, and listen for skinOverlay
 useEffect(() => {
-  // build the full backend URL (fallback to current origin)
   const url = backendUrl || window.location.origin;
 
-  // connect via secure WebSocket only, explicit path
   socketRef.current = io(url, {
     path: "/socket.io",
     transports: ["websocket"],
@@ -1359,45 +1358,34 @@ useEffect(() => {
   socketRef.current.on("connect", () =>
     console.log("Socket connected:", socketRef.current.id)
   );
-
-  socketRef.current.on("phaseUpdated", (data) => setPhaseData(data));
-  socketRef.current.on("boardUpdated", (rawBoard) => {
-    if (liveReplayIndex < 0 && !selectedHistory) {
-      // wrap the incoming number[] in {value} objects
-      setLiveBoard(convertToAugmentedBoard(rawBoard));
-    }
-  });
-  
-
-  socketRef.current.on("newGameRecord", async () => {
-    setRefreshKey((prev) => prev + 1);
-    try {
-      const res = await fetch(`${backendUrl}/api/allRecords?skip=0&limit=1`);
-      const json = await res.json();
-      const rec = json.records?.[0] || {};
-      const msg =
-        rec.winner === "Red"
-          ? "Red Won"
-          : rec.winner === "Blue"
-          ? "Blue Won"
-          : "Nobody Won";
-
-      setLastWinnerMsg(msg);
-      setShowWinOverlay(true);
-      setTimeout(() => setShowWinOverlay(false), 5000);
-    } catch (err) {
-      console.error("Failed to fetch last winner:", err);
-    }
-  });
-
   socketRef.current.on("disconnect", () =>
     console.log("Socket disconnected")
   );
 
+  socketRef.current.on("phaseUpdated", (data) => {
+    setPhaseData(data);
+  });
+
+  socketRef.current.on("boardUpdated", (cells) => {
+    // server already sends [{ value: number }, …]
+    if (!selectedHistory && liveReplayIndex < 0) {
+      setLiveBoard(cells);
+    }
+  });
+
+  socketRef.current.on("skinOverlayUpdated", (grid) => {
+    setSkinOverlay(grid);
+  });
+
+  socketRef.current.on("newGameRecord", (rec) => {
+    setRefreshKey((k) => k + 1);
+    // … your existing logic
+  });
+
   return () => {
     socketRef.current.disconnect();
   };
-}, [liveReplayIndex, selectedHistory]);
+}, []);  // <- no deps
 
   // Periodically fetch phaseData
   useEffect(() => {

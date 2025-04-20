@@ -218,11 +218,7 @@ function broadcastState() {
     gameId: currentGameId,
   });
 
-  // 2) board (latest snapshot)
-  const lastBoard = boardHistory.length
-    ? boardHistory[boardHistory.length - 1].map(v => ({ value: v }))
-    : [];
-  io.emit("boardUpdated", lastBoard);
+
 
   // 3) skin overlay grid
   io.emit("skinOverlayUpdated", liveSkinOverlay);
