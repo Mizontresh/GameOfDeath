@@ -238,8 +238,9 @@ function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLoc
     if (!selectedLockedSkin) return;
     try {
       const { tokenId, bakedId } = selectedLockedSkin;
-      await skinLockContract.unlockNFT(mizontreshAddress, tokenId);
-      await tx.wait();
+      // send the unlock transaction and capture it in `tx`
+      const tx = await skinLockContract.unlockNFT(mizontreshAddress, tokenId);
+      await tx.wait();                               // now `tx` is defined
       alert(`Unlocked Skin #${bakedId} (tokenId ${tokenId})!`);
       fetchLockedSkins();
       if (refreshLockedSkins) refreshLockedSkins();
@@ -250,6 +251,7 @@ function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLoc
       setSelectedLockedSkin(null);
     }
   };
+  
 
   const handleCloseUnlockModal = () => {
     setSelectedLockedSkin(null);
