@@ -1964,7 +1964,6 @@ function computeOpposingStats(board) {
     <div className="app-container" style={{ margin: 0, padding: 0, height: "100vh" }}>
       <MusicPlayer backendUrl={backendUrl} />
       {showWinOverlay && <WinOverlay message={lastWinnerMsg} />}
-
       {showInfoPanel && <InfoPanel onClose={() => setShowInfoPanel(false)} />}
       {showMizontreshOverlay && mizontreshContract && (
         <MizontreshOverlay
@@ -1977,7 +1976,7 @@ function computeOpposingStats(board) {
           numUniqueSkins={uniqueSkinsCount}
         />
       )}
-
+  
       {/* Chest Animation Overlay */}
       {chestAnimation.active && (
         <div
@@ -2044,18 +2043,18 @@ function computeOpposingStats(board) {
           </div>
         </div>
       )}
-
+  
       <div className="title-bar" style={{ textAlign: "center", marginBottom: "2px" }}>
         <h1 style={{ margin: 0, fontSize: "3rem" }}>Game of Death</h1>
       </div>
-
+  
       <div className="scoreboard-bar-container" style={{ marginBottom: "4px" }}>
         <div className="score-bar">
           <div className="score-bar-red" style={{ width: `${redPercent}%` }} />
           <div className="score-bar-blue" style={{ width: `${bluePercent}%` }} />
         </div>
       </div>
-
+  
       <div className="wallet-corner">
         {userAddress ? (
           <>
@@ -2072,191 +2071,223 @@ function computeOpposingStats(board) {
           </button>
         )}
       </div>
-
-      <div className="main-content">
-        {/* LEFT PANEL */}
+  
+      <div className="main-content" style={{ display: "flex" }}>
+        {/* ─── LEFT PANEL ─────────────────────────────────────────── */}
         <div
           className="left-panel"
           style={{
+            display: "flex",
+            flexDirection: "column",
             width: "300px",
+            height: "calc(100vh - 100px)",    /* adjust 100px to your top‑bar height */
             padding: "5px",
             boxSizing: "border-box",
-            minHeight: "600px",
-            overflowY: "auto",
+            margin: "10px",
+            border: "1px solid #ff00e2",
+            borderRadius: "8px",
           }}
         >
-          <div
-            className="red-panel"
-            style={{
-              width: "270px",
-              padding: "10px",
-              boxSizing: "border-box",
-              minHeight: "80px",
-              marginTop: "6px",
-              height: "220px",
-            }}
-          >
-            <div className="miz"><h2 className="section-title">Your MIZ</h2></div>
-            <div className="miz-balance-container">
-              <img src={logo} alt="MIZ Logo" className="miz-logo" />
-              <p>{formatMizons(mizonsBalance)} MIZ</p>
-            </div>
-            {skinLockContract && (
-              <div className="locked-skins-section">
-                <h3>Locked Skins</h3>
-                <LockedSkinSlots
-                  userAddress={userAddress}
-                  skinLockContract={skinLockContract}
-                  backendUrl={backendUrl}
-                  refreshLockedSkins={fetchOwnedSkinsFromOpener}
-                />
-              </div>
-            )}
-          </div>
-
-          <div
-            className="chest-roll-section"
-            style={{ width: "270px", position: "relative", marginTop: "10px" }}
-          >
+          {/* STICKY TOP */}
+          <div className="panel-sticky" style={{ flex: "0 0 auto", padding: "5px" }}>
             <div
-              style={{ position: "relative", width: "100px", margin: "0 auto", cursor: "pointer" }}
-              onClick={handleMintChest}
+              className="red-panel"
+              style={{
+                width: "270px",
+                padding: "10px",
+                boxSizing: "border-box",
+                height: "220px",
+              }}
             >
-              <img
-                src={`${backendUrl}/chests/brain.png`}
-                alt="Brain Chest"
-                style={{ width: "100px", height: "auto" }}
-              />
-              <button
-                className="chest-square-button lore-info"
-                style={{ fontSize: "0.8rem" }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  fetchOwnedSkinsFromOpener().then(() => setShowLorePanel(true));
-                }}
-              >
-                Lore
-              </button>
-              <button
-                className="chest-square-button skin"
-                style={{ fontSize: "0.8rem" }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  fetchOwnedSkinsFromOpener().then(() => setShowWholeSkins(true));
-                }}
-              >
-                SKIN
-              </button>
-              <button
-                className="chest-square-button stop"
-                style={{
-                  padding: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "#222",
-                  border: "1px solid #ff00e2",
-                  borderRadius: "4px",
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowMizontreshOverlay(true);
-                }}
+              <div className="miz">
+                <h2 className="section-title">Your MIZ</h2>
+              </div>
+              <div className="miz-balance-container">
+                <img src={logo} alt="MIZ Logo" className="miz-logo" />
+                <p>{formatMizons(mizonsBalance)} MIZ</p>
+              </div>
+              {skinLockContract && (
+                <div className="locked-skins-section">
+                  <h3>Locked Skins</h3>
+                  <LockedSkinSlots
+                    userAddress={userAddress}
+                    skinLockContract={skinLockContract}
+                    backendUrl={backendUrl}
+                    refreshLockedSkins={fetchOwnedSkinsFromOpener}
+                  />
+                </div>
+              )}
+            </div>
+  
+            <div
+              className="chest-roll-section"
+              style={{ width: "270px", position: "relative", marginTop: "10px" }}
+            >
+              <div
+                style={{ position: "relative", width: "100px", margin: "0 auto", cursor: "pointer" }}
+                onClick={handleMintChest}
               >
                 <img
-                  src={`${backendUrl}/skins/icons/1024.png`}
-                  alt="1024"
-                  style={{ width: "70%", height: "70%", objectFit: "contain" }}
+                  src={`${backendUrl}/chests/brain.png`}
+                  alt="Brain Chest"
+                  style={{ width: "100px", height: "auto" }}
                 />
-              </button>
-              <button
-                className="chest-square-button info"
-                style={{ fontSize: "0.8rem" }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowInfoPanel(true);
-                }}
+                <button
+                  className="chest-square-button lore-info"
+                  style={{ fontSize: "0.8rem" }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fetchOwnedSkinsFromOpener().then(() => setShowLorePanel(true));
+                  }}
+                >
+                  Lore
+                </button>
+                <button
+                  className="chest-square-button skin"
+                  style={{ fontSize: "0.8rem" }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fetchOwnedSkinsFromOpener().then(() => setShowWholeSkins(true));
+                  }}
+                >
+                  SKIN
+                </button>
+                <button
+                  className="chest-square-button stop"
+                  style={{
+                    padding: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "#222",
+                    border: "1px solid #ff00e2",
+                    borderRadius: "4px",
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMizontreshOverlay(true);
+                  }}
+                >
+                  <img
+                    src={`${backendUrl}/skins/icons/1024.png`}
+                    alt="1024"
+                    style={{ width: "70%", height: "70%", objectFit: "contain" }}
+                  />
+                </button>
+                <button
+                  className="chest-square-button info"
+                  style={{ fontSize: "0.8rem" }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowInfoPanel(true);
+                  }}
+                >
+                  INFO
+                </button>
+              </div>
+              <div style={{ textAlign: "center", marginTop: "10px" }}>
+                <button onClick={approveTokens}>Approve</button>
+                <button onClick={handleMintChest} style={{ display: "block", margin: "6px auto" }}>
+                  Mint Chest
+                </button>
+              </div>
+              <div
+                className="inventory"
+                style={{ marginTop: "6px", width: "255px", height: "64px", overflowY: "auto" }}
               >
-                INFO
-              </button>
-            </div>
-            <div style={{ textAlign: "center", marginTop: "10px" }}>
-              <button onClick={approveTokens}>Approve</button>
-              <button onClick={handleMintChest} style={{ display: "block", margin: "6px auto" }}>
-                Mint Chest
-              </button>
-            </div>
-            <div
-              className="inventory"
-              style={{ marginTop: "6px", width: "255px", height: "64px", overflowY: "auto" }}
-            >
-              <h3 style={{ fontSize: "1rem", textAlign: "center", margin: "0 0 4px 0" }}>
-                Your Inventory
-              </h3>
-              <Inventory inventory={inventory} backendUrl={backendUrl} onOpenChest={handleOpenChest} />
+                <h3 style={{ fontSize: "1rem", textAlign: "center", margin: "0 0 4px 0" }}>
+                  Your Inventory
+                </h3>
+                <Inventory inventory={inventory} backendUrl={backendUrl} onOpenChest={handleOpenChest} />
+              </div>
             </div>
           </div>
-
-          <div style={{ marginTop: "10px", width: "100%" }}>
-            <div className="phase-info-card" style={{ marginBottom: "8px" }}>
-              <p style={{ margin: 0 }}>Phase: {phaseData.phase}</p>
-              <p style={{ margin: 0 }}>
-                Time Left: {phaseData.timeLeft > 0 ? phaseData.timeLeft : 0}s
-              </p>
-              <p style={{ margin: 0 }}>Game ID: {phaseData.gameId}</p>
-            </div>
-            <div className="yourteam"><p style={{ margin: "4px 0" }}>
-              Your Team: {userTeam === 1 ? "Red" : userTeam === 2 ? "Blue" : "None"}
-            </p></div>
-            <div className="join-team-buttons" style={{ marginBottom: "6px" }}>
-              <button
-                className="join-red"
-                onClick={() => joinTeam(1)}
-                disabled={phaseData.phase !== "picking"}
-              >
-                Join Red
-              </button>
-              <button
-                className="join-blue"
-                onClick={() => joinTeam(2)}
-                disabled={phaseData.phase !== "picking"}
-              >
-                Join Blue
-              </button>
-            </div>
-            <div className="teamred" ><p style={{ margin: 0 }}>Team Red: {teamCounts.red}</p></div>
-            <div className="teamblue" ><p style={{ margin: 0 }}>Team Blue: {teamCounts.blue}</p></div>
-            <div className="betpanel" ><h3 style={{ margin: "8px 0 4px 0" }}>Bet Panel</h3></div>
-            <div className="redbets" ><p style={{ margin: 0 }}>Red Bets: {liveRedBets}</p></div>
-            <div className="bluebets" ><p style={{ margin: 0 }}>Blue Bets: {liveBlueBets}</p></div>
-            <div className="tickets" ><p style={{ margin: 0 }}>Tickets: {betAmount}</p></div>
-            <input
-              type="range"
-              min="1"
-              max="10"
-              value={betAmount}
-              onChange={(e) => setBetAmount(Number(e.target.value))}
-            />
-            <div className="bet-buttons" style={{ marginTop: "6px" }}>
-              <button
-                className="bet-red"
-                onClick={() => placeBet(1)}
-                disabled={phaseData.phase !== "picking"}
-              >
-                Bet Red
-              </button>
-              <button
-                className="bet-blue"
-                onClick={() => placeBet(2)}
-                disabled={phaseData.phase !== "picking"}
-              >
-                Bet Blue
-              </button>
+  
+          {/* SCROLLABLE BOTTOM */}
+          <div
+            className="panel-scroll"
+            style={{
+              flex: "1 1 auto",
+              overflowY: "auto",
+              padding: "10px",
+              paddingBottom: "50px",  /* breathing room at bottom */
+            }}
+          >
+            <div style={{ marginTop: "10px", width: "100%" }}>
+              <div className="phase-info-card" style={{ marginBottom: "8px" }}>
+                <p style={{ margin: 0 }}>Phase: {phaseData.phase}</p>
+                <p style={{ margin: 0 }}>
+                  Time Left: {phaseData.timeLeft > 0 ? phaseData.timeLeft : 0}s
+                </p>
+                <p style={{ margin: 0 }}>Game ID: {phaseData.gameId}</p>
+              </div>
+              <div className="yourteam">
+                <p style={{ margin: "4px 0" }}>
+                  Your Team: {userTeam === 1 ? "Red" : userTeam === 2 ? "Blue" : "None"}
+                </p>
+              </div>
+              <div className="join-team-buttons" style={{ marginBottom: "6px" }}>
+                <button
+                  className="join-red"
+                  onClick={() => joinTeam(1)}
+                  disabled={phaseData.phase !== "picking"}
+                >
+                  Join Red
+                </button>
+                <button
+                  className="join-blue"
+                  onClick={() => joinTeam(2)}
+                  disabled={phaseData.phase !== "picking"}
+                >
+                  Join Blue
+                </button>
+              </div>
+              <div className="teamred">
+                <p style={{ margin: 0 }}>Team Red: {teamCounts.red}</p>
+              </div>
+              <div className="teamblue">
+                <p style={{ margin: 0 }}>Team Blue: {teamCounts.blue}</p>
+              </div>
+              <div className="betpanel">
+                <h3 style={{ margin: "8px 0 4px 0" }}>Bet Panel</h3>
+              </div>
+              <div className="redbets">
+                <p style={{ margin: 0 }}>Red Bets: {liveRedBets}</p>
+              </div>
+              <div className="bluebets">
+                <p style={{ margin: 0 }}>Blue Bets: {liveBlueBets}</p>
+              </div>
+              <div className="tickets">
+                <p style={{ margin: 0 }}>Tickets: {betAmount}</p>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                value={betAmount}
+                onChange={(e) => setBetAmount(Number(e.target.value))}
+              />
+              <div className="bet-buttons" style={{ marginTop: "6px" }}>
+                <button
+                  className="bet-red"
+                  onClick={() => placeBet(1)}
+                  disabled={phaseData.phase !== "picking"}
+                >
+                  Bet Red
+                </button>
+                <button
+                  className="bet-blue"
+                  onClick={() => placeBet(2)}
+                  disabled={phaseData.phase !== "picking"}
+                >
+                  Bet Blue
+                </button>
+              </div>
             </div>
           </div>
         </div>
-
-        {/* CENTER BOARD */}
+  
+        {/* ─── CENTER BOARD ───────────────────────────────────────── */}
         <div className="center-board" style={{ position: "relative" }}>
           <div
             className="board-container"
@@ -2268,7 +2299,7 @@ function computeOpposingStats(board) {
             }}
           >
             <div className="board-border" style={{ position: "relative" }}>
-              {/* Veil the opposite side if needed */}
+              {/* Veil */}
               {showVeil && userTeam === 1 && (
                 <div
                   style={{
@@ -2297,8 +2328,8 @@ function computeOpposingStats(board) {
                   }}
                 />
               )}
-
-              {/* Base Board (Red/Blue) */}
+  
+              {/* Base Board */}
               <div className="board-grid">
                 {displayBoard.map((cell, i) => {
                   const x = i % 64;
@@ -2306,7 +2337,11 @@ function computeOpposingStats(board) {
                   let cellClass = "cell";
                   if (cell.value === 1) cellClass += " red";
                   if (cell.value === 2) cellClass += " blue";
-                  if (!selectedHistory && liveReplayIndex < 0 && phaseData.phase === "placing") {
+                  if (
+                    !selectedHistory &&
+                    liveReplayIndex < 0 &&
+                    phaseData.phase === "placing"
+                  ) {
                     if (userTeam === 1 && y >= 32) cellClass += " dim-cell";
                     if (userTeam === 2 && y < 32) cellClass += " dim-cell";
                   }
@@ -2325,9 +2360,10 @@ function computeOpposingStats(board) {
                   );
                 })}
               </div>
-
-              {/* Skin Overlay (same 64×64 grid, absolutely placed) */}
-              <div className="skinz"
+  
+              {/* Skin Overlay */}
+              <div
+                className="skinz"
                 style={{
                   position: "absolute",
                   top: 0,
@@ -2342,127 +2378,168 @@ function computeOpposingStats(board) {
                 }}
               >
                 {currentSkinGrid.map((skin, i) =>
-                             skin ? (
-                              <img
-                                     key={i}
-                                     src={resolveAssetUrl(`/skins/icons/${skin}.png`)}
-                                     style={{ width: "100%", height: "100%", objectFit: "contain" }}
-                                     alt={`Skin ${skin}`}
-                        />
-                      ) : (
-                          <div key={i} style={{ width: "100%", height: "100%" }} />
-                      )
-                    )}
-
+                  skin ? (
+                    <img
+                      key={i}
+                      src={resolveAssetUrl(`/skins/icons/${skin}.png`)}
+                      style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                      alt={`Skin ${skin}`}
+                    />
+                  ) : (
+                    <div key={i} style={{ width: "100%", height: "100%" }} />
+                  )
+                )}
               </div>
             </div>
           </div>
           {!selectedHistory && (
             <div style={{ marginBottom: "4px", textAlign: "center" }}>
-              <span style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#fff" }}>LIVE</span>
+              <span style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#fff" }}>
+                LIVE
+              </span>
             </div>
           )}
         </div>
-
-        {/* RIGHT PANEL */}
-        <div className="right-panel" style={{ width: "300px" }}>
-          <h2 style={{ margin: "0 0 8px 0" }}>Game Records</h2>
-          <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginBottom: "8px" }}>
-            <button
-              className="toggle-btn"
-              onClick={() => {
-                setShowMyGames(false);
-                setRefreshKey((prev) => prev + 1);
+  
+        {/* ─── RIGHT PANEL ────────────────────────────────────────── */}
+        <div
+          className="right-panel"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            width: "300px",
+            height: "calc(100vh - 100px)",
+            padding: "5px",
+            boxSizing: "border-box",
+            margin: "10px",
+            border: "1px solid #ff00e2",
+            borderRadius: "8px",
+          }}
+        >
+          {/* STICKY TOP */}
+          <div className="panel-sticky" style={{ flex: "0 0 auto", padding: "5px" }}>
+            <h2 style={{ margin: "0 0 8px 0" }}>Game Records</h2>
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                justifyContent: "center",
+                marginBottom: "8px",
               }}
             >
-              All Games
-            </button>
-            <button
-              className="toggle-btn"
-              onClick={() => {
-                setShowMyGames(true);
-                setRefreshKey((prev) => prev + 1);
-              }}
-              disabled={!userAddress}
-            >
-              My Games
-            </button>
-          </div>
-          <RecordsList
-            backendUrl={backendUrl}
-            showMyGames={showMyGames}
-            userAddress={userAddress}
-            onSelectRecord={selectRecord}
-            refreshKey={refreshKey}
-          />
-          {selectedRecord && selectedHistory && (
-            <div style={{ marginTop: "10px" }}>
-              <div className="gamedetails" ><h3>Game #{selectedRecord.gameId} Details</h3></div>
-              <p>
-                Played at:{" "}
-                {selectedRecord.timestamp
-                  ? new Date(selectedRecord.timestamp).toLocaleString()
-                  : "N/A"}
-              </p>
-              <div className="winner" ><p>Winner: {selectedRecord.winner}</p></div>
-              <p>
-                Team Red: {selectedRecord.teamRedCount} | Team Blue: {selectedRecord.teamBlueCount}
-              </p>
-              {selectedRecord.thumbnail && (
-              <img
-                src={resolveAssetUrl(selectedRecord.thumbnail)}
-                 alt={`Game #${selectedRecord.gameId}`}
-                  style={{ width: "150px", height: "150px", objectFit: "cover" }}
-                 />
-              )}
-              <div style={{ marginTop: "6px" }}>
-                <button
-                  className="auto-replay-btn"
-                  onClick={() => {
-                    setSelectedAutoReplay(!selectedAutoReplay);
-                    if (!selectedAutoReplay) setSelectedReplayIndex(0);
-                  }}
-                >
-                  {selectedAutoReplay ? "Stop Auto Replay" : "Start Auto Replay"}
-                </button>
-              </div>
-              <div className="replay-container" style={{ justifyContent: "center" }}>
-                <button
-                  onClick={() => {
-                    setSelectedReplayIndex((prev) => {
-                      if (selectedHistory.length === 0) return -1;
-                      if (prev < 0) return selectedHistory.length - 1;
-                      return Math.max(0, prev - 1);
-                    });
-                  }}
-                >
-                  ←
-                </button>
-                <button onClick={recordGoBackToLive}>Exit</button>
-                <button
-                  onClick={() => {
-                    setSelectedReplayIndex((prev) => {
-                      if (selectedHistory.length === 0) return -1;
-                      if (prev < 0) return 0;
-                      return Math.min(selectedHistory.length - 1, prev + 1);
-                    });
-                  }}
-                >
-                  →
-                </button>
-              </div>
-              {selectedReplayIndex < 0 ? (
-                <p>Viewing final snapshot</p>
-              ) : (
-                <p>
-                  Turn {selectedReplayIndex + 1}/{selectedHistory.length}
-                </p>
-              )}
+              <button
+                className="toggle-btn"
+                onClick={() => {
+                  setShowMyGames(false);
+                  setRefreshKey((prev) => prev + 1);
+                }}
+              >
+                All Games
+              </button>
+              <button
+                className="toggle-btn"
+                onClick={() => {
+                  setShowMyGames(true);
+                  setRefreshKey((prev) => prev + 1);
+                }}
+                disabled={!userAddress}
+              >
+                My Games
+              </button>
             </div>
-          )}
+          </div>
+  
+          {/* SCROLLABLE BOTTOM */}
+          <div
+            className="panel-scroll"
+            style={{
+              flex: "1 1 auto",
+              overflowY: "auto",
+              padding: "10px",
+              paddingBottom: "50px",
+            }}
+          >
+            <RecordsList
+              backendUrl={backendUrl}
+              showMyGames={showMyGames}
+              userAddress={userAddress}
+              onSelectRecord={selectRecord}
+              refreshKey={refreshKey}
+            />
+            {selectedRecord && selectedHistory && (
+              <div style={{ marginTop: "10px" }}>
+                <div className="gamedetails">
+                  <h3>Game #{selectedRecord.gameId} Details</h3>
+                </div>
+                <p>
+                  Played at:{" "}
+                  {selectedRecord.timestamp
+                    ? new Date(selectedRecord.timestamp).toLocaleString()
+                    : "N/A"}
+                </p>
+                <div className="winner">
+                  <p>Winner: {selectedRecord.winner}</p>
+                </div>
+                <p>
+                  Team Red: {selectedRecord.teamRedCount} | Team Blue:{" "}
+                  {selectedRecord.teamBlueCount}
+                </p>
+                {selectedRecord.thumbnail && (
+                  <img
+                    src={resolveAssetUrl(selectedRecord.thumbnail)}
+                    alt={`Game #${selectedRecord.gameId}`}
+                    style={{ width: "150px", height: "150px", objectFit: "cover" }}
+                  />
+                )}
+                <div style={{ marginTop: "6px" }}>
+                  <button
+                    className="auto-replay-btn"
+                    onClick={() => {
+                      setSelectedAutoReplay(!selectedAutoReplay);
+                      if (!selectedAutoReplay) setSelectedReplayIndex(0);
+                    }}
+                  >
+                    {selectedAutoReplay ? "Stop Auto Replay" : "Start Auto Replay"}
+                  </button>
+                </div>
+                <div className="replay-container" style={{ justifyContent: "center" }}>
+                  <button
+                    onClick={() => {
+                      setSelectedReplayIndex((prev) => {
+                        if (selectedHistory.length === 0) return -1;
+                        if (prev < 0) return selectedHistory.length - 1;
+                        return Math.max(0, prev - 1);
+                      });
+                    }}
+                  >
+                    ←
+                  </button>
+                  <button onClick={recordGoBackToLive}>Exit</button>
+                  <button
+                    onClick={() => {
+                      setSelectedReplayIndex((prev) => {
+                        if (selectedHistory.length === 0) return -1;
+                        if (prev < 0) return 0;
+                        return Math.min(selectedHistory.length - 1, prev + 1);
+                      });
+                    }}
+                  >
+                    →
+                  </button>
+                </div>
+                {selectedReplayIndex < 0 ? (
+                  <p>Viewing final snapshot</p>
+                ) : (
+                  <p>
+                    Turn {selectedReplayIndex + 1}/{selectedHistory.length}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-
+  
       {/* Whole Skins / Lore Panels */}
       {showWholeSkins && chestOpenerContract && (
         <WholeSkinsPanel
@@ -2476,7 +2553,7 @@ function computeOpposingStats(board) {
         />
       )}
       {showLorePanel && <LorePanel onClose={() => setShowLorePanel(false)} ownedSkins={ownedSkins} />}
-
+  
       {errorMsg && (
         <div className="error-bar">
           {errorMsg}
@@ -2487,6 +2564,6 @@ function computeOpposingStats(board) {
       )}
     </div>
   );
-}
+  
 
 export default App;

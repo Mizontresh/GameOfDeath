@@ -1416,31 +1416,29 @@ html, body, #root {
 }
 /* ---------------- Global & Reset (tweak) ---------------- */
 /* 1. Allow the document to scroll */
-html, body, #root {
-  /* undo any “overflow: hidden” */
-  overflow: auto !important;
-  /* let the height grow naturally */
-  height: auto !important;
-  min-height: 100%;
-}
-
-/* 2. Make your React root fill the width, but not lock its height */
-.app-container {
-  /* remove the 100vh clamp */
-  height: auto;
-  min-height: 100vh;   /* optional: ensure at least full‑screen, but grows past */
-  overflow: visible;    /* children won’t get clipped */
-}
-
-/* 3. Remove any panel‑level scrollbars */
+/* make both side‑panels flex‑columns of full‑height less your top bar */
 .left-panel,
 .right-panel {
-  /* lift any vertical max‑height or overflow rules */
-  max-height: none !important;
-  overflow: visible !important;
+  display: flex;
+  flex-direction: column;
+  /* subtract your top‑bar height (e.g. 100px) if needed */
+  height: calc(100vh - 100px);
+  /* optional margin to separate from edge */
+  margin: 10px;
+  border: 1px solid #ff00e2;
+  border-radius: 8px;
 }
 
-/* 4. Tweak margins/padding if things now tuck under the top bar */
-.main-content {
-  margin-top: /* your top‑bar height, e.g. */ 100px;
+/* never shrink the sticky section */
+.panel-sticky {
+  flex: 0 0 auto;
+  padding: 10px; /* or whatever your panel padding is */
+}
+
+/* grow & scroll the bottom section, with extra bottom padding for “empty room” */
+.panel-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 10px;
+  padding-bottom: 50px;  /* ← gives you blank space to scroll into */
 }
