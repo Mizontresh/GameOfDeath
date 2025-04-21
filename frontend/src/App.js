@@ -2564,6 +2564,6 @@ function computeOpposingStats(board) {
       )}
     </div>
   );
-  
+} 
 
 export default App;
