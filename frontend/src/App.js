@@ -853,7 +853,7 @@ function RecordsList({
   // initial & pagination load
   useEffect(() => {
     fetchRecords();
-  }, [fetchRecords]);
+  }, []);
 
   return (
     <div className="records-list-container">
@@ -2268,35 +2268,22 @@ function computeOpposingStats(board) {
             }}
           >
             <div className="board-border" style={{ position: "relative" }}>
-              {/* Veil the opposite side if needed */}
-              {showVeil && userTeam === 1 && (
-                <div
+              {/* Veil the opposite side if needed (only one div) */}
+              {showVeil && userTeam > 0 && (
+             <div
                   style={{
-                    position: "absolute",
-                    bottom: 0,
-                    left: 0,
-                    width: "100%",
-                    height: "50%",
-                    background: "rgba(0,0,0,0.3)",
-                    pointerEvents: "none",
-                    zIndex: 10,
-                  }}
-                />
-              )}
-              {showVeil && userTeam === 2 && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: "50%",
-                    background: "rgba(0,0,0,0.3)",
-                    pointerEvents: "none",
-                    zIndex: 10,
-                  }}
-                />
-              )}
+                       position: "absolute",
+                         left: 0,
+                         width: "100%",
+                         height: "50%",
+                         background: "rgba(0,0,0,0.3)",
+                         pointerEvents: "none",
+                         zIndex: 10,
+                         // if on Red team, veil bottom; if Blue, veil top:
+                         ...(userTeam === 1 ? { bottom: 0 } : { top: 0 }),
+                      }}
+                     />
+                   )}
 
               {/* Base Board (Red/Blue) */}
               <div className="board-grid">
