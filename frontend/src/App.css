@@ -1415,39 +1415,32 @@ html, body, #root {
   color: #888;
 }
 /* ---------------- Global & Reset (tweak) ---------------- */
+/* 1. Allow the document to scroll */
 html, body, #root {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  /* allow scrolling instead of hiding overflow */
-  overflow: auto;
-  background: #000;
-  font-family: "Orbitron", sans-serif;
-  color: #fff;
-  box-sizing: border-box;
+  /* undo any “overflow: hidden” */
+  overflow: auto !important;
+  /* let the height grow naturally */
+  height: auto !important;
+  min-height: 100%;
 }
 
-/* ---------------- App Container ---------------- */
+/* 2. Make your React root fill the width, but not lock its height */
 .app-container {
-  /* fill the viewport, but allow internal scroll */
-  height: 100vh;
-  overflow-y: auto;
-  /* if you want a horizontal scrollbar on super‑wide layouts: */
-  overflow-x: auto;
+  /* remove the 100vh clamp */
+  height: auto;
+  min-height: 100vh;   /* optional: ensure at least full‑screen, but grows past */
+  overflow: visible;    /* children won’t get clipped */
 }
 
-/* ---------------- Main Content & Panels ---------------- */
-.main-content {
-  display: flex;
-  /* let it wrap on narrow widths if you prefer */
-  flex-wrap: wrap;
-  /* scroll each panel independently? */
-  /* overflow-y: auto; */
-}
-
-/* Optional: if your left/right panels overflow vertically */
+/* 3. Remove any panel‑level scrollbars */
 .left-panel,
 .right-panel {
-  max-height: calc(100vh - 100px); /* subtract top bar height */
-  overflow-y: auto;
+  /* lift any vertical max‑height or overflow rules */
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+/* 4. Tweak margins/padding if things now tuck under the top bar */
+.main-content {
+  margin-top: /* your top‑bar height, e.g. */ 100px;
 }
