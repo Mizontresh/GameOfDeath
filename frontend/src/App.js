@@ -1493,6 +1493,14 @@ useEffect(() => {
     }, 500);
     return () => clearInterval(autoInterval);
   }, [selectedAutoReplay, selectedHistory]);
+ // inside App(), after you pull in phaseData.gameId...
+
+  useEffect(() => {
+    // New game just started, wipe out any stale replay/history
+    setSelectedHistory(null);
+    setSelectedReplayIndex(-1);
+    setSelectedAutoReplay(false);
+  }, [phaseData.gameId]);
 
   // Poll team counts
   useEffect(() => {
@@ -2268,6 +2276,19 @@ function computeOpposingStats(board) {
             }}
           >
             <div className="board-border" style={{ position: "relative" }}>
+            <div
+              style={{
+                position: "absolute",
+                top: "50%",
+                left: 0,
+                width: "100%",
+                height: "2px",
+                backgroundColor: "#ff00e2",
+                transform: "translateY(-1px)",
+                pointerEvents: "none",
+                zIndex: 20000,
+            }}
+           />
               {/* Veil the opposite side if needed (only one div) */}
               {showVeil && userTeam > 0 && (
              <div
