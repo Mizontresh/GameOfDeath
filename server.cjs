@@ -272,14 +272,22 @@ async function resetGame() {
   boardHistory        = [];
   skinHistory         = [];
   liveSkinOverlay     = Array(4096).fill(0);
-  boardSquareOwners   = Array(4096).fill(null);
+  boardSquareOwners   = Array(4096).fill(0);
   activePlayers.clear();
 
   const now = await provider.getBlockNumber();
   lastJoinBlock = lastPlaceBlock = now + 1;
 
   console.log(`▶️ [step] New gameId=${currentGameId}, phase reset to "picking"`);
+
+  // 1) broadcast your new phase/time
   broadcastState();
+
+  // 2) force every client to wipe their board back to “empty”
+  io.emit('boardUpdated', boardSquareOwners.map(v => ({ value: v })));
+
+  // 3) force every client to wipe their skin overlay
+  io.emit('skinOverlayUpdated', liveSkinOverlay);
 }
 
 // ─── Conway Steps ────────────────────────────────────────────────────────────
