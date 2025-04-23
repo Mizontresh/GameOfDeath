@@ -2291,7 +2291,7 @@ function computeOpposingStats(board) {
                 backgroundColor: "#ff00e2",
                 transform: "translateY(-1px)",
                 pointerEvents: "none",
-                zIndex: 20000,
+                zIndex: 10000,
             }}
            />
               {/* Veil the opposite side if needed (only one div) */}
