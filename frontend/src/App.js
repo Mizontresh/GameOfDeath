@@ -2294,22 +2294,6 @@ function computeOpposingStats(board) {
                 zIndex: 10000,
             }}
            />
-              {/* Veil the opposite side if needed (only one div) */}
-              {showVeil && userTeam > 0 && (
-             <div
-                  style={{
-                       position: "absolute",
-                         left: 0,
-                         width: "100%",
-                         height: "50%",
-                         background: "rgba(0,0,0,0.3)",
-                         pointerEvents: "none",
-                         zIndex: 0,
-                         // if on Red team, veil bottom; if Blue, veil top:
-                         ...(userTeam === 1 ? { bottom: 0 } : { top: 0 }),
-                      }}
-                     />
-                   )}
 
               {/* Base Board (Red/Blue) */}
               <div className="board-grid">
