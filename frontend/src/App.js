@@ -1971,12 +1971,6 @@ function computeOpposingStats(board) {
   const redPercent = totalOpposing > 0 ? (redOnBlue / totalOpposing) * 100 : 50;
   const bluePercent = totalOpposing > 0 ? (blueOnRed / totalOpposing) * 100 : 50;
 
- // only during placing _and_ while timeLeft > 0
-  const showVeil =
-  phaseData.phase === "placing" &&
-  phaseData.timeLeft > 0 &&
-  !selectedHistory &&
-  liveReplayIndex < 0;
 
   // For Mizontresh lore gating
   const uniqueSkinsCount = ownedSkins.length;
