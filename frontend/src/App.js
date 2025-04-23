@@ -1269,6 +1269,14 @@ function App() {
  * Given either a full URL or a bare path,
  * rewrite it to always point at our `backendUrl`.
  */
+  // inside your App() render, before the return:
+  const isPlacingPhase = phaseData.phase === "placing";
+  const showVeil =
+    isPlacingPhase &&
+    phaseData.timeLeft > 0 &&
+    !selectedHistory &&
+    liveReplayIndex < 0 &&
+    userTeam > 0;
 
   // Poll skin overlay
   useEffect(() => {
@@ -2271,6 +2279,7 @@ function computeOpposingStats(board) {
 
         {/* CENTER BOARD */}
         {/* CENTER BOARD */}
+{/* CENTER BOARD */}
 <div className="center-board" style={{ position: "relative" }}>
   <div
     className="board-container"
@@ -2298,7 +2307,7 @@ function computeOpposingStats(board) {
       />
 
       {/* Veil the opposite side, zIndex 1 */}
-      {showVeil && userTeam > 0 && (
+      {showVeil && (
         <div
           style={{
             position: "absolute",
@@ -2308,7 +2317,7 @@ function computeOpposingStats(board) {
             background: "rgba(0,0,0,0.3)",
             pointerEvents: "none",
             zIndex: 1,
-            // if on Red team, veil bottom; if Blue, veil top
+            // if on Red team, veil bottom; if Blue, veil top:
             ...(userTeam === 1 ? { bottom: 0 } : { top: 0 }),
           }}
         />
@@ -2353,19 +2362,20 @@ function computeOpposingStats(board) {
       </div>
 
       {/* Skin Overlay stays on top */}
-      <div className="skinz"
-           style={{
-             position: "absolute",
-             top: 0,
-             left: 0,
-             width: boardSize,
-             height: boardSize,
-             zIndex: 5000,
-             pointerEvents: "none",
-             display: "grid",
-             gridTemplateColumns: "repeat(64, 1fr)",
-             gridTemplateRows: "repeat(64, 1fr)",
-           }}
+      <div
+        className="skinz"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: boardSize,
+          height: boardSize,
+          zIndex: 5000,
+          pointerEvents: "none",
+          display: "grid",
+          gridTemplateColumns: "repeat(64, 1fr)",
+          gridTemplateRows: "repeat(64, 1fr)",
+        }}
       >
         {currentSkinGrid.map((skin, i) =>
           skin ? (
@@ -2391,6 +2401,7 @@ function computeOpposingStats(board) {
     </div>
   )}
 </div>
+
 
 
         {/* RIGHT PANEL */}

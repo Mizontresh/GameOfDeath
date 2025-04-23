@@ -103,7 +103,7 @@ const FINAL_COUNTDOWN  = 30;
 const CONWAY_STEPS     = 50;
 const MAX_CYCLES       = 3;
 const STEP_DELAY       = 1000;
-const FINAL_STEP_DELAY = 2000;
+const FINAL_STEP_DELAY = 1250;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const sleep = ms => new Promise(r => setTimeout(r, ms));
