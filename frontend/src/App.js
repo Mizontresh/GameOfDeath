@@ -2270,96 +2270,128 @@ function computeOpposingStats(board) {
         </div>
 
         {/* CENTER BOARD */}
-        <div className="center-board" style={{ position: "relative" }}>
-          <div
-            className="board-container"
-            style={{
-              width: boardSize,
-              height: boardSize,
-              marginBottom: "6px",
-              position: "relative",
-            }}
-          >
-            <div className="board-border" style={{ position: "relative" }}>
+        {/* CENTER BOARD */}
+<div className="center-board" style={{ position: "relative" }}>
+  <div
+    className="board-container"
+    style={{
+      width: boardSize,
+      height: boardSize,
+      marginBottom: "6px",
+      position: "relative",
+    }}
+  >
+    <div className="board-border" style={{ position: "relative" }}>
+      {/* permanent centre‐line, zIndex 3 */}
+      <div
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: 0,
+          width: "100%",
+          height: "2px",
+          backgroundColor: "#ff00e2",
+          transform: "translateY(-1px)",
+          pointerEvents: "none",
+          zIndex: 3,
+        }}
+      />
+
+      {/* Veil the opposite side, zIndex 1 */}
+      {showVeil && userTeam > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            width: "100%",
+            height: "50%",
+            background: "rgba(0,0,0,0.3)",
+            pointerEvents: "none",
+            zIndex: 1,
+            // if on Red team, veil bottom; if Blue, veil top
+            ...(userTeam === 1 ? { bottom: 0 } : { top: 0 }),
+          }}
+        />
+      )}
+
+      {/* Base Board (Red/Blue), zIndex 2 so it sits above the veil */}
+      <div
+        className="board-grid"
+        style={{
+          position: "relative",
+          zIndex: 2,
+        }}
+      >
+        {displayBoard.map((cell, i) => {
+          const x = i % 64;
+          const y = Math.floor(i / 64);
+          let cellClass = "cell";
+          if (cell.value === 1) cellClass += " red";
+          if (cell.value === 2) cellClass += " blue";
+          if (
+            !selectedHistory &&
+            liveReplayIndex < 0 &&
+            phaseData.phase === "placing"
+          ) {
+            if (userTeam === 1 && y >= 32) cellClass += " dim-cell";
+            if (userTeam === 2 && y < 32) cellClass += " dim-cell";
+          }
+          return (
             <div
-              style={{
-                position: "absolute",
-                top: "50%",
-                left: 0,
-                width: "100%",
-                height: "2px",
-                backgroundColor: "#ff00e2",
-                transform: "translateY(-1px)",
-                pointerEvents: "none",
-                zIndex: 10000,
-            }}
-           />
+              key={i}
+              className={cellClass}
+              onClick={() => {
+                if (selectedHistory) return;
+                if (phaseData.phase !== "placing") return;
+                if (userTeam === 1 && y >= 32) return;
+                if (userTeam === 2 && y < 32) return;
+                placeSquare(x, y);
+              }}
+            />
+          );
+        })}
+      </div>
 
-              {/* Base Board (Red/Blue) */}
-              <div className="board-grid">
-                {displayBoard.map((cell, i) => {
-                  const x = i % 64;
-                  const y = Math.floor(i / 64);
-                  let cellClass = "cell";
-                  if (cell.value === 1) cellClass += " red";
-                  if (cell.value === 2) cellClass += " blue";
-                  if (!selectedHistory && liveReplayIndex < 0 && phaseData.phase === "placing") {
-                    if (userTeam === 1 && y >= 32) cellClass += " dim-cell";
-                    if (userTeam === 2 && y < 32) cellClass += " dim-cell";
-                  }
-                  return (
-                    <div
-                      key={i}
-                      className={cellClass}
-                      onClick={() => {
-                        if (selectedHistory) return;
-                        if (phaseData.phase !== "placing") return;
-                        if (userTeam === 1 && y >= 32) return;
-                        if (userTeam === 2 && y < 32) return;
-                        placeSquare(x, y);
-                      }}
-                    />
-                  );
-                })}
-              </div>
+      {/* Skin Overlay stays on top */}
+      <div className="skinz"
+           style={{
+             position: "absolute",
+             top: 0,
+             left: 0,
+             width: boardSize,
+             height: boardSize,
+             zIndex: 5000,
+             pointerEvents: "none",
+             display: "grid",
+             gridTemplateColumns: "repeat(64, 1fr)",
+             gridTemplateRows: "repeat(64, 1fr)",
+           }}
+      >
+        {currentSkinGrid.map((skin, i) =>
+          skin ? (
+            <img
+              key={i}
+              src={resolveAssetUrl(`/skins/icons/${skin}.png`)}
+              style={{ width: "100%", height: "100%", objectFit: "contain" }}
+              alt={`Skin ${skin}`}
+            />
+          ) : (
+            <div key={i} style={{ width: "100%", height: "100%" }} />
+          )
+        )}
+      </div>
+    </div>
+  </div>
 
-              {/* Skin Overlay (same 64×64 grid, absolutely placed) */}
-              <div className="skinz"
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: boardSize,
-                  height: boardSize,
-                  zIndex: 5000,
-                  pointerEvents: "none",
-                  display: "grid",
-                  gridTemplateColumns: "repeat(64, 1fr)",
-                  gridTemplateRows: "repeat(64, 1fr)",
-                }}
-              >
-                {currentSkinGrid.map((skin, i) =>
-                             skin ? (
-                              <img
-                                     key={i}
-                                     src={resolveAssetUrl(`/skins/icons/${skin}.png`)}
-                                     style={{ width: "100%", height: "100%", objectFit: "contain" }}
-                                     alt={`Skin ${skin}`}
-                        />
-                      ) : (
-                          <div key={i} style={{ width: "100%", height: "100%" }} />
-                      )
-                    )}
+  {!selectedHistory && (
+    <div style={{ marginBottom: "4px", textAlign: "center" }}>
+      <span style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#fff" }}>
+        LIVE
+      </span>
+    </div>
+  )}
+</div>
 
-              </div>
-            </div>
-          </div>
-          {!selectedHistory && (
-            <div style={{ marginBottom: "4px", textAlign: "center" }}>
-              <span style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#fff" }}>LIVE</span>
-            </div>
-          )}
-        </div>
 
         {/* RIGHT PANEL */}
         <div className="right-panel" style={{ width: "300px" }}>
