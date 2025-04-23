@@ -1963,7 +1963,12 @@ function computeOpposingStats(board) {
   const redPercent = totalOpposing > 0 ? (redOnBlue / totalOpposing) * 100 : 50;
   const bluePercent = totalOpposing > 0 ? (blueOnRed / totalOpposing) * 100 : 50;
 
-  const showVeil = phaseData.phase === "placing" && !selectedHistory && liveReplayIndex < 0;
+ // only during placing _and_ while timeLeft > 0
+  const showVeil =
+  phaseData.phase === "placing" &&
+  phaseData.timeLeft > 0 &&
+  !selectedHistory &&
+  liveReplayIndex < 0;
 
   // For Mizontresh lore gating
   const uniqueSkinsCount = ownedSkins.length;
@@ -2299,7 +2304,7 @@ function computeOpposingStats(board) {
                          height: "50%",
                          background: "rgba(0,0,0,0.3)",
                          pointerEvents: "none",
-                         zIndex: 10,
+                         zIndex: 0,
                          // if on Red team, veil bottom; if Blue, veil top:
                          ...(userTeam === 1 ? { bottom: 0 } : { top: 0 }),
                       }}
