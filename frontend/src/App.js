@@ -237,21 +237,34 @@ function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLoc
   const confirmUnlock = async () => {
     if (!selectedLockedSkin) return;
     const { tokenId, bakedId } = selectedLockedSkin;
+  
     try {
-      // send the unlock transaction, pointing at the chest‐opener NFT contract
-      const tx = await skinLockContract.unlockNFT(chestOpenerAddress, tokenId);
+      // figure out which NFT contract we used when we locked it
+      const lockedOnChest = await skinLockContract.lockedTokens(chestOpenerAddress, tokenId);
+      const lockedOnMizo  = await skinLockContract.lockedTokens(mizontreshAddress, tokenId);
+  
+      let nftToUnlock;
+      if (lockedOnChest.toLowerCase() === skinLockAddress.toLowerCase()) {
+        nftToUnlock = chestOpenerAddress;
+      } else if (lockedOnMizo.toLowerCase() === skinLockAddress.toLowerCase()) {
+        nftToUnlock = mizontreshAddress;
+      } else {
+        throw new Error("Can't find which NFT was locked here");
+      }
+  
+      const tx = await skinLockContract.unlockNFT(nftToUnlock, tokenId);
       await tx.wait();
-      alert(`Unlocked Skin #${bakedId} (tokenId ${tokenId})!`);
-      fetchLockedSkins();
+      alert(`Unlocked Skin #${bakedId} (tokenId ${tokenId}) from ${nftToUnlock}!`);
+      await fetchLockedSkins();
       if (refreshLockedSkins) refreshLockedSkins();
     } catch (err) {
       console.error("Error unlocking skin:", err);
-      // show the actual revert reason if any
       alert("Error unlocking skin: " + (err.reason || err.message));
     } finally {
       setSelectedLockedSkin(null);
     }
   };
+  
   
 
   const handleCloseUnlockModal = () => {
