@@ -585,15 +585,34 @@ function MizontreshOverlay({
         const approveTx = await mizontreshContract.approve(skinLockAddress, tokenId);
         await approveTx.wait();
       }
-      const data = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1024]);
-      const tx = await mizontreshContract["safeTransferFrom(address,address,uint256,bytes)"](
-        userAddress,
-        skinLockAddress,
-        tokenId,
-        data
-      );
-      await tx.wait();
-      alert(`Locked token #${tokenId}`);
+      // pick which contract instance we’re using
+const c = mizontreshContract;
+
+// ensure the registry is approved
+const current = await c.getApproved(tokenId);
+if (current.toLowerCase() !== skinLockAddress.toLowerCase()) {
+  const a = await c.approve(skinLockAddress, tokenId);
+  await a.wait();
+}
+
+// do the correct transfer style
+let tx;
+if (c.safeTransferFrom.length === 3) {
+  // ERC-721 three-arg
+  tx = await c.safeTransferFrom(userAddress, skinLockAddress, tokenId);
+} else {
+  // ERC-721 four-arg (pass along your bakedId in data)
+  const data = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [tokenId]);
+  tx = await c["safeTransferFrom(address,address,uint256,bytes)"](
+    userAddress,
+    skinLockAddress,
+    tokenId,
+    data
+  );
+}
+await tx.wait();
+alert(`Locked token #${tokenId}!`);
+
       if (refreshInventory) refreshInventory();
     } catch (err) {
       console.error("Error locking token:", err);
@@ -1335,9 +1354,6 @@ try {
 
 await window.ethereum.request({ method: "eth_requestAccounts" });
 
-
-// 4) Finally, request accounts on Taiko
-await window.ethereum.request({ method: "eth_requestAccounts" });
 
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
