@@ -1305,12 +1305,11 @@ function App() {
       return;
     }
     try {
-      const TAIKO_CHAIN_ID = "0xa06"; // Taiko Hekla L2 chain ID (decimal 4102)
+      const TAIKO_CHAIN_ID = "0x28C58"; // Taiko Alethia chain ID (decimal 167000)
+
 try {
-  // 1) Check current network
   const current = await window.ethereum.request({ method: "eth_chainId" });
   if (current !== TAIKO_CHAIN_ID) {
-    // 2) Try switching to Taiko
     await window.ethereum.request({
       method: "wallet_switchEthereumChain",
       params: [{ chainId: TAIKO_CHAIN_ID }],
@@ -1318,22 +1317,24 @@ try {
   }
 } catch (err) {
   if (err.code === 4902) {
-    // 3) If Taiko isn’t in MetaMask yet, add it
     await window.ethereum.request({
       method: "wallet_addEthereumChain",
       params: [{
         chainId: TAIKO_CHAIN_ID,
-        chainName: "Taiko Hekla L2",
+        chainName: "Taiko Alethia",
         nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-        rpcUrls: ["https://rpc.hekla.taiko.xyz"],
-        blockExplorerUrls: ["https://explorer.hekla.taiko.xyz"],
+        rpcUrls: ["https://rpc.ankr.com/taiko"],
+        blockExplorerUrls: ["https://taikoscan.network"],
       }],
     });
   } else {
-    setErrorMsg("Please switch to Taiko in your wallet");
+    setErrorMsg("Please switch to Taiko Alethia in your wallet");
     return;
   }
 }
+
+await window.ethereum.request({ method: "eth_requestAccounts" });
+
 
 // 4) Finally, request accounts on Taiko
 await window.ethereum.request({ method: "eth_requestAccounts" });
