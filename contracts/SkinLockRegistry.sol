@@ -1,4 +1,3 @@
-// contracts/SkinLockRegistry.sol
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
@@ -6,95 +5,106 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
+/// @dev The minimal interface your NFT contracts must implement
 interface IAllowedNFT {
     function tokenAwardedItem(uint256 tokenId) external view returns (uint256);
 }
 
 contract SkinLockRegistry is Ownable, IERC721Receiver {
-    mapping(address=>bool) public allowedNFTs;
-    mapping(address=>mapping(uint256=>address)) public lockedTokens;
-    mapping(address=>mapping(uint256=>address)) public tokenOrigin;
-
-    struct LockedSkin { uint256 tokenId; uint256 bakedId; }
-    mapping(address=>LockedSkin[]) private lockedSkinsOf;
     uint256 public constant MAX_LOCKED_SKINS = 3;
 
+    /// @notice Which NFT contracts are allowed to be locked here
+    mapping(address => bool) public allowedNFTs;
+
+    /// @notice For each NFT contract & tokenId, who locked it in
+    mapping(address => mapping(uint256 => address)) public lockedTokens;
+
+    /// @notice For each locker, a list of their currently locked skins
+    struct LockedSkin { 
+        uint256 tokenId; 
+        uint256 bakedId; 
+    }
+    mapping(address => LockedSkin[]) public lockedSkinsOf;
+
+    event NFTAllowed(address indexed nft, bool allowed);
     event TokenLocked(
-      address indexed nftContract,
-      uint256 indexed tokenId,
-      address indexed originalOwner,
-      uint256 bakedId,
-      uint256 timestamp
+        address indexed nft,
+        uint256 indexed tokenId,
+        address indexed locker,
+        uint256 bakedId,
+        uint256 timestamp
     );
     event TokenUnlocked(
-      address indexed nftContract,
-      uint256 indexed tokenId,
-      address indexed returnedTo,
-      uint256 timestamp
+        address indexed nft,
+        uint256 indexed tokenId,
+        address indexed locker,
+        uint256 timestamp
     );
 
-    constructor(address initialNFT, address initialOwner)
-      Ownable(initialOwner)
-    {
-        if (initialNFT != address(0)) {
-            allowedNFTs[initialNFT] = true;
-        }
+    /// @notice Owner can toggle which NFT contracts are lockable here
+    function setAllowedNFT(address nft, bool allow) external onlyOwner {
+        allowedNFTs[nft] = allow;
+        emit NFTAllowed(nft, allow);
     }
 
-    function addAllowedNFT(address nft) external onlyOwner {
-        require(nft!=address(0), "zero");
-        allowedNFTs[nft] = true;
-    }
-
-    function removeAllowedNFT(address nft) external onlyOwner {
-        allowedNFTs[nft] = false;
-    }
-
+    /// @dev Handle incoming ERC-721 transfers.  `from` is the locker.
     function onERC721Received(
-      address, address from, uint256 tokenId, bytes calldata
-    ) external override returns(bytes4) {
+        address /* operator */,
+        address from,
+        uint256 tokenId,
+        bytes calldata /* data */
+    ) external override returns (bytes4) {
         address nft = msg.sender;
-        require(allowedNFTs[nft], "not allowed");
-        require(lockedSkinsOf[from].length < MAX_LOCKED_SKINS, "max");
-        require(lockedTokens[nft][tokenId] == address(0), "locked");
+        require(allowedNFTs[nft], "SkinLock: not allowed");
+        require(lockedSkinsOf[from].length < MAX_LOCKED_SKINS, "SkinLock: max locked");
+        require(lockedTokens[nft][tokenId] == address(0), "SkinLock: already locked");
 
-        require(IERC721(nft).ownerOf(tokenId)==address(this), "transfer fail");
+        // ensure the registry actually owns it
+        require(IERC721(nft).ownerOf(tokenId) == address(this), "SkinLock: transfer failed");
         uint256 baked = IAllowedNFT(nft).tokenAwardedItem(tokenId);
 
+        // record who locked it
         lockedTokens[nft][tokenId] = from;
-        tokenOrigin[nft][tokenId]  = nft;
         lockedSkinsOf[from].push(LockedSkin(tokenId, baked));
 
         emit TokenLocked(nft, tokenId, from, baked, block.timestamp);
         return this.onERC721Received.selector;
     }
 
-    function getLockedSkins(address owner) external view returns(LockedSkin[] memory) {
+    /// @notice Get the full list of your currently locked skins
+    function getLockedSkins(address owner) external view returns (LockedSkin[] memory) {
         return lockedSkinsOf[owner];
     }
 
+    /// @notice Unlock your skin and have it sent straight back to you
     function unlockNFT(address nft, uint256 tokenId) external {
-        address orig = lockedTokens[nft][tokenId];
-        require(orig == msg.sender, "not owner");
-        delete lockedTokens[nft][tokenId];
-        delete tokenOrigin[nft][tokenId];
+        address locker = lockedTokens[nft][tokenId];
+        require(locker == msg.sender, "SkinLock: not locker");
 
-        LockedSkin[] storage arr = lockedSkinsOf[orig];
-        for (uint i=0; i < arr.length; i++) {
+        // remove from the mapping
+        delete lockedTokens[nft][tokenId];
+
+        // remove from your array
+        LockedSkin[] storage arr = lockedSkinsOf[locker];
+        for (uint i = 0; i < arr.length; i++) {
             if (arr[i].tokenId == tokenId) {
-                arr[i] = arr[arr.length-1];
+                arr[i] = arr[arr.length - 1];
                 arr.pop();
                 break;
             }
         }
-        IERC721(nft).safeTransferFrom(address(this), orig, tokenId);
-        emit TokenUnlocked(nft, tokenId, orig, block.timestamp);
+
+        // transfer it back to you
+        IERC721(nft).safeTransferFrom(address(this), msg.sender, tokenId);
+        emit TokenUnlocked(nft, tokenId, msg.sender, block.timestamp);
     }
 
+    /// @notice In case ETH accidentally gets sent here
     function rescueETH(uint256 amount) external onlyOwner {
-        require(address(this).balance>=amount, "low");
+        require(address(this).balance >= amount, "SkinLock: insufficient ETH");
         payable(owner()).transfer(amount);
     }
+
     receive() external payable {}
     fallback() external payable {}
 }
