@@ -240,20 +240,23 @@ function LockedSkinSlots({ userAddress, skinLockContract, backendUrl, refreshLoc
   
     try {
       // figure out which NFT contract we used when we locked it
-      const lockedOnChest = await skinLockContract.lockedTokens(chestOpenerAddress, tokenId);
-      const lockedOnMizo  = await skinLockContract.lockedTokens(mizontreshAddress, tokenId);
+      const lockedOnChestOwner = await skinLockContract.lockedTokens(chestOpenerAddress, tokenId);
+      const lockedOnMizoOwner  = await skinLockContract.lockedTokens(mizontreshAddress, tokenId);
   
       let nftToUnlock;
-      if (lockedOnChest.toLowerCase() === skinLockAddress.toLowerCase()) {
+      // whichever contract shows your address as the locker is the one you used
+      if (lockedOnChestOwner.toLowerCase() === userAddress.toLowerCase()) {
         nftToUnlock = chestOpenerAddress;
-      } else if (lockedOnMizo.toLowerCase() === skinLockAddress.toLowerCase()) {
+      } else if (lockedOnMizoOwner.toLowerCase() === userAddress.toLowerCase()) {
         nftToUnlock = mizontreshAddress;
       } else {
         throw new Error("Can't find which NFT was locked here");
       }
   
+      // now call unlockNFT with the correct contract
       const tx = await skinLockContract.unlockNFT(nftToUnlock, tokenId);
       await tx.wait();
+  
       alert(`Unlocked Skin #${bakedId} (tokenId ${tokenId}) from ${nftToUnlock}!`);
       await fetchLockedSkins();
       if (refreshLockedSkins) refreshLockedSkins();
