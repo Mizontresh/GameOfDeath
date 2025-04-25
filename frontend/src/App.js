@@ -1278,21 +1278,6 @@ function App() {
     liveReplayIndex < 0 &&
     userTeam > 0;
 
-  // Poll skin overlay
-  useEffect(() => {
-    async function fetchSkinOverlay() {
-      try {
-        const res = await fetch(`${backendUrl}/api/skinOverlay`);
-        const data = await res.json();
-        if (data.skinOverlay) setSkinOverlay(data.skinOverlay);
-      } catch (err) {
-        console.error("Error fetching skin overlay:", err);
-      }
-    }
-    fetchSkinOverlay();
-    const interval = setInterval(fetchSkinOverlay, 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Handle board sizing
   useEffect(() => {
@@ -1374,16 +1359,15 @@ useEffect(() => {
     setPhaseData(data);
   });
 
-  socketRef.current.on("boardUpdated", (cells) => {
-    // server already sends [{ value: number }, …]
+  socketRef.current.on("stateUpdate", ({ board, skinOverlay }) => {
+    // only overwrite live if we're not in a replay
     if (!selectedHistory && liveReplayIndex < 0) {
-      setLiveBoard(cells);
+      // server now sends the same [{value:…},…] you used to get from boardUpdated
+      setLiveBoard(board);
     }
+    setSkinOverlay(skinOverlay);
   });
-
-  socketRef.current.on("skinOverlayUpdated", (grid) => {
-    setSkinOverlay(grid);
-  });
+  
 
   socketRef.current.on("newGameRecord", (rec) => {
     setRefreshKey((k) => k + 1);

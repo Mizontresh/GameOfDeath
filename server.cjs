@@ -16,7 +16,6 @@ const {
   RPC_URL,
   PRIVATE_KEY,
   MONGO_URI         = "mongodb://127.0.0.1:27017/gameofdeath",
-  // use your public IP or domain here, or override via env
   BASE_URL          = process.env.BASE_URL || "http://3.234.250.159:3000",
   GAMEOFDEATH_ADDRESS,
   GAMEOFDEATH_BETTING_ADDRESS,
@@ -91,6 +90,9 @@ let boardHistory        = [];
 let skinHistory         = [];
 let liveSkinOverlay     = Array(4096).fill(0);
 let boardSquareOwners   = Array(4096).fill(null);
+
+// **New:** track the live board grid for broadcasting
+let lastBoardGrid       = Array(4096).fill(0);
 
 let lastJoinBlock  = 0;
 let lastPlaceBlock = 0;
@@ -209,22 +211,38 @@ async function generateThumbnail(board, gameId) {
   return `${BASE_URL}/images/game_${gameId}.png`;
 }
 
-// ─── Duplicate on clients: phase, board & skin overlay ──────────────────────
-function broadcastState() {
-  // 1) phase
+// ─── Phase Broadcast ─────────────────────────────────────────────────────────
+function broadcastPhase() {
   io.emit("phaseUpdated", {
     phase,
     timeLeft: phaseTimeLeft,
     gameId: currentGameId,
   });
-
-
-
-  // 3) skin overlay grid
-  io.emit("skinOverlayUpdated", liveSkinOverlay);
 }
 
-// ─── Distribute winnings (batch‑mint) ─────────────────────────────────────────
+// ─── Unified State Broadcast ─────────────────────────────────────────────────
+// Sends both board & skinOverlay in one event.
+function broadcastState() {
+  broadcastPhase();
+
+  // build the plain board
+  const board = lastBoardGrid.map(v => ({ value: v }));
+
+  // merge NFT-spawned skins and fallback to board cell as “skin”
+  const combinedOverlay = lastBoardGrid.map((cellVal, i) => {
+    if (liveSkinOverlay[i] && liveSkinOverlay[i] > 0) {
+      return liveSkinOverlay[i];
+    }
+    return cellVal === 1 || cellVal === 2 ? cellVal : 0;
+  });
+
+  io.emit("stateUpdate", {
+    board,
+    skinOverlay: combinedOverlay
+  });
+}
+
+// ─── Distribute winnings (batch-mint) ─────────────────────────────────────────
 async function distributeWinnings(gameId, winTeam) {
   console.log("💰 distributeWinnings for", gameId, winTeam);
   const bets    = await bettingContract.getBets();
@@ -239,7 +257,6 @@ async function distributeWinnings(gameId, winTeam) {
     Math.floor(Number(w.tickets) * loseSum / winSum)
   );
 
-  // scale up by 10^6 so that 1 → 1 μMIZ
   const MICRO_SCALE = BigInt(1_000_000);
   const rawAmounts  = amounts.map(a => BigInt(a) * MICRO_SCALE);
 
@@ -272,7 +289,8 @@ async function resetGame() {
   boardHistory        = [];
   skinHistory         = [];
   liveSkinOverlay     = Array(4096).fill(0);
-  boardSquareOwners   = Array(4096).fill(0);
+  boardSquareOwners   = Array(4096).fill(null);
+  lastBoardGrid       = Array(4096).fill(0);
   activePlayers.clear();
 
   const now = await provider.getBlockNumber();
@@ -280,14 +298,8 @@ async function resetGame() {
 
   console.log(`▶️ [step] New gameId=${currentGameId}, phase reset to "picking"`);
 
-  // 1) broadcast your new phase/time
+  // unified state broadcast wipes both board & skins client-side
   broadcastState();
-
-  // 2) force every client to wipe their board back to “empty”
-  io.emit('boardUpdated', boardSquareOwners.map(v => ({ value: v })));
-
-  // 3) force every client to wipe their skin overlay
-  io.emit('skinOverlayUpdated', liveSkinOverlay);
 }
 
 // ─── Conway Steps ────────────────────────────────────────────────────────────
@@ -297,9 +309,9 @@ async function runConwaySteps(steps, delay = STEP_DELAY) {
   for (let i = 1; i <= steps; i++) {
     b = conway.runOneStep(b);
     boardHistory.push([...b]);
+    lastBoardGrid = [...b];
     liveSkinOverlay = runSkinStep(liveSkinOverlay);
     skinHistory.push([...liveSkinOverlay]);
-    // broadcast updated board + skins each step
     broadcastState();
     console.log(`   ↳ Conway step ${i}/${steps}`);
     await sleep(delay);
@@ -315,6 +327,7 @@ async function runFinalCycle() {
   console.log("🔚 [step] runFinalCycle()");
   const snap = await getOnChainBoard();
   boardHistory.push([...snap]);
+  lastBoardGrid = [...snap];
   skinHistory.push([...liveSkinOverlay]);
 
   await runConwaySteps(CONWAY_STEPS, FINAL_STEP_DELAY);
@@ -406,7 +419,7 @@ async function setContractPhase(newPhase, attempt = 1) {
       `setPhase(${newPhase})`
     );
     phase = newPhase;
-    console.log(`   ↳ on‑chain phase now "${newPhase}"`);
+    console.log(`   ↳ on-chain phase now "${newPhase}"`);
     broadcastState();
   } catch (e) {
     console.error("‼️ setContractPhase error:", e);
@@ -456,7 +469,6 @@ async function transitionPhase() {
 setInterval(() => {
   if (!initialized || transitionInProgress || phaseTimeLeft <= 0) return;
   phaseTimeLeft--;
-  console.log(`⏱ [Timer] Phase "${phase}", timeLeft=${phaseTimeLeft}s`);
   broadcastState();
   if (phaseTimeLeft === 0) transitionPhase();
 }, 1000);
@@ -493,8 +505,9 @@ setInterval(async () => {
       lastPlaceBlock = currentBlock + 1;
     }
 
-    // 3) Skin‑spawn logic
+    // 3) Skin-spawn logic
     const board = await getOnChainBoard();
+    board.forEach((val, i) => lastBoardGrid[i] = val);
     for (let i = 0; i < 4096; i++) {
       if (board[i] && !liveSkinOverlay[i] && boardSquareOwners[i]) {
         const skin = await determineSpawnedSkinForUser(boardSquareOwners[i]);
@@ -502,10 +515,8 @@ setInterval(async () => {
       }
     }
 
-    // 4) **Emit both** the new board _and_ the skin overlay
-    const augmentedBoard = board.map(v => ({ value: v }));
-    io.emit("boardUpdated", augmentedBoard);
-    io.emit("skinOverlayUpdated", liveSkinOverlay);
+    // 4) unified broadcast
+    broadcastState();
 
   } catch (err) {
     console.error("‼️ Polling error:", err);
@@ -514,21 +525,25 @@ setInterval(async () => {
 
 // ─── Initial Sync ─────────────────────────────────────────────────────────────
 io.on("connection", socket => {
-  // phase
+  // send current phase
   socket.emit("phaseUpdated", {
     phase,
     timeLeft: phaseTimeLeft,
     gameId: currentGameId,
   });
 
-  // board (latest)
-  const lastBoard = boardHistory.length
-    ? boardHistory[boardHistory.length - 1].map(v => ({ value: v }))
-    : [];
-  socket.emit("boardUpdated", lastBoard);
-
-  // skin overlay
-  socket.emit("skinOverlayUpdated", liveSkinOverlay);
+  // send unified board+skins
+  const board = lastBoardGrid.map(v => ({ value: v }));
+  const combinedOverlay = lastBoardGrid.map((cellVal, i) => {
+    if (liveSkinOverlay[i] && liveSkinOverlay[i] > 0) {
+      return liveSkinOverlay[i];
+    }
+    return cellVal === 1 || cellVal === 2 ? cellVal : 0;
+  });
+  socket.emit("stateUpdate", {
+    board,
+    skinOverlay: combinedOverlay
+  });
 });
 
 // ─── REST Endpoints ──────────────────────────────────────────────────────────
@@ -562,7 +577,7 @@ app.get("/api/records/:user", async (req, res) => {
   res.json({ records: recs });
 });
 
-// 4) Live on‑chain board
+// 4) Live on-chain board
 app.get("/api/board", async (_, res) => {
   try {
     const board = await getOnChainBoard();
@@ -573,14 +588,20 @@ app.get("/api/board", async (_, res) => {
   }
 });
 
-// 5) Full server‑side history
+// 5) Full server-side history
 app.get("/api/history", (_, res) => {
   res.json({ boardHistory, skinHistory });
 });
 
 // 6) Skin overlay grid
 app.get("/api/skinOverlay", (_, res) => {
-  res.json({ skinOverlay: liveSkinOverlay });
+  const combinedOverlay = lastBoardGrid.map((cellVal, i) => {
+    if (liveSkinOverlay[i] && liveSkinOverlay[i] > 0) {
+      return liveSkinOverlay[i];
+    }
+    return cellVal === 1 || cellVal === 2 ? cellVal : 0;
+  });
+  res.json({ skinOverlay: combinedOverlay });
 });
 
 // 7) Current bets for a game
@@ -630,7 +651,6 @@ app.get("/api/bets/:gameId", async (req, res) => {
 })();
 
 const PORT = process.env.PORT || 3000;
-// **Bind to 0.0.0.0** so it’s reachable externally
 serverHttp.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Listening on ${BASE_URL}:${PORT}`);
 });
