@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
-/// @dev The minimal interface your NFT contracts must implement
+/// @dev Minimal interface your NFT contracts must implement
 interface IAllowedNFT {
     function tokenAwardedItem(uint256 tokenId) external view returns (uint256);
 }
@@ -20,11 +20,11 @@ contract SkinLockRegistry is Ownable, IERC721Receiver {
     mapping(address => mapping(uint256 => address)) public lockedTokens;
 
     /// @notice For each locker, a list of their currently locked skins
-    struct LockedSkin { 
-        uint256 tokenId; 
-        uint256 bakedId; 
+    struct LockedSkin {
+        uint256 tokenId;
+        uint256 bakedId;
     }
-    mapping(address => LockedSkin[]) public lockedSkinsOf;
+    mapping(address => LockedSkin[]) private lockedSkinsOf;
 
     event NFTAllowed(address indexed nft, bool allowed);
     event TokenLocked(
@@ -41,26 +41,35 @@ contract SkinLockRegistry is Ownable, IERC721Receiver {
         uint256 timestamp
     );
 
+    /// @param initialOwner   who becomes the registry owner
+    /// @param whitelist      array of NFT addresses you want to allow
+    constructor(address initialOwner, address[] memory whitelist) Ownable(initialOwner) {
+        for (uint256 i = 0; i < whitelist.length; i++) {
+            allowedNFTs[whitelist[i]] = true;
+            emit NFTAllowed(whitelist[i], true);
+        }
+    }
+
     /// @notice Owner can toggle which NFT contracts are lockable here
     function setAllowedNFT(address nft, bool allow) external onlyOwner {
         allowedNFTs[nft] = allow;
         emit NFTAllowed(nft, allow);
     }
 
-    /// @dev Handle incoming ERC-721 transfers.  `from` is the locker.
+    /// @dev Handle incoming ERC-721 transfers. `from` is the locker.
     function onERC721Received(
-        address /* operator */,
+        address /*operator*/,
         address from,
         uint256 tokenId,
-        bytes calldata /* data */
+        bytes calldata /*data*/
     ) external override returns (bytes4) {
         address nft = msg.sender;
         require(allowedNFTs[nft], "SkinLock: not allowed");
         require(lockedSkinsOf[from].length < MAX_LOCKED_SKINS, "SkinLock: max locked");
         require(lockedTokens[nft][tokenId] == address(0), "SkinLock: already locked");
-
-        // ensure the registry actually owns it
         require(IERC721(nft).ownerOf(tokenId) == address(this), "SkinLock: transfer failed");
+
+        // pull the bakedId from the NFT (must implement IAllowedNFT)
         uint256 baked = IAllowedNFT(nft).tokenAwardedItem(tokenId);
 
         // record who locked it
@@ -81,12 +90,12 @@ contract SkinLockRegistry is Ownable, IERC721Receiver {
         address locker = lockedTokens[nft][tokenId];
         require(locker == msg.sender, "SkinLock: not locker");
 
-        // remove from the mapping
+        // clear mapping
         delete lockedTokens[nft][tokenId];
 
         // remove from your array
         LockedSkin[] storage arr = lockedSkinsOf[locker];
-        for (uint i = 0; i < arr.length; i++) {
+        for (uint256 i = 0; i < arr.length; i++) {
             if (arr[i].tokenId == tokenId) {
                 arr[i] = arr[arr.length - 1];
                 arr.pop();
@@ -94,7 +103,7 @@ contract SkinLockRegistry is Ownable, IERC721Receiver {
             }
         }
 
-        // transfer it back to you
+        // send it back
         IERC721(nft).safeTransferFrom(address(this), msg.sender, tokenId);
         emit TokenUnlocked(nft, tokenId, msg.sender, block.timestamp);
     }
