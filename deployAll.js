@@ -57,9 +57,10 @@ async function main() {
     "ipfs://bafybeih3u3jnucrmt4lwlbpe2uecnaybwm7g5mtnnarek7252wcpyydxga/",
     deployer.address
   );
-  console.log("🔗 Whitelisting Mizontresh in SkinLockRegistry…");
-  await (await skinLock.addAllowedNFT(mizontresh.target)).wait();
-  console.log("✅  Mizontresh whitelisted\n");
+console.log("🔗 Whitelisting Mizontresh in SkinLockRegistry…");
+await (await skinLock.setAllowedNFT(mizontresh.target, true)).wait();
+console.log("✅  Mizontresh whitelisted\n");
+
 
   // 5. Write to .env without clobbering
   console.log("📦 Updating .env files…");
