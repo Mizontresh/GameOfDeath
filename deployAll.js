@@ -39,10 +39,11 @@ async function main() {
   );
 
   // 3. SkinLockRegistry
+  //   (constructor(address initialOwner, address[] whitelist))
   const skinLock = await deploy(
     "SkinLockRegistry",
-    chestOpener.target,
-    deployer.address
+    deployer.address,           // initialOwner
+    [ chestOpener.target ]      // whitelist array
   );
 
   // link ChestOpener → ChestMinter
